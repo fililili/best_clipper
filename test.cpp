@@ -5,6 +5,8 @@
 #include <ranges>
 #include <optional>
 #include <stack>
+#include <random>
+#include <chrono>
 #include <boost/geometry.hpp>
 #include <boost/container/flat_map.hpp>
 
@@ -15,6 +17,15 @@ using box = bg::model::box<point>;
 using ring = bg::model::ring<point>;
 using polygon = bg::model::polygon<point>;
 using multi_polygon = bg::model::multi_polygon<polygon>;
+
+
+auto count_time() {
+    using namespace std::chrono_literals;
+    static auto before_time = std::chrono::system_clock::now();
+    auto after_time = std::chrono::system_clock::now();
+    std::cout << "   before time: " << before_time << ", after time: " << after_time << ", runtime: " << (after_time - before_time) / 1s << "s" << std::endl;
+    before_time = after_time;
+}
 
 // may be overflow, need study more
 // current algorithm from https://leetcode.cn/problems/intersection-lcci/solutions/197813/jiao-dian-by-leetcode-solution/
@@ -43,13 +54,14 @@ std::optional<point> get_intersection(segment s1, segment s2) {
 
 // construct a graph with edge property (power) by segs
 // segs should can create rings
-void construct_graph(const auto& segs, auto filter) {
+auto construct_graph(const auto& segs, auto filter) {
     std::vector<std::pair<box, std::size_t>> boxes(segs.size());
     for (std::size_t i = 0; i < segs.size(); i++) {
-        std::cout << bg::wkt(segs[i]) << std::endl;
+        //std::cout << bg::wkt(segs[i]) << std::endl;
         boxes[i] = { bg::return_envelope<box>(segs[i]), i };
     }
-    
+    std::cout << "begin";
+    count_time();
     bg::index::rtree< std::pair<box, std::size_t>, bg::index::quadratic<128> > segs_box_rtree(boxes);
     
     std::vector<point> hot_pixels;
@@ -59,6 +71,8 @@ void construct_graph(const auto& segs, auto filter) {
         hot_pixels.emplace_back(bg::get<0, 0>(seg), bg::get<0, 1>(seg));
     }
     
+    std::cout << "build segs rtree";
+    count_time();
     for (std::size_t i = 0; i < segs.size(); i++) {
         std::for_each(segs_box_rtree.qbegin(bg::index::intersects(boxes[i].first)), segs_box_rtree.qend(),
             [&](auto const& other_seg) {
@@ -69,7 +83,8 @@ void construct_graph(const auto& segs, auto filter) {
             }
         );
     }
-    
+    std::cout << "find hot_pixels";
+    count_time();
     {
         std::sort(std::begin(hot_pixels), std::end(hot_pixels),
             [](auto p1, auto p2) {
@@ -80,7 +95,9 @@ void construct_graph(const auto& segs, auto filter) {
         auto last = std::unique(std::begin(hot_pixels), std::end(hot_pixels), [](auto p1, auto p2) { return bg::equals(p1, p2); });
         hot_pixels.erase(last, hot_pixels.end());
     }
-    
+    std::cout << "order hot pixels: ";
+    count_time();
+
     std::vector<std::pair<std::size_t, std::size_t> > seg_pixel_pairs;
     for (std::size_t i = 0; i < hot_pixels.size(); i++) {
         // have some precision problem, so expand 10
@@ -91,12 +108,12 @@ void construct_graph(const auto& segs, auto filter) {
         std::for_each(segs_box_rtree.qbegin(bg::index::intersects(box{min_corner, max_corner})), segs_box_rtree.qend(),
             [&](auto const& val) {
                 // some more judeg, can be more precise
-                double x = bg::get<0>(hot_pixels[i]);
-                double y = bg::get<1>(hot_pixels[i]);
-                double x1 = bg::get<0, 0>(segs[val.second]);
-                double y1 = bg::get<0, 1>(segs[val.second]);
-                double x2 = bg::get<1, 0>(segs[val.second]);
-                double y2 = bg::get<1, 1>(segs[val.second]);
+                auto x = bg::get<0>(hot_pixels[i]);
+                auto y = bg::get<1>(hot_pixels[i]);
+                auto x1 = bg::get<0, 0>(segs[val.second]);
+                auto y1 = bg::get<0, 1>(segs[val.second]);
+                auto x2 = bg::get<1, 0>(segs[val.second]);
+                auto y2 = bg::get<1, 1>(segs[val.second]);
                 if ((x2 - x1) * (x - x1) + (y2 - y1) * (y - y1) < 0 || (x2 - x1) * (x2 - x) + (y2 - y1) * (y2 - y) < 0) return;
 
                 if ((2 * x + 1 - x1 - x2) * (y1 - y2) > (2 * y + 1 - y1 - y2) * (x1 - x2) &&
@@ -116,7 +133,9 @@ void construct_graph(const auto& segs, auto filter) {
         );
         
     }
-    
+    std::cout << "find segs on hot_pixels: ";
+    count_time();
+
     // can be more precise
     struct less_by_segment {
         bool operator() (const auto& v1, const auto& v2) {
@@ -151,7 +170,9 @@ void construct_graph(const auto& segs, auto filter) {
             cur_begin = std::next(cur_last);
         }
     }
-    
+    std::cout << "build edges: ";
+    count_time();
+
     constexpr auto to_order = [](auto e) {
         return decltype(e){ (std::max)(std::get<0>(e), std::get<1>(e)), (std::min)(std::get<0>(e), std::get<1>(e)) };
     };
@@ -191,6 +212,9 @@ void construct_graph(const auto& segs, auto filter) {
         edges.erase(std::begin(edges) + j, std::end(edges));
         edges_power.erase(std::begin(edges_power) + j, std::end(edges_power));
     }
+
+    std::cout << "build edges power";
+    count_time();
     
     std::vector<std::pair<bool, std::size_t> > direct_edges(edges.size() * 2);
     auto source = [&](auto de) {
@@ -234,6 +258,8 @@ void construct_graph(const auto& segs, auto filter) {
             return std::pair{ source(i1), get_direction(i1)} < std::pair{source(i2), get_direction(i2)};
         }
     );
+    std::cout << "sort direct edges";
+    count_time();
     
     std::vector<std::pair<std::size_t, std::size_t> > direct_edge_pairs(edges.size());
     for (std::size_t i = 0; i < direct_edges.size(); i++) {
@@ -251,7 +277,7 @@ void construct_graph(const auto& segs, auto filter) {
 
     for (std::size_t i = 0; i < direct_edges.size(); i++) {
         auto dual = get_dual(i);
-        std::cout << "i = " << i << ", dual i = " << dual << std::endl;
+        //std::cout << "i = " << i << ", dual i = " << dual << std::endl;
     }
 
     // link direct edges, except the outer face, all faces are cw oriented
@@ -260,9 +286,9 @@ void construct_graph(const auto& segs, auto filter) {
     {
         std::size_t cur_first = 0;
         for (std::size_t i = 0; i < direct_edges.size(); i++) {
-            std::cout << "source: " << source(direct_edges[i]) << ":  " << bg::wkt(hot_pixels[source(direct_edges[i])]) << "  ";
-            std::cout << "target: " << target(direct_edges[i]) << ":  " << bg::wkt(hot_pixels[target(direct_edges[i])]) << "  ";
-            std::cout << "power: " << power(direct_edges[i]) << std::endl;
+            //std::cout << "source: " << source(direct_edges[i]) << ":  " << bg::wkt(hot_pixels[source(direct_edges[i])]) << "  ";
+            //std::cout << "target: " << target(direct_edges[i]) << ":  " << bg::wkt(hot_pixels[target(direct_edges[i])]) << "  ";
+            //std::cout << "power: " << power(direct_edges[i]) << std::endl;
             if (i + 1 == direct_edges.size() || source(direct_edges[i + 1]) != source(direct_edges[cur_first])) {
                 pre_direct_edges[cur_first] = get_dual(i);
                 next_direct_edges[get_dual(i)] = cur_first;
@@ -274,6 +300,8 @@ void construct_graph(const auto& segs, auto filter) {
             }
         }
     }
+    std::cout << "connect direct edges";
+    count_time();
     
     std::vector<std::size_t> edges_face_id(direct_edges.size());
     std::vector<std::pair<ring, std::size_t> > cw_faces;
@@ -298,6 +326,10 @@ void construct_graph(const auto& segs, auto filter) {
         }
         cur_face_id++;
     }
+
+    std::cout << "build faces";
+    count_time();
+
     boost::container::flat_multimap<std::size_t, std::size_t> face_contain_relations;
     std::vector<std::pair<box, std::size_t> > cw_faces_box(cw_faces.size());
     for (std::size_t i = 0; i < cw_faces.size(); i++) {
@@ -319,6 +351,9 @@ void construct_graph(const auto& segs, auto filter) {
             }
         }
     }
+    std::cout << "build face contain relations: ";
+    count_time();
+
     std::vector<std::optional<int> > faces_cw_power(cur_face_id);
     enum class fake_bool {
         fake_false,
@@ -359,8 +394,10 @@ void construct_graph(const auto& segs, auto filter) {
             cur_direct_edge = next_direct_edges[cur_direct_edge];
         } while (cur_direct_edge != cur_first_direct_edge);
     }
+    std::cout << "traversal faces";
+    count_time();
 
-    for (auto [de1, de2] : direct_edge_pairs) {
+    for (auto&& [de1, de2] : direct_edge_pairs) {
         if (direct_edges_exist[de1] == direct_edges_exist[de2]) {
             direct_edges_exist[de1] = fake_bool::fake_false;
             direct_edges_exist[de2] = fake_bool::fake_false;
@@ -402,11 +439,11 @@ void construct_graph(const auto& segs, auto filter) {
         }
     }
     for (auto&& ring : ret_rings) {
-        std::cout << bg::wkt(ring) << std::endl;
-        std::cout << "is valid: " << bg::is_valid(ring) << std::endl;
+        //std::cout << bg::wkt(ring) << std::endl;
+        //std::cout << "is valid: " << bg::is_valid(ring) << std::endl;
     }
     
-    return; // graph
+    return ret_rings; // graph
 }
 
 multi_polygon operator+ (const multi_polygon& ps1, const multi_polygon& ps2) {
@@ -439,9 +476,56 @@ multi_polygon operator+ (const multi_polygon& ps1, const multi_polygon& ps2) {
     return ps1;
 }
 
+auto self_or(ring r) {
+    std::vector<segment > segs;
+    bg::for_each_segment(r,
+        [&](const auto& seg) {
+            segment s;
+            boost::geometry::set<0, 0>(s, boost::geometry::get<0, 0>(seg));
+            boost::geometry::set<0, 1>(s, boost::geometry::get<0, 1>(seg));
+            boost::geometry::set<1, 0>(s, boost::geometry::get<1, 0>(seg));
+            boost::geometry::set<1, 1>(s, boost::geometry::get<1, 1>(seg));
+            segs.emplace_back(s);
+        }
+    );
+    construct_graph(segs, [](auto cw_power) { return cw_power > 0; });
+}
+
+auto test(int size) {
+    using namespace std::chrono_literals;
+    std::random_device rd;  // a seed source for the random number engine
+    std::mt19937 gen(rd()); // mersenne_twister_engine seeded with rd()
+    std::uniform_int_distribution<> distrib(-600, 600);
+
+    ring r1;
+    point p{ 0, 0 };
+    r1.emplace_back(p);
+    for (int i = 0; i < size; i++) {
+        bg::set<0>(p, bg::get<0>(p) + distrib(gen));
+        bg::set<1>(p, bg::get<1>(p) + distrib(gen));
+        r1.emplace_back(p);
+    }
+    r1.emplace_back(0, 0);
+    std::cout << "\n\n-----------------" << std::endl;
+    auto before = std::chrono::system_clock::now();
+    self_or(r1);
+    auto after = std::chrono::system_clock::now();
+    std::cout << "size = " << size << ", total runtime: " << (after - before) / 1s << "s" << std::endl;
+}
 
 int main()
 {
+    test(100);
+    test(200);
+    test(400);
+    test(1000);
+    test(2000);
+    test(4000);
+    test(10000);
+    test(20000);
+    test(40000);
+    test(80000);
+    test(100000);
 
     multi_polygon one, two;
 
@@ -456,14 +540,14 @@ int main()
     multi_polygon _one, _two;
 
     bg::read_wkt(
-        "MULTIPOLYGON(((0 0, 0 2, 2 2, 2 0, 0 0)))", _one);
+        "MULTIPOLYGON(((-1 -1, -1 3, 3 3, 3 -1, -1 -1), (0 0, 2 0, 2 2, 0 2, 0 0)))", _one);
     assert(bg::is_valid(_one));
 
     bg::read_wkt(
-        "MULTIPOLYGON(((1 1, 1 3, 3 3, 3 1, 1 1)))", _two);
+        "MULTIPOLYGON(((1 1, 1 4, 4 4, 4 1, 1 1)))", _two);
     assert(bg::is_valid(_two));
 
-    one + two;
+    _one + _two;
 
     return 0;
 }
