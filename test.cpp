@@ -138,7 +138,7 @@ auto construct_graph(const auto& segs, auto filter) {
 
     // can be more precise
     struct less_by_segment {
-        bool operator() (const auto& v1, const auto& v2) {
+        bool operator() (std::pair<std::size_t, std::size_t>  v1, std::pair<std::size_t, std::size_t>  v2) {
             auto p1 = _hot_pixels[v1.second];
             auto p2 = _hot_pixels[v2.second];
             double x1 = bg::get<0>(p1);
@@ -153,7 +153,7 @@ auto construct_graph(const auto& segs, auto filter) {
             return (x2 - x1) * (x4 - x3) + (y2 - y1) * (y4 - y3) > 0;
         }
         segment s;
-        const std::vector<point>& _hot_pixels = { hot_pixels };
+        const std::vector<point>& _hot_pixels;
     };
     std::vector<std::pair<std::size_t, std::size_t> > edges;
     {
@@ -162,7 +162,7 @@ auto construct_graph(const auto& segs, auto filter) {
         auto cur_last = cur_begin;
         while (++cur_last != std::end(seg_pixel_pairs)) {
             if (std::next(cur_last) != std::end(seg_pixel_pairs) && cur_begin->first == std::next(cur_last)->first) continue;
-            std::sort(cur_begin, std::next(cur_last), less_by_segment{segs[cur_begin->first]}); // should sort by the order of point in seg
+            std::sort(cur_begin, std::next(cur_last), less_by_segment{segs[cur_begin->first], hot_pixels}); // should sort by the order of point in seg
 
             for (; cur_begin != cur_last; cur_begin++) {
                 edges.emplace_back(cur_begin->second, std::next(cur_begin)->second);
@@ -177,7 +177,7 @@ auto construct_graph(const auto& segs, auto filter) {
         return decltype(e){ (std::max)(std::get<0>(e), std::get<1>(e)), (std::min)(std::get<0>(e), std::get<1>(e)) };
     };
 
-    std::sort(std::begin(edges), std::end(edges), [](auto e1, auto e2) {
+    std::sort(std::begin(edges), std::end(edges), [&](auto e1, auto e2) {
             return to_order(e1) < to_order(e2);
         }
     );
@@ -239,7 +239,7 @@ auto construct_graph(const auto& segs, auto filter) {
         // can be more precise
         double dx = bg::get<0>(hot_pixels[target(i)]) - bg::get<0>(hot_pixels[source(i)]);
         double dy = bg::get<1>(hot_pixels[target(i)]) - bg::get<1>(hot_pixels[source(i)]);
-        enum class quadrant { _1, _2, _3, _4 };
+        enum class quadrant { _1, _2, _3, _4, zero };
         if (dx > 0 && dy >= 0) {
             return std::pair{ quadrant::_1, dy / dx};
         }
@@ -252,6 +252,8 @@ auto construct_graph(const auto& segs, auto filter) {
         else if (dx >= 0 && dy < 0) {
             return std::pair{ quadrant::_4, -dx / dy };
         }
+        // never happen
+        return std::pair{ quadrant::zero, 0.0};
     };
     std::sort(std::begin(direct_edges), std::end(direct_edges),
         [&](auto i1, auto i2) {
