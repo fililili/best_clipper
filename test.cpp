@@ -10,6 +10,7 @@
 #include <boost/geometry.hpp>
 #include <boost/container/flat_map.hpp>
 
+
 namespace bg = boost::geometry;
 using point = bg::model::d2::point_xy<int>;
 using segment = bg::model::segment<point>;
@@ -63,14 +64,14 @@ auto construct_graph(const auto& segs, auto filter) {
     std::cout << "begin";
     count_time();
     bg::index::rtree< std::pair<box, std::size_t>, bg::index::quadratic<128> > segs_box_rtree(boxes);
-    
+
     std::vector<point> hot_pixels;
     hot_pixels.reserve(segs.size() * 2);
-    
+
     for (const auto& seg : segs) {
         hot_pixels.emplace_back(bg::get<0, 0>(seg), bg::get<0, 1>(seg));
     }
-    
+
     std::cout << "build segs rtree";
     count_time();
     for (std::size_t i = 0; i < segs.size(); i++) {
@@ -104,8 +105,8 @@ auto construct_graph(const auto& segs, auto filter) {
         constexpr auto expand = 1;
         auto min_corner = point{ bg::get<0>(hot_pixels[i]) - expand, bg::get<1>(hot_pixels[i]) - expand };
         auto max_corner = point{ bg::get<0>(hot_pixels[i]) + expand, bg::get<1>(hot_pixels[i]) + expand };
-        
-        std::for_each(segs_box_rtree.qbegin(bg::index::intersects(box{min_corner, max_corner})), segs_box_rtree.qend(),
+
+        std::for_each(segs_box_rtree.qbegin(bg::index::intersects(box{ min_corner, max_corner })), segs_box_rtree.qend(),
             [&](auto const& val) {
                 // some more judeg, can be more precise
                 auto x = bg::get<0>(hot_pixels[i]);
@@ -131,7 +132,7 @@ auto construct_graph(const auto& segs, auto filter) {
                 seg_pixel_pairs.emplace_back(val.second, i);
             }
         );
-        
+
     }
     std::cout << "find segs on hot_pixels: ";
     count_time();
@@ -162,7 +163,7 @@ auto construct_graph(const auto& segs, auto filter) {
         auto cur_last = cur_begin;
         while (++cur_last != std::end(seg_pixel_pairs)) {
             if (std::next(cur_last) != std::end(seg_pixel_pairs) && cur_begin->first == std::next(cur_last)->first) continue;
-            std::sort(cur_begin, std::next(cur_last), less_by_segment{segs[cur_begin->first], hot_pixels}); // should sort by the order of point in seg
+            std::sort(cur_begin, std::next(cur_last), less_by_segment{ segs[cur_begin->first], hot_pixels }); // should sort by the order of point in seg
 
             for (; cur_begin != cur_last; cur_begin++) {
                 edges.emplace_back(cur_begin->second, std::next(cur_begin)->second);
@@ -175,13 +176,13 @@ auto construct_graph(const auto& segs, auto filter) {
 
     constexpr auto to_order = [](auto e) {
         return decltype(e){ (std::max)(std::get<0>(e), std::get<1>(e)), (std::min)(std::get<0>(e), std::get<1>(e)) };
-    };
+        };
 
     std::sort(std::begin(edges), std::end(edges), [&](auto e1, auto e2) {
-            return to_order(e1) < to_order(e2);
+        return to_order(e1) < to_order(e2);
         }
     );
-    
+
     std::vector<int> edges_power(edges.size());
     // remove duplicated edges and calculate edges power
     {
@@ -215,33 +216,33 @@ auto construct_graph(const auto& segs, auto filter) {
 
     std::cout << "build edges power";
     count_time();
-    
+
     std::vector<std::pair<bool, std::size_t> > direct_edges(edges.size() * 2);
     auto source = [&](auto de) {
         if (de.first) return edges[de.second].first;
         else return edges[de.second].second;
-    };
+        };
     auto target = [&](auto de) {
         if (de.first) return edges[de.second].second;
         else return edges[de.second].first;
-    };
+        };
     auto power = [&](auto de) {
         if (de.first) return edges_power[de.second];
         else return -edges_power[de.second];
-    };
-    
+        };
+
     for (std::size_t i = 0; i < edges.size(); i++) {
         direct_edges[i] = { true, i };
         direct_edges[edges.size() + i] = { false, i };
     }
-    
-    auto get_direction = [&](auto i){
+
+    auto get_direction = [&](auto i) {
         // can be more precise
         double dx = bg::get<0>(hot_pixels[target(i)]) - bg::get<0>(hot_pixels[source(i)]);
         double dy = bg::get<1>(hot_pixels[target(i)]) - bg::get<1>(hot_pixels[source(i)]);
         enum class quadrant { _1, _2, _3, _4, zero };
         if (dx > 0 && dy >= 0) {
-            return std::pair{ quadrant::_1, dy / dx};
+            return std::pair{ quadrant::_1, dy / dx };
         }
         else if (dx <= 0 && dy > 0) {
             return std::pair{ quadrant::_2, -dx / dy };
@@ -253,8 +254,8 @@ auto construct_graph(const auto& segs, auto filter) {
             return std::pair{ quadrant::_4, -dx / dy };
         }
         // never happen
-        return std::pair{ quadrant::zero, 0.0};
-    
+        return std::pair{ quadrant::zero, 0.0 };
+        };
     std::sort(std::begin(direct_edges), std::end(direct_edges),
         [&](auto i1, auto i2) {
             if (source(i1) != source(i2)) [[likely]]
@@ -266,7 +267,7 @@ auto construct_graph(const auto& segs, auto filter) {
     );
     std::cout << "sort direct edges";
     count_time();
-    
+
     std::vector<std::pair<std::size_t, std::size_t> > direct_edge_pairs(edges.size());
     for (std::size_t i = 0; i < direct_edges.size(); i++) {
         if (direct_edges[i].first) direct_edge_pairs[direct_edges[i].second].second = i;
@@ -279,7 +280,7 @@ auto construct_graph(const auto& segs, auto filter) {
         else {
             return direct_edge_pairs[direct_edges[i].second].second;
         }
-    };
+        };
 
     for (std::size_t i = 0; i < direct_edges.size(); i++) {
         auto dual = get_dual(i);
@@ -308,7 +309,7 @@ auto construct_graph(const auto& segs, auto filter) {
     }
     std::cout << "connect direct edges";
     count_time();
-    
+
     std::vector<std::size_t> edges_face_id(direct_edges.size());
     std::vector<std::pair<ring, std::size_t> > cw_faces;
     std::size_t cur_face_id = 1;
@@ -422,12 +423,46 @@ auto construct_graph(const auto& segs, auto filter) {
             next_direct_edges[de2] = de1;
         }
     }
-    // we can still remove co-point and co-linear
+
+    // reomve co-point
+    auto swap_co_source = [&](auto de1, auto de2) {
+        auto pre1 = pre_direct_edges[de1];
+        auto pre2 = pre_direct_edges[de2];
+        next_direct_edges[pre1] = de2;
+        next_direct_edges[pre2] = de1;
+        pre_direct_edges[de1] = pre2;
+        pre_direct_edges[de2] = pre1;
+        };
     
+    {
+        std::vector<fake_bool> pixels_used(hot_pixels.size());
+        for (std::size_t i = 0; i < direct_edges_exist.size(); i++) {
+            if (direct_edges_exist[i] == fake_bool::fake_false) continue;
+            auto cur_first_id = i;
+            do {
+                if (pixels_used[source(direct_edges[i])] == fake_bool::fake_false) {
+                    pixels_used[source(direct_edges[i])] = fake_bool::fake_true;
+                    i = pre_direct_edges[i];
+                    continue;
+                }
+                else {
+                    auto cur_begin_id = i;
+                    auto begin_pixel_id = source(direct_edges[cur_begin_id]);
+                    do {
+                        i = next_direct_edges[i];
+                        pixels_used[source(direct_edges[i])] = fake_bool::fake_false;
+                    } while (source(direct_edges[i]) != source(direct_edges[cur_begin_id]));
+                    swap_co_source(cur_begin_id, i);
+                }
+            } while (cur_first_id != i);
+        }
+    }
+
     std::vector<ring> ret_rings;
     {
+        
         for (std::size_t i = 0; i < direct_edges_exist.size(); i++) {
-            
+
             if (direct_edges_exist[i] == fake_bool::fake_false) continue;
 
             std::size_t cur_first_id = i;
@@ -440,19 +475,19 @@ auto construct_graph(const auto& segs, auto filter) {
                 r.push_back(hot_pixels[target(direct_edges[i])]);
                 direct_edges_exist[i] = fake_bool::fake_false;
             } while (cur_first_id != i);
-            ret_rings.push_back(std::move(r) );
+            ret_rings.push_back(std::move(r));
             cur_first_id = i;
         }
     }
     for (auto&& ring : ret_rings) {
-        //std::cout << bg::wkt(ring) << std::endl;
-        //std::cout << "is valid: " << bg::is_valid(ring) << std::endl;
+        std::cout << bg::wkt(ring) << std::endl;
+        std::cout << "is valid: " << bg::is_valid(ring) << std::endl;
     }
-    
+
     return ret_rings; // graph
 }
 
-multi_polygon operator+ (const multi_polygon& ps1, const multi_polygon& ps2) {
+auto add (const auto& ps1, const auto& ps2) {
     std::vector<segment > segs;
     segs.reserve(bg::num_segments(ps1) + bg::num_segments(ps2));
     bg::for_each_segment(ps1,
@@ -478,8 +513,7 @@ multi_polygon operator+ (const multi_polygon& ps1, const multi_polygon& ps2) {
 
     constexpr auto filter = [](auto cw_power) { return cw_power > 0; };
     construct_graph(segs, filter);
-    
-    return ps1;
+
 }
 
 auto self_or(ring r) {
@@ -503,7 +537,7 @@ auto test(int size) {
     std::mt19937 gen(rd()); // mersenne_twister_engine seeded with rd()
     std::uniform_int_distribution<> distrib(-600, 600);
 
-    ring r1;
+    ring r1, r2;
     point p{ 0, 0 };
     r1.emplace_back(p);
     for (int i = 0; i < size; i++) {
@@ -511,16 +545,30 @@ auto test(int size) {
         bg::set<1>(p, bg::get<1>(p) + distrib(gen));
         r1.emplace_back(p);
     }
-    r1.emplace_back(0, 0);
+    r2.emplace_back(0, 0);
+    p = point{ 0, 0 };
+    r2.emplace_back(p);
+    for (int i = 0; i < size; i++) {
+        bg::set<0>(p, bg::get<0>(p) + distrib(gen));
+        bg::set<1>(p, bg::get<1>(p) + distrib(gen));
+        r2.emplace_back(p);
+    }
+    r2.emplace_back(0, 0);
     std::cout << "\n\n-----------------" << std::endl;
     auto before = std::chrono::system_clock::now();
+    std::cout << "run self r1 ----------------------:" << std::endl;
     self_or(r1);
+    std::cout << "run self r2 ----------------------:" << std::endl;
+    self_or(r2);
+    std::cout << "run r1 + r2 ----------------------:" << std::endl;
+    add(r1, r2);
     auto after = std::chrono::system_clock::now();
     std::cout << "size = " << size << ", total runtime: " << (after - before) / 1s << "s" << std::endl;
 }
 
 int main()
 {
+    /*
     test(100);
     test(200);
     test(400);
@@ -532,6 +580,16 @@ int main()
     test(40000);
     test(80000);
     test(100000);
+    test(200000);
+    test(400000);
+    test(1000000);
+    test(2000000);
+    test(4000000);
+    test(10000000);
+    test(20000000);
+    test(40000000);
+    test(100000000);
+    */
 
     multi_polygon one, two;
 
@@ -542,6 +600,7 @@ int main()
     bg::read_wkt(
         "MULTIPOLYGON(((3 1, 0 2, 5 1, 3 1)))", two); // , ((0 0, 0 2, 5 0, 0 0))
     assert(bg::is_valid(two));
+    //add(one, two);
 
     multi_polygon _one, _two;
 
@@ -553,7 +612,7 @@ int main()
         "MULTIPOLYGON(((1 1, 1 4, 4 4, 4 1, 1 1)))", _two);
     assert(bg::is_valid(_two));
 
-    _one + _two;
+    add(_one, _two);
 
     return 0;
 }
