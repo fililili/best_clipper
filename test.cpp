@@ -254,10 +254,14 @@ auto construct_graph(const auto& segs, auto filter) {
         }
         // never happen
         return std::pair{ quadrant::zero, 0.0};
-    };
+    
     std::sort(std::begin(direct_edges), std::end(direct_edges),
         [&](auto i1, auto i2) {
-            return std::pair{ source(i1), get_direction(i1)} < std::pair{source(i2), get_direction(i2)};
+            if (source(i1) != source(i2)) [[likely]]
+                return source(i1) < source(i2);
+            return get_direction(i1) < get_direction(i2);
+            // compare pair is slow
+            //return std::pair{ source(i1), get_direction(i1) } < std::pair{ source(i2), get_direction(i2) };
         }
     );
     std::cout << "sort direct edges";
