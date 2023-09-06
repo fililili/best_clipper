@@ -19,6 +19,10 @@ using ring = bg::model::ring<point>;
 using polygon = bg::model::polygon<point>;
 using multi_polygon = bg::model::multi_polygon<polygon>;
 
+enum class fake_bool {
+    fake_false,
+    fake_true
+};
 
 auto count_time() {
     using namespace std::chrono_literals;
@@ -27,6 +31,43 @@ auto count_time() {
     std::cout << "   before time: " << before_time << ", after time: " << after_time << ", runtime: " << (after_time - before_time) / 1s << "s" << std::endl;
     before_time = after_time;
 }
+
+
+auto construct_multi_polygons(auto&& rings) {
+    std::vector<fake_bool> is_rings_cw(rings.size());
+    for (std::size_t i = 0; i < rings.size(); i++) {
+        if (bg::area(rings[i]) > 0)
+            is_rings_cw[i] = fake_bool::fake_true;
+        else
+            is_rings_cw[i] = fake_bool::fake_false;
+    }
+    std::vector<std::pair<box, std::size_t>> cw_rings_box;
+    multi_polygon ret;
+
+    cw_rings_box.reserve(rings.size());
+    ret.reserve(rings.size());
+    for (std::size_t i = 0; i < rings.size(); i++) {
+        if (is_rings_cw[i] == fake_bool::fake_true) {
+            cw_rings_box.emplace_back(bg::return_envelope<box>(rings[i]), ret.size());
+            polygon poly{ std::move(rings[i]) };
+            ret.emplace_back(std::move(poly));
+        }
+    }
+    bg::index::rtree< std::pair<box, std::size_t>, bg::index::quadratic<128> > rings_box_tree(cw_rings_box);
+    for (std::size_t i = 0; i < rings.size(); i++) {
+        if (is_rings_cw[i] == fake_bool::fake_false) {
+            for (auto itr = rings_box_tree.qbegin(bg::index::contains(rings[i][0])); itr != rings_box_tree.qend(); ++itr) {
+                if (bg::relate(rings[i][0], bg::exterior_ring(ret[itr->second]), bg::de9im::static_mask<'T', 'F', 'F'>{})) {
+                    bg::interior_rings(ret[itr->second]).emplace_back(std::move(rings[i]));
+                    break;
+                }
+            }
+        }
+    }
+    return ret;
+
+}
+
 
 // may be overflow, need study more
 // current algorithm from https://leetcode.cn/problems/intersection-lcci/solutions/197813/jiao-dian-by-leetcode-solution/
@@ -55,7 +96,7 @@ std::optional<point> get_intersection(segment s1, segment s2) {
 
 // construct a graph with edge property (power) by segs
 // segs should can create rings
-auto construct_graph(const auto& segs, auto filter) {
+auto construct_rings(const auto& segs, auto filter) {
     std::vector<std::pair<box, std::size_t>> boxes(segs.size());
     for (std::size_t i = 0; i < segs.size(); i++) {
         //std::cout << bg::wkt(segs[i]) << std::endl;
@@ -362,10 +403,6 @@ auto construct_graph(const auto& segs, auto filter) {
     count_time();
 
     std::vector<std::optional<int> > faces_cw_power(cur_face_id);
-    enum class fake_bool {
-        fake_false,
-        fake_true
-    };
     std::vector<fake_bool> direct_edges_exist(direct_edges.size());
     std::stack<std::pair<std::size_t, std::size_t> > stk;
     faces_cw_power[0] = 0;
@@ -480,8 +517,8 @@ auto construct_graph(const auto& segs, auto filter) {
         }
     }
     for (auto&& ring : ret_rings) {
-        std::cout << bg::wkt(ring) << std::endl;
-        std::cout << "is valid: " << bg::is_valid(ring) << std::endl;
+        //std::cout << bg::wkt(ring) << std::endl;
+        //std::cout << "is valid: " << bg::is_valid(ring) << std::endl;
     }
 
     return ret_rings; // graph
@@ -512,10 +549,8 @@ auto add (const auto& ps1, const auto& ps2) {
     );
 
     constexpr auto filter = [](auto cw_power) { return cw_power > 0; };
-    construct_graph(segs, filter);
-
+    return construct_multi_polygons(construct_rings(segs, filter));
 }
-
 auto self_or(ring r) {
     std::vector<segment > segs;
     bg::for_each_segment(r,
@@ -528,7 +563,9 @@ auto self_or(ring r) {
             segs.emplace_back(s);
         }
     );
-    construct_graph(segs, [](auto cw_power) { return cw_power > 0; });
+    auto rings = construct_rings(segs, [](auto cw_power) { return cw_power > 0; });
+    auto ret = construct_multi_polygons(std::move(rings));
+    return ret;
 }
 
 auto test(int size) {
@@ -557,18 +594,22 @@ auto test(int size) {
     std::cout << "\n\n-----------------" << std::endl;
     auto before = std::chrono::system_clock::now();
     std::cout << "run self r1 ----------------------:" << std::endl;
-    self_or(r1);
+    auto sr1 = self_or(r1);
+    //std::cout << bg::wkt(sr1) << std::endl;
     std::cout << "run self r2 ----------------------:" << std::endl;
     self_or(r2);
+    auto sr2 = self_or(r2);
+    //std::cout << bg::wkt(sr2) << std::endl;
     std::cout << "run r1 + r2 ----------------------:" << std::endl;
-    add(r1, r2);
+    auto sum = add(r1, r2);
+    //std::cout << bg::wkt(sum) << std::endl;
     auto after = std::chrono::system_clock::now();
     std::cout << "size = " << size << ", total runtime: " << (after - before) / 1s << "s" << std::endl;
 }
 
 int main()
 {
-    /*
+    
     test(100);
     test(200);
     test(400);
@@ -586,6 +627,7 @@ int main()
     test(2000000);
     test(4000000);
     test(10000000);
+    /*
     test(20000000);
     test(40000000);
     test(100000000);
