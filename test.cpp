@@ -34,6 +34,8 @@ auto count_time() {
 
 
 auto construct_multi_polygons(auto&& rings) {
+    std::cout << "begin construct multi polygons";
+    count_time();
     std::vector<fake_bool> is_rings_cw(rings.size());
     for (std::size_t i = 0; i < rings.size(); i++) {
         if (bg::area(rings[i]) > 0)
@@ -43,6 +45,8 @@ auto construct_multi_polygons(auto&& rings) {
     }
     std::vector<std::pair<box, std::size_t>> cw_rings_box;
     multi_polygon ret;
+    std::cout << "judge cw";
+    count_time();
 
     cw_rings_box.reserve(rings.size());
     ret.reserve(rings.size());
@@ -53,6 +57,9 @@ auto construct_multi_polygons(auto&& rings) {
             ret.emplace_back(std::move(poly));
         }
     }
+    std::cout << "build multi polygon";
+    count_time();
+
     bg::index::rtree< std::pair<box, std::size_t>, bg::index::quadratic<128> > rings_box_tree(cw_rings_box);
     for (std::size_t i = 0; i < rings.size(); i++) {
         if (is_rings_cw[i] == fake_bool::fake_false) {
@@ -64,6 +71,8 @@ auto construct_multi_polygons(auto&& rings) {
             }
         }
     }
+    std::cout << "find hole parent";
+    count_time();
     return ret;
 
 }
@@ -472,6 +481,7 @@ auto construct_rings(const auto& segs, auto filter) {
         };
     
     {
+        /*
         std::vector<fake_bool> pixels_used(hot_pixels.size());
         for (std::size_t i = 0; i < direct_edges_exist.size(); i++) {
             if (direct_edges_exist[i] == fake_bool::fake_false) continue;
@@ -493,6 +503,7 @@ auto construct_rings(const auto& segs, auto filter) {
                 }
             } while (cur_first_id != i);
         }
+        */
     }
 
     std::vector<ring> ret_rings;
@@ -597,7 +608,6 @@ auto test(int size) {
     auto sr1 = self_or(r1);
     //std::cout << bg::wkt(sr1) << std::endl;
     std::cout << "run self r2 ----------------------:" << std::endl;
-    self_or(r2);
     auto sr2 = self_or(r2);
     //std::cout << bg::wkt(sr2) << std::endl;
     std::cout << "run r1 + r2 ----------------------:" << std::endl;
