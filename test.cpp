@@ -7,6 +7,7 @@
 #include <stack>
 #include <random>
 #include <chrono>
+#include <numeric>
 #include <boost/geometry.hpp>
 #include <boost/container/flat_map.hpp>
 
@@ -133,6 +134,7 @@ auto construct_rings(const auto& segs, auto filter) {
                 }
             }
         );
+
     }
     std::cout << "find hot_pixels";
     count_time();
@@ -145,13 +147,17 @@ auto construct_rings(const auto& segs, auto filter) {
         ); // need define a better one
         auto last = std::unique(std::begin(hot_pixels), std::end(hot_pixels), [](auto p1, auto p2) { return bg::equals(p1, p2); });
         hot_pixels.erase(last, hot_pixels.end());
+
+        // reorder hot pixels to make memory cache better
+        bg::index::rtree<point, bg::index::quadratic<128> > hot_pixels_rtree{ hot_pixels };
+        hot_pixels = std::vector<point>{ std::begin(hot_pixels_rtree), std::end(hot_pixels_rtree) };
+        
     }
     std::cout << "order hot pixels: ";
     count_time();
 
     std::vector<std::pair<std::size_t, std::size_t> > seg_pixel_pairs;
     for (std::size_t i = 0; i < hot_pixels.size(); i++) {
-        // have some precision problem, so expand 10
         constexpr auto expand = 1;
         auto min_corner = point{ bg::get<0>(hot_pixels[i]) - expand, bg::get<1>(hot_pixels[i]) - expand };
         auto max_corner = point{ bg::get<0>(hot_pixels[i]) + expand, bg::get<1>(hot_pixels[i]) + expand };
@@ -267,7 +273,19 @@ auto construct_rings(const auto& segs, auto filter) {
     std::cout << "build edges power";
     count_time();
 
+    std::vector<int> hot_pixels_times(hot_pixels.size());
+    for (auto edge : edges) {
+        hot_pixels_times[edge.first]++;
+        hot_pixels_times[edge.second]++;
+    }
+    std::vector<int> current_location(hot_pixels.size());
+    std::exclusive_scan(std::begin(hot_pixels_times), std::end(hot_pixels_times), std::begin(current_location), 0);
+    assert(edges.size() * 2 == hot_pixels_times.back() + current_location.back());
     std::vector<std::pair<bool, std::size_t> > direct_edges(edges.size() * 2);
+    for (std::size_t i = 0; i < edges.size(); i++) {
+        direct_edges[current_location[edges[i].first]++] = { true, i };
+        direct_edges[current_location[edges[i].second]++] = { false, i };
+    }
     auto source = [&](auto de) {
         if (de.first) return edges[de.second].first;
         else return edges[de.second].second;
@@ -280,11 +298,6 @@ auto construct_rings(const auto& segs, auto filter) {
         if (de.first) return edges_power[de.second];
         else return -edges_power[de.second];
         };
-
-    for (std::size_t i = 0; i < edges.size(); i++) {
-        direct_edges[i] = { true, i };
-        direct_edges[edges.size() + i] = { false, i };
-    }
 
     auto get_direction = [&](auto i) {
         // can be more precise
@@ -306,15 +319,20 @@ auto construct_rings(const auto& segs, auto filter) {
         // never happen
         return std::pair{ quadrant::zero, 0.0 };
         };
-    std::sort(std::begin(direct_edges), std::end(direct_edges),
-        [&](auto i1, auto i2) {
-            if (source(i1) != source(i2)) [[likely]]
-                return source(i1) < source(i2);
-            return get_direction(i1) < get_direction(i2);
-            // compare pair is slow
-            //return std::pair{ source(i1), get_direction(i1) } < std::pair{ source(i2), get_direction(i2) };
+    {
+        auto cur_begin = std::begin(direct_edges);
+        auto cur_last = cur_begin;
+        while (++cur_last != std::end(direct_edges)) {
+            if (std::next(cur_last) != std::end(direct_edges) && source(*cur_begin) == source(*std::next(cur_last))) continue;
+            std::sort(cur_begin, std::next(cur_last), 
+                [&](auto i1, auto i2) {
+                    return get_direction(i1) < get_direction(i2);
+                }
+            );
+
+            cur_begin = std::next(cur_last);
         }
-    );
+    }
     std::cout << "sort direct edges";
     count_time();
 
@@ -619,7 +637,7 @@ auto test(int size) {
 
 int main()
 {
-    
+    /*
     test(100);
     test(200);
     test(400);
@@ -630,20 +648,21 @@ int main()
     test(20000);
     test(40000);
     test(80000);
+    */
     test(100000);
     test(200000);
     test(400000);
     test(1000000);
     test(2000000);
+    /*
     test(4000000);
     test(10000000);
-    /*
     test(20000000);
     test(40000000);
     test(100000000);
     */
 
-    multi_polygon one, two;
+    multi_polygon one, two, ret;
 
     bg::read_wkt(
         "MULTIPOLYGON(((0 0, 0 2, 5 1, 5 0, 0 0)))", one);
@@ -652,9 +671,14 @@ int main()
     bg::read_wkt(
         "MULTIPOLYGON(((3 1, 0 2, 5 1, 3 1)))", two); // , ((0 0, 0 2, 5 0, 0 0))
     assert(bg::is_valid(two));
-    //add(one, two);
 
-    multi_polygon _one, _two;
+    bg::read_wkt(
+        "MULTIPOLYGON(((0 2,3 1,5 1,5 0,0 0,0 2)))", ret);
+    assert(bg::is_valid(ret));
+    assert(bg::equals(add(one, two), ret));
+    std::cout << bg::wkt(add(one, two)) << std::endl;
+
+    multi_polygon _one, _two, _ret;
 
     bg::read_wkt(
         "MULTIPOLYGON(((-1 -1, -1 3, 3 3, 3 -1, -1 -1), (0 0, 2 0, 2 2, 0 2, 0 0)))", _one);
@@ -664,7 +688,10 @@ int main()
         "MULTIPOLYGON(((1 1, 1 4, 4 4, 4 1, 1 1)))", _two);
     assert(bg::is_valid(_two));
 
-    add(_one, _two);
+    bg::read_wkt(
+        "MULTIPOLYGON(((-1 3,1 3,1 4,4 4,4 1,3 1,3 -1,-1 -1,-1 3),(2 0,2 1,1 1,1 2,0 2,0 0,2 0)))", _ret);
+    assert(bg::is_valid(_ret));
+    assert(bg::equals(add(_one, _two), _ret));
 
     return 0;
 }
