@@ -597,7 +597,7 @@ auto self_or(ring r) {
     return ret;
 }
 
-auto test(int size) {
+auto benchmark(int size) {
     using namespace std::chrono_literals;
     std::random_device rd;  // a seed source for the random number engine
     std::mt19937 gen(rd()); // mersenne_twister_engine seeded with rd()
@@ -638,28 +638,28 @@ auto test(int size) {
 int main()
 {
     /*
-    test(100);
-    test(200);
-    test(400);
-    test(1000);
-    test(2000);
-    test(4000);
-    test(10000);
-    test(20000);
-    test(40000);
-    test(80000);
+    benchmark(100);
+    benchmark(200);
+    benchmark(400);
+    benchmark(1000);
+    benchmark(2000);
+    benchmark(4000);
+    benchmark(10000);
+    benchmark(20000);
+    benchmark(40000);
+    benchmark(80000);
     */
-    test(100000);
-    test(200000);
-    test(400000);
-    test(1000000);
-    test(2000000);
+    benchmark(100000);
+    benchmark(200000);
+    benchmark(400000);
+    benchmark(1000000);
+    benchmark(2000000);
     /*
-    test(4000000);
-    test(10000000);
-    test(20000000);
-    test(40000000);
-    test(100000000);
+    benchmark(4000000);
+    benchmark(10000000);
+    benchmark(20000000);
+    benchmark(40000000);
+    benchmark(100000000);
     */
 
     multi_polygon one, two, ret;
