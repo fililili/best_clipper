@@ -629,7 +629,7 @@ auto test(int size) {
     auto sr2 = self_or(r2);
     //std::cout << bg::wkt(sr2) << std::endl;
     std::cout << "run r1 + r2 ----------------------:" << std::endl;
-    auto sum = add(r1, r2);
+    auto sum = add(sr1, sr2);
     //std::cout << bg::wkt(sum) << std::endl;
     auto after = std::chrono::system_clock::now();
     std::cout << "size = " << size << ", total runtime: " << (after - before) / 1s << "s" << std::endl;
