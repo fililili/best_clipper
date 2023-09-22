@@ -101,7 +101,7 @@ std::optional<point> get_intersection(segment s1, segment s2) {
     if ((y4 - y3) * (x2 - x1) == (y2 - y1) * (x4 - x3)) return {}; // return empty when paraller
     double t1 = (double)(x3 * (y4 - y3) + y1 * (x4 - x3) - y3 * (x4 - x3) - x1 * (y4 - y3)) / ((x2 - x1) * (y4 - y3) - (x4 - x3) * (y2 - y1));
     double t2 = (double)(x1 * (y2 - y1) + y3 * (x2 - x1) - y1 * (x2 - x1) - x3 * (y2 - y1)) / ((x4 - x3) * (y2 - y1) - (x2 - x1) * (y4 - y3));
-    // 判断 t1 和 t2 是否均在 [0, 1] 之间
+    // 判断 t1 和 t2 是否均在 (0, 1) 之间
     if (t1 > 0.0 && t1 < 1.0 && t2 > 0.0 && t2 < 1.0) {
         // -0.5 < x <= 0.5 to 0
         return point{ static_cast<ctype>(std::ceil(x1 + t1 * (x2 - x1) - 0.5)), static_cast<ctype>(std::ceil(y1 + t1 * (y2 - y1) - 0.5)) };
@@ -111,13 +111,37 @@ std::optional<point> get_intersection(segment s1, segment s2) {
     }
 }
 
+bool is_point_on_segment(point p, segment s) {
+    // will use better algorithm
+    auto x = bg::get<0>(p);
+    auto y = bg::get<1>(p);
+    auto x1 = bg::get<0, 0>(s);
+    auto y1 = bg::get<0, 1>(s);
+    auto x2 = bg::get<1, 0>(s);
+    auto y2 = bg::get<1, 1>(s);
+    if ((x2 - x1) * (x - x1) + (y2 - y1) * (y - y1) < 0 || (x2 - x1) * (x2 - x) + (y2 - y1) * (y2 - y) < 0) return false;
+
+    if ((2 * x + 1 - x1 - x2) * (y1 - y2) > (2 * y + 1 - y1 - y2) * (x1 - x2) &&
+        (2 * x + 1 - x1 - x2) * (y1 - y2) >= (2 * y - 1 - y1 - y2) * (x1 - x2) &&
+        (2 * x - 1 - x1 - x2) * (y1 - y2) >= (2 * y + 1 - y1 - y2) * (x1 - x2) &&
+        (2 * x - 1 - x1 - x2) * (y1 - y2) >= (2 * y - 1 - y1 - y2) * (x1 - x2)) {
+        return false;
+    }
+    if ((2 * x + 1 - x1 - x2) * (y1 - y2) < (2 * y + 1 - y1 - y2) * (x1 - x2) &&
+        (2 * x + 1 - x1 - x2) * (y1 - y2) <= (2 * y - 1 - y1 - y2) * (x1 - x2) &&
+        (2 * x - 1 - x1 - x2) * (y1 - y2) <= (2 * y + 1 - y1 - y2) * (x1 - x2) &&
+        (2 * x - 1 - x1 - x2) * (y1 - y2) <= (2 * y - 1 - y1 - y2) * (x1 - x2)) {
+        return false;
+    }
+    return true;
+}
+
 // construct a graph with edge property (power) by segs
 // segs should can create rings
 auto construct_rings(const auto& segs, auto filter) {
     log_done_time("start of construct_rings");
     std::vector<std::pair<box, std::size_t>> boxes(segs.size());
     for (std::size_t i = 0; i < segs.size(); i++) {
-        //std::cout << bg::wkt(segs[i]) << std::endl;
         boxes[i] = { bg::return_envelope<box>(segs[i]), i };
     }
     bg::index::rtree< std::pair<box, std::size_t>, bg::index::quadratic<128> > segs_box_rtree(boxes);
@@ -142,6 +166,7 @@ auto construct_rings(const auto& segs, auto filter) {
 
     }
     log_done_time("find hot_pixels");
+    
     {
         std::sort(std::begin(hot_pixels), std::end(hot_pixels),
             [](auto p1, auto p2) {
@@ -167,28 +192,9 @@ auto construct_rings(const auto& segs, auto filter) {
 
         std::for_each(segs_box_rtree.qbegin(bg::index::intersects(box{ min_corner, max_corner })), segs_box_rtree.qend(),
             [&](auto const& val) {
-                // some more judeg, can be more precise
-                auto x = bg::get<0>(hot_pixels[i]);
-                auto y = bg::get<1>(hot_pixels[i]);
-                auto x1 = bg::get<0, 0>(segs[val.second]);
-                auto y1 = bg::get<0, 1>(segs[val.second]);
-                auto x2 = bg::get<1, 0>(segs[val.second]);
-                auto y2 = bg::get<1, 1>(segs[val.second]);
-                if ((x2 - x1) * (x - x1) + (y2 - y1) * (y - y1) < 0 || (x2 - x1) * (x2 - x) + (y2 - y1) * (y2 - y) < 0) return;
-
-                if ((2 * x + 1 - x1 - x2) * (y1 - y2) > (2 * y + 1 - y1 - y2) * (x1 - x2) &&
-                    (2 * x + 1 - x1 - x2) * (y1 - y2) >= (2 * y - 1 - y1 - y2) * (x1 - x2) &&
-                    (2 * x - 1 - x1 - x2) * (y1 - y2) >= (2 * y + 1 - y1 - y2) * (x1 - x2) &&
-                    (2 * x - 1 - x1 - x2) * (y1 - y2) >= (2 * y - 1 - y1 - y2) * (x1 - x2)) {
-                    return;
+                if (is_point_on_segment(hot_pixels[i], segs[val.second])) {
+                    seg_pixel_pairs.emplace_back(val.second, i);
                 }
-                if ((2 * x + 1 - x1 - x2) * (y1 - y2) < (2 * y + 1 - y1 - y2) * (x1 - x2) &&
-                    (2 * x + 1 - x1 - x2) * (y1 - y2) <= (2 * y - 1 - y1 - y2) * (x1 - x2) &&
-                    (2 * x - 1 - x1 - x2) * (y1 - y2) <= (2 * y + 1 - y1 - y2) * (x1 - x2) &&
-                    (2 * x - 1 - x1 - x2) * (y1 - y2) <= (2 * y - 1 - y1 - y2) * (x1 - x2)) {
-                    return;
-                }
-                seg_pixel_pairs.emplace_back(val.second, i);
             }
         );
 
