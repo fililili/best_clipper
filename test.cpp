@@ -26,11 +26,18 @@ enum class fake_bool {
     fake_true
 };
 
+std::string get_time_string(auto t) {
+    auto ti = std::chrono::system_clock::to_time_t(t);
+    std::stringstream ss;
+    ss << std::put_time(std::localtime(&ti), "%Y-%m-%d %H:%M:%S");
+    return ss.str();
+}
+
 auto count_time() {
     using namespace std::chrono_literals;
     static auto before_time = std::chrono::system_clock::now();
     auto after_time = std::chrono::system_clock::now();
-    std::cout << "   before time: " << before_time << ", after time: " << after_time << ", runtime: " << (after_time - before_time) / 1s << "s" << std::endl;
+    std::cout << "   before time: " << get_time_string(before_time) << ", after time: " << get_time_string(after_time) << ", runtime: " << (after_time - before_time) / 1s << "s" << std::endl;
     before_time = after_time;
 }
 
@@ -417,11 +424,11 @@ auto construct_rings(const auto& segs, auto filter) {
         point p = hot_pixels[source(direct_edges[direct_edge_id])];
         auto itr = faces_rtree.qbegin(bg::index::contains(p));
         if (itr == faces_rtree.qend())
-            face_contain_relations.insert({ 0, face_id });
+            face_contain_relations.insert(std::pair<std::size_t, std::size_t>{ 0, face_id });
         else {
             for (; itr != faces_rtree.qend(); ++itr) {
                 if (bg::relate(p, cw_faces[itr->second].first, bg::de9im::static_mask<'T', 'F', 'F'>{})) {
-                    face_contain_relations.insert({ cw_faces[itr->second].second , face_id });
+                    face_contain_relations.insert(std::pair<std::size_t, std::size_t>{ cw_faces[itr->second].second , face_id });
                     break;
                 }
             }
@@ -663,13 +670,11 @@ int main()
     benchmark(20000);
     benchmark(40000);
     benchmark(80000);
-    */
     benchmark(100000);
     benchmark(200000);
     benchmark(400000);
     benchmark(1000000);
     benchmark(2000000);
-    /*
     benchmark(4000000);
     benchmark(10000000);
     benchmark(20000000);
