@@ -33,18 +33,17 @@ std::string get_time_string(auto t) {
     return ss.str();
 }
 
-auto count_time() {
+auto log_done(std::string work) {
     using namespace std::chrono_literals;
     static auto before_time = std::chrono::system_clock::now();
     auto after_time = std::chrono::system_clock::now();
-    std::cout << "   before time: " << get_time_string(before_time) << ", after time: " << get_time_string(after_time) << ", runtime: " << (after_time - before_time) / 1s << "s" << std::endl;
+    std::cout << work << " is done, before time: " << get_time_string(before_time) << ", after time: " << get_time_string(after_time) << ", runtime: " << (after_time - before_time) / 1s << "s" << std::endl;
     before_time = after_time;
 }
 
 
 auto construct_multi_polygons(auto&& rings) {
-    std::cout << "begin construct multi polygons";
-    count_time();
+    log_done("start of construct multi polygons");
     std::vector<fake_bool> is_rings_cw(rings.size());
     for (std::size_t i = 0; i < rings.size(); i++) {
         if (bg::area(rings[i]) > 0)
@@ -54,8 +53,7 @@ auto construct_multi_polygons(auto&& rings) {
     }
     std::vector<std::pair<box, std::size_t>> cw_rings_box;
     multi_polygon ret;
-    std::cout << "judge cw";
-    count_time();
+    log_done("judge cw");
 
     cw_rings_box.reserve(rings.size());
     ret.reserve(rings.size());
@@ -66,8 +64,7 @@ auto construct_multi_polygons(auto&& rings) {
             ret.emplace_back(std::move(poly));
         }
     }
-    std::cout << "build multi polygon";
-    count_time();
+    log_done("build multi polygon");
 
     bg::index::rtree< std::pair<box, std::size_t>, bg::index::quadratic<128> > rings_box_tree(cw_rings_box);
     for (std::size_t i = 0; i < rings.size(); i++) {
@@ -80,8 +77,7 @@ auto construct_multi_polygons(auto&& rings) {
             }
         }
     }
-    std::cout << "find hole parent";
-    count_time();
+    log_done("find hole parent");
     return ret;
 
 }
@@ -115,13 +111,12 @@ std::optional<point> get_intersection(segment s1, segment s2) {
 // construct a graph with edge property (power) by segs
 // segs should can create rings
 auto construct_rings(const auto& segs, auto filter) {
+    log_done("start of construct_rings");
     std::vector<std::pair<box, std::size_t>> boxes(segs.size());
     for (std::size_t i = 0; i < segs.size(); i++) {
         //std::cout << bg::wkt(segs[i]) << std::endl;
         boxes[i] = { bg::return_envelope<box>(segs[i]), i };
     }
-    std::cout << "begin";
-    count_time();
     bg::index::rtree< std::pair<box, std::size_t>, bg::index::quadratic<128> > segs_box_rtree(boxes);
 
     std::vector<point> hot_pixels;
@@ -131,8 +126,7 @@ auto construct_rings(const auto& segs, auto filter) {
         hot_pixels.emplace_back(bg::get<0, 0>(seg), bg::get<0, 1>(seg));
     }
 
-    std::cout << "build segs rtree";
-    count_time();
+    log_done("build segs rtree");
     for (std::size_t i = 0; i < segs.size(); i++) {
         std::for_each(segs_box_rtree.qbegin(bg::index::intersects(boxes[i].first)), segs_box_rtree.qend(),
             [&](auto const& other_seg) {
@@ -144,8 +138,7 @@ auto construct_rings(const auto& segs, auto filter) {
         );
 
     }
-    std::cout << "find hot_pixels";
-    count_time();
+    log_done("find hot_pixels");
     {
         std::sort(std::begin(hot_pixels), std::end(hot_pixels),
             [](auto p1, auto p2) {
@@ -161,8 +154,7 @@ auto construct_rings(const auto& segs, auto filter) {
         hot_pixels = std::vector<point>{ std::begin(hot_pixels_rtree), std::end(hot_pixels_rtree) };
         
     }
-    std::cout << "order hot pixels: ";
-    count_time();
+    log_done("order hot pixels");
 
     std::vector<std::pair<std::size_t, std::size_t> > seg_pixel_pairs;
     for (std::size_t i = 0; i < hot_pixels.size(); i++) {
@@ -198,8 +190,7 @@ auto construct_rings(const auto& segs, auto filter) {
         );
 
     }
-    std::cout << "find segs on hot_pixels: ";
-    count_time();
+    log_done("find segs on hot_pixels");
 
     // can be more precise
     struct less_by_segment {
@@ -235,8 +226,7 @@ auto construct_rings(const auto& segs, auto filter) {
             cur_begin = std::next(cur_last);
         }
     }
-    std::cout << "build edges: ";
-    count_time();
+    log_done("build edges");
 
     constexpr auto to_order = [](auto e) {
         return decltype(e){ (std::max)(std::get<0>(e), std::get<1>(e)), (std::min)(std::get<0>(e), std::get<1>(e)) };
@@ -278,8 +268,7 @@ auto construct_rings(const auto& segs, auto filter) {
         edges_power.erase(std::begin(edges_power) + j, std::end(edges_power));
     }
 
-    std::cout << "build edges power";
-    count_time();
+    log_done("build edges power");
 
     std::vector<int> hot_pixels_times(hot_pixels.size());
     for (auto edge : edges) {
@@ -341,8 +330,7 @@ auto construct_rings(const auto& segs, auto filter) {
             cur_begin = std::next(cur_last);
         }
     }
-    std::cout << "sort direct edges";
-    count_time();
+    log_done("sort direct edges");
 
     std::vector<std::pair<std::size_t, std::size_t> > direct_edge_pairs(edges.size());
     for (std::size_t i = 0; i < direct_edges.size(); i++) {
@@ -383,8 +371,7 @@ auto construct_rings(const auto& segs, auto filter) {
             }
         }
     }
-    std::cout << "connect direct edges";
-    count_time();
+    log_done("connect direct edges");
 
     std::vector<std::size_t> edges_face_id(direct_edges.size());
     std::vector<std::pair<ring, std::size_t> > cw_faces;
@@ -410,8 +397,7 @@ auto construct_rings(const auto& segs, auto filter) {
         cur_face_id++;
     }
 
-    std::cout << "build faces";
-    count_time();
+    log_done("build faces");
 
     boost::container::flat_multimap<std::size_t, std::size_t> face_contain_relations;
     std::vector<std::pair<box, std::size_t> > cw_faces_box(cw_faces.size());
@@ -434,8 +420,7 @@ auto construct_rings(const auto& segs, auto filter) {
             }
         }
     }
-    std::cout << "build face contain relations: ";
-    count_time();
+    log_done("build face contain relations");
 
     std::vector<std::optional<int> > faces_cw_power(cur_face_id);
     std::vector<fake_bool> direct_edges_exist(direct_edges.size());
@@ -473,8 +458,7 @@ auto construct_rings(const auto& segs, auto filter) {
             cur_direct_edge = next_direct_edges[cur_direct_edge];
         } while (cur_direct_edge != cur_first_direct_edge);
     }
-    std::cout << "traversal faces";
-    count_time();
+    log_done("traversal faces");
 
     for (auto&& [de1, de2] : direct_edge_pairs) {
         if (direct_edges_exist[de1] == direct_edges_exist[de2]) {
@@ -640,7 +624,7 @@ auto benchmark(int size) {
     auto sum = add(sr1, sr2);
     //std::cout << bg::wkt(sum) << std::endl;
     auto after = std::chrono::system_clock::now();
-    std::cout << "size = " << size << ", total runtime: " << (after - before) / 1s << "s" << std::endl;
+    std::cout << "benchmark size = " << size << ", total runtime: " << (after - before) / 1s << "s" << std::endl;
 }
 
 
