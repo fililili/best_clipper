@@ -409,22 +409,24 @@ auto construct_rings(const auto& segs, auto filter) {
     log_done_time("build faces");
 
     boost::container::flat_multimap<std::size_t, std::size_t> face_contain_relations;
-    std::vector<std::pair<box, std::size_t> > cw_faces_box(cw_faces.size());
-    for (std::size_t i = 0; i < cw_faces.size(); i++) {
-        cw_faces_box[i].first = bg::return_envelope<box>(cw_faces[i].first);
-        cw_faces_box[i].second = i;
-    }
-    bg::index::rtree< std::pair<box, std::size_t>, bg::index::quadratic<128> > faces_rtree{ cw_faces_box };
-    for (auto [face_id, direct_edge_id] : ccw_face_id_to_direct_edge_id) {
-        point p = hot_pixels[source(direct_edges[direct_edge_id])];
-        auto itr = faces_rtree.qbegin(bg::index::contains(p));
-        if (itr == faces_rtree.qend())
-            face_contain_relations.insert(std::pair<std::size_t, std::size_t>{ 0, face_id });
-        else {
-            for (; itr != faces_rtree.qend(); ++itr) {
-                if (bg::relate(p, cw_faces[itr->second].first, bg::de9im::static_mask<'T', 'F', 'F'>{})) {
-                    face_contain_relations.insert(std::pair<std::size_t, std::size_t>{ cw_faces[itr->second].second , face_id });
-                    break;
+    {
+        std::vector<std::pair<box, std::size_t> > cw_faces_box(cw_faces.size());
+        for (std::size_t i = 0; i < cw_faces.size(); i++) {
+            cw_faces_box[i].first = bg::return_envelope<box>(cw_faces[i].first);
+            cw_faces_box[i].second = i;
+        }
+        bg::index::rtree< std::pair<box, std::size_t>, bg::index::quadratic<128> > faces_rtree{ cw_faces_box };
+        for (auto [face_id, direct_edge_id] : ccw_face_id_to_direct_edge_id) {
+            point p = hot_pixels[source(direct_edges[direct_edge_id])];
+            auto itr = faces_rtree.qbegin(bg::index::contains(p));
+            if (itr == faces_rtree.qend())
+                face_contain_relations.insert(std::pair<std::size_t, std::size_t>{ 0, face_id });
+            else {
+                for (; itr != faces_rtree.qend(); ++itr) {
+                    if (bg::relate(p, cw_faces[itr->second].first, bg::de9im::static_mask<'T', 'F', 'F'>{})) {
+                        face_contain_relations.insert(std::pair<std::size_t, std::size_t>{ cw_faces[itr->second].second , face_id });
+                        break;
+                    }
                 }
             }
         }
@@ -625,13 +627,13 @@ auto benchmark(int size) {
     auto before = std::chrono::system_clock::now();
     std::cout << "run self r1 ----------------------:" << std::endl;
     auto sr1 = self_or(r1);
-    //std::cout << bg::wkt(sr1) << std::endl;
+    std::cout << bg::wkt(sr1) << std::endl;
     std::cout << "run self r2 ----------------------:" << std::endl;
     auto sr2 = self_or(r2);
-    //std::cout << bg::wkt(sr2) << std::endl;
+    std::cout << bg::wkt(sr2) << std::endl;
     std::cout << "run r1 + r2 ----------------------:" << std::endl;
     auto sum = add(sr1, sr2);
-    //std::cout << bg::wkt(sum) << std::endl;
+    std::cout << bg::wkt(sum) << std::endl;
     auto after = std::chrono::system_clock::now();
     std::cout << "benchmark size = " << size << ", total runtime: " << (after - before) / 1s << "s" << std::endl;
 }
@@ -645,13 +647,14 @@ void test_union(std::string first_s, std::string second_s, std::string ret_s) {
     assert(bg::is_valid(second));
     bg::read_wkt(ret_s, ret);
     assert(bg::is_valid(ret));
-    
+    std::cout << bg::wkt(add(first, second)) << std::endl;
     assert(bg::equals(add(first, second), ret));
 }
 
 
 int main()
 {
+    benchmark(400);
     /*
     benchmark(100);
     benchmark(200);
@@ -709,14 +712,10 @@ int main()
     );
     test_union(
         "MULTIPOLYGON(((-1461 -786,-1417 -833,-1389 -830,-1450 -775,-1061 -372,-720 -681,-1007 -702,-1005 -642,-1145 -830,-873 -855,-658 -741,-660 -736,-656 -740,-561 -689,-535 -717,-497 -747,-634 -790,-642 -773,-666 -800,-849 -858,-748 -867,-807 -964,-1012 -1200,-913 -1136,-956 -1205,-1030 -1246,-1608 -939,-1461 -786),(-1058 -1133,-1244 -963,-1301 -1039,-1058 -1133)),((-578 -670,-688 -679,-802 -443,-826 -400,-578 -670)),((-433 -621,-300 -283,-289 -294,-432 -660,-517 -666,-433 -621)),((-178 -1224,-344 -907,-361 -853,-84 -1068,273 -1394,61 -1669,-438 -1425,-178 -1224)),((-378 -839,-376 -844,-380 -838,-378 -839)))",
-        "MULTIPOLYGON(((-1450 -1280, -1450 -800, -1000 -800, -1000 -1280, -1450 -1280)))",
-        "MULTIPOLYGON(((-1461 -786,-1448 -800,-1422 -800,-1450 -775,-1061 -372,-720 -681,-1007 -702,-1005 -642,-1123 -800,-1000 -800,-1000 -843,-873 -855,-658 -741,-660 -736,-656 -740,-561 -689,-535 -717,-497 -747,-634 -790,-642 -773,-666 -800,-849 -858,-748 -867,-807 -964,-1000 -1186,-1000 -1192,-913 -1136,-956 -1205,-1000 -1229,-1000 -1280,-1450 -1280,-1450 -1023,-1608 -939,-1461 -786)),((-433 -621,-300 -283,-289 -294,-432 -660,-517 -666,-433 -621)),((-178 -1224,-344 -907,-361 -853,-84 -1068,273 -1394,61 -1669,-438 -1425,-178 -1224)),((-378 -839,-376 -844,-380 -838,-378 -839)))"
-    );
-    test_union(
-        "MULTIPOLYGON(((-1461 -786,-1417 -833,-1389 -830,-1450 -775,-1061 -372,-720 -681,-1007 -702,-1005 -642,-1145 -830,-873 -855,-658 -741,-660 -736,-656 -740,-561 -689,-535 -717,-497 -747,-634 -790,-642 -773,-666 -800,-849 -858,-748 -867,-807 -964,-1012 -1200,-913 -1136,-956 -1205,-1030 -1246,-1608 -939,-1461 -786),(-1058 -1133,-1244 -963,-1301 -1039,-1058 -1133)),((-578 -670,-688 -679,-802 -443,-826 -400,-578 -670)),((-433 -621,-300 -283,-289 -294,-432 -660,-517 -666,-433 -621)),((-178 -1224,-344 -907,-361 -853,-84 -1068,273 -1394,61 -1669,-438 -1425,-178 -1224)),((-378 -839,-376 -844,-380 -838,-378 -839)))",
         "MULTIPOLYGON(((-1450 -1280, -1450 -800, -1200 -1000, -1000 -1280, -1450 -1280)))",
         "MULTIPOLYGON(((-1461 -786,-1442 -807,-1410 -832,-1389 -830,-1450 -775,-1061 -372,-720 -681,-1007 -702,-1005 -642,-1145 -830,-873 -855,-658 -741,-660 -736,-656 -740,-561 -689,-535 -717,-497 -747,-634 -790,-642 -773,-666 -800,-849 -858,-748 -867,-807 -964,-1012 -1200,-913 -1136,-956 -1205,-1026 -1244,-1000 -1280,-1450 -1280,-1450 -1023,-1608 -939,-1461 -786),(-1228 -977,-1244 -963,-1245 -964,-1228 -977),(-1123 -1108,-1058 -1133,-1193 -1009,-1123 -1108)),((-178 -1224,-344 -907,-361 -853,-84 -1068,273 -1394,61 -1669,-438 -1425,-178 -1224)),((-378 -839,-376 -844,-380 -838,-378 -839)))"
     );
+        
 
     return 0;
 }
