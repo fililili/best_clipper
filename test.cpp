@@ -684,35 +684,21 @@ int main()
         "MULTIPOLYGON(((-220 877,-54 821,-402 541,-808 638,-220 877)))",
         "MULTIPOLYGON(((-220 877,-72 827,-59 867,-56 822,-54 821,-56 819,-36 492,-182 486,-81 799,-402 541,-808 638,-220 877)))"
     );
-    
-    bg::read_wkt(
-        "MULTIPOLYGON(((0 0, 0 2, 5 1, 5 0, 0 0)))", one);
-    assert(bg::is_valid(one));
-
-    bg::read_wkt(
-        "MULTIPOLYGON(((3 1, 0 2, 5 1, 3 1)))", two); // , ((0 0, 0 2, 5 0, 0 0))
-    assert(bg::is_valid(two));
-
-    bg::read_wkt(
-        "MULTIPOLYGON(((0 2,3 1,5 1,5 0,0 0,0 2)))", ret);
-    assert(bg::is_valid(ret));
-    assert(bg::equals(add(one, two), ret));
-    std::cout << bg::wkt(add(one, two)) << std::endl;
-
-    multi_polygon _one, _two, _ret;
-
-    bg::read_wkt(
-        "MULTIPOLYGON(((-1 -1, -1 3, 3 3, 3 -1, -1 -1), (0 0, 2 0, 2 2, 0 2, 0 0)))", _one);
-    assert(bg::is_valid(_one));
-
-    bg::read_wkt(
-        "MULTIPOLYGON(((1 1, 1 4, 4 4, 4 1, 1 1)))", _two);
-    assert(bg::is_valid(_two));
-
-    bg::read_wkt(
-        "MULTIPOLYGON(((-1 3,1 3,1 4,4 4,4 1,3 1,3 -1,-1 -1,-1 3),(2 0,2 1,1 1,1 2,0 2,0 0,2 0)))", _ret);
-    assert(bg::is_valid(_ret));
-    assert(bg::equals(add(_one, _two), _ret));
+    test_union(
+        "MULTIPOLYGON(((0 0, 0 3, 3 3, 3 0, 0 0), (1 1, 2 1, 2 2, 1 2, 1 1)))",
+        "MULTIPOLYGON(((2 2, 2 4, 4 4, 4 2, 2 2)))",
+        "MULTIPOLYGON(((0 0, 0 3, 2 3, 2 4, 4 4, 4 2, 3 2, 3 0, 0 0), (1 1, 2 1, 2 2, 1 2, 1 1)))"
+    );
+    test_union(
+        "MULTIPOLYGON(((0 0, 0 2, 5 1, 5 0, 0 0)))",
+        "MULTIPOLYGON(((3 1, 0 2, 5 1, 3 1)))",
+        "MULTIPOLYGON(((0 2,3 1,5 1,5 0,0 0,0 2)))"
+    );
+    test_union(
+        "MULTIPOLYGON(((-1 -1, -1 3, 3 3, 3 -1, -1 -1), (0 0, 2 0, 2 2, 0 2, 0 0)))",
+        "MULTIPOLYGON(((1 1, 1 4, 4 4, 4 1, 1 1)))",
+        "MULTIPOLYGON(((-1 3,1 3,1 4,4 4,4 1,3 1,3 -1,-1 -1,-1 3),(2 0,2 1,1 1,1 2,0 2,0 0,2 0)))"
+    );
 
     return 0;
 }
