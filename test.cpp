@@ -7,6 +7,7 @@
 #include <stack>
 #include <random>
 #include <chrono>
+#include <string>
 #include <numeric>
 #include <boost/geometry.hpp>
 #include <boost/container/flat_map.hpp>
@@ -635,6 +636,20 @@ auto benchmark(int size) {
     std::cout << "size = " << size << ", total runtime: " << (after - before) / 1s << "s" << std::endl;
 }
 
+
+void test_union(std::string first_s, std::string second_s, std::string ret_s) {
+    multi_polygon first, second, ret;
+    bg::read_wkt(first_s, first);
+    assert(bg::is_valid(first));
+    bg::read_wkt(second_s, second);
+    assert(bg::is_valid(second));
+    bg::read_wkt(ret_s, ret);
+    assert(bg::is_valid(ret));
+    
+    assert(bg::equals(add(first, second), ret));
+}
+
+
 int main()
 {
     /*
@@ -664,6 +679,12 @@ int main()
 
     multi_polygon one, two, ret;
 
+    test_union(
+        "MULTIPOLYGON(((-59 867,-36 492,-182 486,-59 867)))",
+        "MULTIPOLYGON(((-220 877,-54 821,-402 541,-808 638,-220 877)))",
+        "MULTIPOLYGON(((-220 877,-72 827,-59 867,-56 822,-54 821,-56 819,-36 492,-182 486,-81 799,-402 541,-808 638,-220 877)))"
+    );
+    
     bg::read_wkt(
         "MULTIPOLYGON(((0 0, 0 2, 5 1, 5 0, 0 0)))", one);
     assert(bg::is_valid(one));
