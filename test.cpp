@@ -228,10 +228,9 @@ auto construct_rings(const auto& segs, auto filter) {
         }
         std::vector<int> begin_location(segs_times.size());
         std::exclusive_scan(std::begin(segs_times), std::end(segs_times), std::begin(begin_location), 0);
-        decltype(seg_pixel_pairs) _seg_pixel_pairs{};
-        _seg_pixel_pairs.reserve(seg_pixel_pairs.size());
+        decltype(seg_pixel_pairs) _seg_pixel_pairs{seg_pixel_pairs.size()};
         auto current_location{begin_location};
-        for (std::size_t i = 0; i < edges.size(); i++) {
+        for (std::size_t i = 0; i < seg_pixel_pairs.size(); i++) {
             _seg_pixel_pairs[current_location[seg_pixel_pairs[i].first]++] = seg_pixel_pairs[i];
         }
         seg_pixel_pairs = std::move(_seg_pixel_pairs);
@@ -240,9 +239,10 @@ auto construct_rings(const auto& segs, auto filter) {
             auto begin = std::begin(seg_pixel_pairs);
             auto cur_begin = begin + begin_location[i];
             auto cur_end = begin + end_location[i];
-            std::sort(cur_begin, cur_end, less_by_segment{ segs[cur_begin->first], hot_pixels } );
+            auto cur_last = cur_end - 1;
+            std::sort(cur_begin, cur_end, less_by_segment{ segs[i], hot_pixels } );
             
-            for (; cur_begin != cur_end; cur_begin++) {
+            for (; cur_begin != cur_last; cur_begin++) {
                 edges.emplace_back(cur_begin->second, std::next(cur_begin)->second);
             }
         }
