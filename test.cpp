@@ -504,42 +504,6 @@ auto construct_rings(const auto& segs, auto filter) {
         }
     }
 
-    // reomve co-point
-    auto swap_co_source = [&](auto de1, auto de2) {
-        auto pre1 = pre_direct_edges[de1];
-        auto pre2 = pre_direct_edges[de2];
-        next_direct_edges[pre1] = de2;
-        next_direct_edges[pre2] = de1;
-        pre_direct_edges[de1] = pre2;
-        pre_direct_edges[de2] = pre1;
-        };
-    
-    {
-        /*
-        std::vector<fake_bool> pixels_used(hot_pixels.size());
-        for (std::size_t i = 0; i < direct_edges_exist.size(); i++) {
-            if (direct_edges_exist[i] == fake_bool::fake_false) continue;
-            auto cur_first_id = i;
-            do {
-                if (pixels_used[source(direct_edges[i])] == fake_bool::fake_false) {
-                    pixels_used[source(direct_edges[i])] = fake_bool::fake_true;
-                    i = pre_direct_edges[i];
-                    continue;
-                }
-                else {
-                    auto cur_begin_id = i;
-                    auto begin_pixel_id = source(direct_edges[cur_begin_id]);
-                    do {
-                        i = next_direct_edges[i];
-                        pixels_used[source(direct_edges[i])] = fake_bool::fake_false;
-                    } while (source(direct_edges[i]) != source(direct_edges[cur_begin_id]));
-                    swap_co_source(cur_begin_id, i);
-                }
-            } while (cur_first_id != i);
-        }
-        */
-    }
-
     std::vector<ring> ret_rings;
     {
         
