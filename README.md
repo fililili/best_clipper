@@ -8,6 +8,7 @@ Shortly speaking, the algorithm has two step:
 I have not found similar algorithm before, if anybody find one, please cantact me.
 
 A basic code and test have been write already, still need do:
+
 0. not benchmark compare now, at current testing, the implementation is fast (10s for 1 000 000 vertices in myself computer.) But have not compared with other implementation now.
 1. the planar face traversal implementaion is a little complex, so bug may exist and the cost memory is a little big. Need to find a way to simple the graph data structure.
 2. have not handle co-point situation, and the find parent hole progress maybe time cost, need find a simple way.
