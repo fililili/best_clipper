@@ -222,17 +222,29 @@ auto construct_rings(const auto& segs, auto filter) {
     };
     std::vector<std::pair<std::size_t, std::size_t> > edges;
     {
-        std::sort(std::begin(seg_pixel_pairs), std::end(seg_pixel_pairs));
-        auto cur_begin = std::begin(seg_pixel_pairs);
-        auto cur_last = cur_begin;
-        while (++cur_last != std::end(seg_pixel_pairs)) {
-            if (std::next(cur_last) != std::end(seg_pixel_pairs) && cur_begin->first == std::next(cur_last)->first) continue;
-            std::sort(cur_begin, std::next(cur_last), less_by_segment{ segs[cur_begin->first], hot_pixels }); // should sort by the order of point in seg
-
-            for (; cur_begin != cur_last; cur_begin++) {
+        std::vector<int> segs_times(segs.size());
+        for (auto [seg, _] : seg_pixel_pairs) {
+            segs_times[seg]++;
+        }
+        std::vector<int> begin_location(segs_times.size());
+        std::exclusive_scan(std::begin(segs_times), std::end(segs_times), std::begin(begin_location), 0);
+        decltype(seg_pixel_pairs) _seg_pixel_pairs{};
+        _seg_pixel_pairs.reserve(seg_pixel_pairs.size());
+        auto current_location{begin_location};
+        for (std::size_t i = 0; i < edges.size(); i++) {
+            _seg_pixel_pairs[current_location[seg_pixel_pairs[i].first]++] = seg_pixel_pairs[i];
+        }
+        seg_pixel_pairs = std::move(_seg_pixel_pairs);
+        auto end_location{current_location};
+        for (std::size_t i = 0; i < segs.size(); i++) {
+            auto begin = std::begin(seg_pixel_pairs);
+            auto cur_begin = begin + begin_location[i];
+            auto cur_end = begin + end_location[i];
+            std::sort(cur_begin, cur_end, less_by_segment{ segs[cur_begin->first], hot_pixels } );
+            
+            for (; cur_begin != cur_end; cur_begin++) {
                 edges.emplace_back(cur_begin->second, std::next(cur_begin)->second);
             }
-            cur_begin = std::next(cur_last);
         }
     }
     log_done_time("build edges");
@@ -279,19 +291,6 @@ auto construct_rings(const auto& segs, auto filter) {
 
     log_done_time("build edges power");
 
-    std::vector<int> hot_pixels_times(hot_pixels.size());
-    for (auto edge : edges) {
-        hot_pixels_times[edge.first]++;
-        hot_pixels_times[edge.second]++;
-    }
-    std::vector<int> current_location(hot_pixels.size());
-    std::exclusive_scan(std::begin(hot_pixels_times), std::end(hot_pixels_times), std::begin(current_location), 0);
-    assert(edges.size() * 2 == hot_pixels_times.back() + current_location.back());
-    std::vector<std::pair<bool, std::size_t> > direct_edges(edges.size() * 2);
-    for (std::size_t i = 0; i < edges.size(); i++) {
-        direct_edges[current_location[edges[i].first]++] = { true, i };
-        direct_edges[current_location[edges[i].second]++] = { false, i };
-    }
     auto source = [&](auto de) {
         if (de.first) return edges[de.second].first;
         else return edges[de.second].second;
@@ -325,18 +324,32 @@ auto construct_rings(const auto& segs, auto filter) {
         // never happen
         return std::pair{ quadrant::zero, 0.0 };
         };
+        
+    std::vector<std::pair<bool, std::size_t> > direct_edges(edges.size() * 2);
     {
-        auto cur_begin = std::begin(direct_edges);
-        auto cur_last = cur_begin;
-        while (++cur_last != std::end(direct_edges)) {
-            if (std::next(cur_last) != std::end(direct_edges) && source(*cur_begin) == source(*std::next(cur_last))) continue;
-            std::sort(cur_begin, std::next(cur_last), 
+        std::vector<int> hot_pixels_times(hot_pixels.size());
+        for (auto edge : edges) {
+            hot_pixels_times[edge.first]++;
+            hot_pixels_times[edge.second]++;
+        }
+        std::vector<int> begin_location(hot_pixels.size());
+        std::exclusive_scan(std::begin(hot_pixels_times), std::end(hot_pixels_times), std::begin(begin_location), 0);
+        assert(edges.size() * 2 == hot_pixels_times.back() + begin_location.back());
+        auto current_location{begin_location};
+        for (std::size_t i = 0; i < edges.size(); i++) {
+            direct_edges[current_location[edges[i].first]++] = { true, i };
+            direct_edges[current_location[edges[i].second]++] = { false, i };
+        }
+        auto end_location{current_location};
+        assert(edges.size() * 2 == end_location.back());
+        for (std::size_t i = 0; i < hot_pixels.size(); i++) {
+            if (end_location[i] - begin_location[i] < 3) continue;
+            auto begin = std::begin(direct_edges);
+            std::sort(begin + begin_location[i], begin + end_location[i],
                 [&](auto i1, auto i2) {
                     return get_direction(i1) < get_direction(i2);
                 }
             );
-
-            cur_begin = std::next(cur_last);
         }
     }
     log_done_time("sort direct edges");
