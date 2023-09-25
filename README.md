@@ -15,3 +15,5 @@ A basic code and test have been write already, still need do:
 4. use a precise big number library (like gmp) to write the snap rounding realting geometry algorithms.
 5. add more unit test, and migrate to gtest framework.
 6. it will be a head only lib based on other libs, but will try use cmake to organize the lib.
+7. may group by bounding box first and calculate graph connected component firstly.
+8. only support add now, need support other boolean operation and test.
