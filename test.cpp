@@ -664,6 +664,18 @@ void test_union(std::string first_s, std::string second_s, std::string ret_s) {
     assert(bg::equals(add(first, second), ret));
 }
 
+void test_union_rectangle(int n) {
+    multi_polygon first, second;
+    for(int i = 0; i < n; i++) {
+        first.emplace_back(polygon{{{0 + 2 * i, 0 + 2 * i}, {0 + 2 * i, 2 + 2 * i}, {2 + 2 * i, 2 + 2 * i}, {2 + 2 * i, 0 + 2 * i}, {0 + 2 * i, 0 + 2 * i}}});
+        second.emplace_back(polygon{{{1 + 2 * i, 1 + 2 * i}, {1 + 2 * i, 3 + 2 * i}, {3 + 2 * i, 3 + 2 * i}, {3 + 2 * i, 1 + 2 * i}, {1 + 2 * i, 1 + 2 * i}}});
+    }
+    assert(bg::is_valid(first));
+    assert(bg::is_valid(second));
+    auto ret = add(first, second);
+    assert(bg::is_valid(ret));
+    assert(bg::area(ret) == 1 + 6 * n);
+}
 
 int main()
 {
