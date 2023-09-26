@@ -628,6 +628,18 @@ void test_union(std::string first_s, std::string second_s, std::string ret_s) {
     assert(bg::equals(add(first, second), ret));
 }
 
+void test_union(std::string first_s, std::string second_s, std::string ret_s) {
+    multi_polygon first, second, ret;
+    bg::read_wkt(first_s, first);
+    assert(bg::is_valid(first));
+    bg::read_wkt(second_s, second);
+    assert(bg::is_valid(second));
+    bg::read_wkt(ret_s, ret);
+    assert(bg::is_valid(ret));
+    std::cout << bg::wkt(add(first, second)) << std::endl;
+    assert(bg::equals(add(first, second), ret));
+}
+
 void test_union_rectangle(int size) {
     using namespace std::chrono_literals;
     multi_polygon first, second;
@@ -640,7 +652,7 @@ void test_union_rectangle(int size) {
     assert(bg::is_valid(second));
     auto ret = add(first, second);
     assert(bg::is_valid(ret));
-    assert(bg::area(ret) == 1 + 6 * n);
+    assert(bg::area(ret) == 1 + 6 * size);
     auto after = std::chrono::system_clock::now();
     std::cout << "benchmark size = " << size << ", total runtime: " << (after - before) / 1s << "s" << std::endl;
 }
@@ -651,12 +663,11 @@ void test_self_or_rectangle(int size) {
     for (int i = 0; i < size; i++) {
         poly.emplace_back(polygon{ {{0 + i, 0 + i}, {0 + i, 2 + i}, {2 + i, 2 + i}, {2 + i, 0 + i}, {0 + i, 0 + i}} });
     }
-    assert(bg::is_valid(poly));
-    assert(bg::is_valid(second));
     auto before = std::chrono::system_clock::now();
+    std::cout << bg::wkt(poly) << std::endl;
     auto ret = self_or(poly);
     assert(bg::is_valid(ret));
-    assert(bg::area(ret) == 1 + 3 * n);
+    assert(bg::area(ret) == 1 + 3 * size);
     auto after = std::chrono::system_clock::now();
     std::cout << "benchmark size = " << size << ", total runtime: " << (after - before) / 1s << "s" << std::endl;
 }
