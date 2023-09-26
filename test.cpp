@@ -640,7 +640,7 @@ void test_union_rectangle(int size) {
     assert(bg::is_valid(second));
     auto ret = add(first, second);
     assert(bg::is_valid(ret));
-    assert(bg::area(ret) == 1 + 6 * size);
+    assert(bg::area(ret) == (1 + 6 * size));
     auto after = std::chrono::system_clock::now();
     std::cout << "benchmark size = " << size << ", total runtime: " << (after - before) / 1s << "s" << std::endl;
 }
@@ -655,7 +655,7 @@ void test_self_or_rectangle(int size) {
     std::cout << bg::wkt(poly) << std::endl;
     auto ret = self_or(poly);
     assert(bg::is_valid(ret));
-    assert(bg::area(ret) == 1 + 3 * size);
+    assert(bg::area(ret) == (1 + 3 * size));
     auto after = std::chrono::system_clock::now();
     std::cout << "benchmark size = " << size << ", total runtime: " << (after - before) / 1s << "s" << std::endl;
 }
