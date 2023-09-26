@@ -628,18 +628,6 @@ void test_union(std::string first_s, std::string second_s, std::string ret_s) {
     assert(bg::equals(add(first, second), ret));
 }
 
-void test_union(std::string first_s, std::string second_s, std::string ret_s) {
-    multi_polygon first, second, ret;
-    bg::read_wkt(first_s, first);
-    assert(bg::is_valid(first));
-    bg::read_wkt(second_s, second);
-    assert(bg::is_valid(second));
-    bg::read_wkt(ret_s, ret);
-    assert(bg::is_valid(ret));
-    std::cout << bg::wkt(add(first, second)) << std::endl;
-    assert(bg::equals(add(first, second), ret));
-}
-
 void test_union_rectangle(int size) {
     using namespace std::chrono_literals;
     multi_polygon first, second;
