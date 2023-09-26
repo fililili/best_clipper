@@ -560,7 +560,7 @@ auto add (const auto& ps1, const auto& ps2) {
     constexpr auto filter = [](auto cw_power) { return cw_power > 0; };
     return construct_multi_polygons(construct_rings(segs, filter));
 }
-auto self_or(ring r) {
+auto self_or(auto r) {
     std::vector<segment > segs;
     bg::for_each_segment(r,
         [&](const auto& seg) {
@@ -628,17 +628,37 @@ void test_union(std::string first_s, std::string second_s, std::string ret_s) {
     assert(bg::equals(add(first, second), ret));
 }
 
-void test_union_rectangle(int n) {
+void test_union_rectangle(int size) {
+    using namespace std::chrono_literals;
     multi_polygon first, second;
-    for(int i = 0; i < n; i++) {
-        first.emplace_back(polygon{{{0 + 2 * i, 0 + 2 * i}, {0 + 2 * i, 2 + 2 * i}, {2 + 2 * i, 2 + 2 * i}, {2 + 2 * i, 0 + 2 * i}, {0 + 2 * i, 0 + 2 * i}}});
-        second.emplace_back(polygon{{{1 + 2 * i, 1 + 2 * i}, {1 + 2 * i, 3 + 2 * i}, {3 + 2 * i, 3 + 2 * i}, {3 + 2 * i, 1 + 2 * i}, {1 + 2 * i, 1 + 2 * i}}});
+    for (int i = 0; i < size; i++) {
+        first.emplace_back(polygon{ {{0 + 2 * i, 0 + 2 * i}, {0 + 2 * i, 2 + 2 * i}, {2 + 2 * i, 2 + 2 * i}, {2 + 2 * i, 0 + 2 * i}, {0 + 2 * i, 0 + 2 * i}} });
+        second.emplace_back(polygon{ {{1 + 2 * i, 1 + 2 * i}, {1 + 2 * i, 3 + 2 * i}, {3 + 2 * i, 3 + 2 * i}, {3 + 2 * i, 1 + 2 * i}, {1 + 2 * i, 1 + 2 * i}} });
     }
+    auto before = std::chrono::system_clock::now();
     assert(bg::is_valid(first));
     assert(bg::is_valid(second));
     auto ret = add(first, second);
     assert(bg::is_valid(ret));
     assert(bg::area(ret) == 1 + 6 * n);
+    auto after = std::chrono::system_clock::now();
+    std::cout << "benchmark size = " << size << ", total runtime: " << (after - before) / 1s << "s" << std::endl;
+}
+
+void test_self_or_rectangle(int size) {
+    using namespace std::chrono_literals;
+    multi_polygon poly;
+    for (int i = 0; i < size; i++) {
+        poly.emplace_back(polygon{ {{0 + i, 0 + i}, {0 + i, 2 + i}, {2 + i, 2 + i}, {2 + i, 0 + i}, {0 + i, 0 + i}} });
+    }
+    assert(bg::is_valid(poly));
+    assert(bg::is_valid(second));
+    auto before = std::chrono::system_clock::now();
+    auto ret = self_or(poly);
+    assert(bg::is_valid(ret));
+    assert(bg::area(ret) == 1 + 3 * n);
+    auto after = std::chrono::system_clock::now();
+    std::cout << "benchmark size = " << size << ", total runtime: " << (after - before) / 1s << "s" << std::endl;
 }
 
 int main()
