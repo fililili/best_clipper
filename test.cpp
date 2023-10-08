@@ -420,7 +420,6 @@ auto construct_rings(const auto& segs, auto filter) {
         }
         cur_face_id++;
     }
-
     log_done_time("build faces");
 
     boost::container::flat_multimap<std::size_t, std::size_t> face_contain_relations;
@@ -446,50 +445,56 @@ auto construct_rings(const auto& segs, auto filter) {
             }
         }
     }
+    cw_faces.clear();
     log_done_time("build face contain relations");
 
-    std::vector<std::optional<int> > faces_cw_power(cur_face_id);
     std::vector<fake_bool> direct_edges_exist(direct_edges.size());
-    std::stack<std::pair<std::size_t, std::size_t> > stk;
-    faces_cw_power[0] = 0;
-    for (auto [b, e] = face_contain_relations.equal_range(0); b != e; b++) {
-        auto next_face_id = (*b).second;
-        if (!faces_cw_power[next_face_id]) {
-            faces_cw_power[next_face_id] = 0;
-            stk.push({ next_face_id, ccw_face_id_to_direct_edge_id[next_face_id] });
-        }
-    }
-    while (!stk.empty()) {
-        auto [cur_face_id, cur_first_direct_edge] = stk.top();
-        stk.pop();
-        for (auto [b, e] = face_contain_relations.equal_range(cur_face_id); b != e; b++) {
+    {
+        std::vector<std::optional<int> > faces_cw_power(cur_face_id);
+        std::stack<std::pair<std::size_t, std::size_t> > stk;
+        faces_cw_power[0] = 0;
+        for (auto [b, e] = face_contain_relations.equal_range(0); b != e; b++) {
             auto next_face_id = (*b).second;
             if (!faces_cw_power[next_face_id]) {
-                faces_cw_power[next_face_id] = faces_cw_power[cur_face_id];
+                faces_cw_power[next_face_id] = 0;
                 stk.push({ next_face_id, ccw_face_id_to_direct_edge_id[next_face_id] });
             }
         }
-
-        auto cur_direct_edge = cur_first_direct_edge;
-        do {
-            if (filter(faces_cw_power[cur_face_id].value())) direct_edges_exist[cur_direct_edge] = fake_bool::fake_true;
-            else direct_edges_exist[cur_direct_edge] = fake_bool::fake_false;
-
-            auto dual = get_dual(cur_direct_edge);
-            auto next_face_id = edges_face_id[dual];
-            if (!faces_cw_power[next_face_id]) {
-                faces_cw_power[next_face_id] = faces_cw_power[cur_face_id].value() + power(direct_edges[dual]);
-                stk.push({ next_face_id, dual });
+        while (!stk.empty()) {
+            auto [cur_face_id, cur_first_direct_edge] = stk.top();
+            stk.pop();
+            for (auto [b, e] = face_contain_relations.equal_range(cur_face_id); b != e; b++) {
+                auto next_face_id = (*b).second;
+                if (!faces_cw_power[next_face_id]) {
+                    faces_cw_power[next_face_id] = faces_cw_power[cur_face_id];
+                    stk.push({ next_face_id, ccw_face_id_to_direct_edge_id[next_face_id] });
+                }
             }
-            cur_direct_edge = next_direct_edges[cur_direct_edge];
-        } while (cur_direct_edge != cur_first_direct_edge);
+    
+            auto cur_direct_edge = cur_first_direct_edge;
+            do {
+                if (filter(faces_cw_power[cur_face_id].value())) direct_edges_exist[cur_direct_edge] = fake_bool::fake_true;
+                else direct_edges_exist[cur_direct_edge] = fake_bool::fake_false;
+    
+                auto dual = get_dual(cur_direct_edge);
+                auto next_face_id = edges_face_id[dual];
+                if (!faces_cw_power[next_face_id]) {
+                    faces_cw_power[next_face_id] = faces_cw_power[cur_face_id].value() + power(direct_edges[dual]);
+                    stk.push({ next_face_id, dual });
+                }
+                cur_direct_edge = next_direct_edges[cur_direct_edge];
+            } while (cur_direct_edge != cur_first_direct_edge);
+        }
     }
+    ccw_face_id_to_direct_edge_id.clear();
     log_done_time("traversal faces");
 
+    std::vector<std::pair<std::size_t, std::size_t> > face_connect_relations;
     for (auto&& [de1, de2] : direct_edge_pairs) {
-        if (direct_edges_exist[de1] == direct_edges_exist[de2]) {
+        if (direct_edges_exist[de1] == fake_bool::fake_true && direct_edges_exist[de2] == fake_bool::fake_true) {
             direct_edges_exist[de1] = fake_bool::fake_false;
             direct_edges_exist[de2] = fake_bool::fake_false;
+            face_connect_relations.emplace_back(edges_face_id[de1], edges_face_id[de2]);
             auto pre1 = pre_direct_edges[de1];
             auto pre2 = pre_direct_edges[de2];
             auto next1 = next_direct_edges[de1];
@@ -504,6 +509,70 @@ auto construct_rings(const auto& segs, auto filter) {
             next_direct_edges[de1] = de2;
             next_direct_edges[de2] = de1;
         }
+    }
+    
+    {
+        for(auto [face1, face2] : face_contain_relations) {
+            face_connect_relations.emplace_back(face1, face2);
+        }
+        for (auto& p : face_contain_relations) {
+            p = to_order(p);
+        }
+        std::vector<std::size_t> faces0(face_connect_relations.size());
+        std::vector<std::size_t> faces1(face_connect_relations.size());
+        for(std::size_t i = 0; i < face_connect_relations.size(); i++) {
+            faces0[i] = std::get<0>(face_connect_relations[i]);
+            faces1[i] = std::get<1>(face_connect_relations[i]);
+        }
+        std::sort(std::begin(faces0), std::end(faces0));
+        faces0.erase(std::unique(std::begin(faces0), std::end(faces0)), std::end(faces0));
+        std::sort(std::begin(faces1), std::end(faces1));
+        faces1.erase(std::unique(std::begin(faces1), std::end(faces1)), std::end(faces1));
+        std::vector<std::size_t> independ_faces;
+        std::set_difference(std::begin(faces0), std::end(faces0), std::begin(faces1), std::end(faces1),
+            std::inserter(independ_faces, std::begin(independ_faces)));
+        std::vector<std::size_t> faces_polygon_id(cur_face_id);
+        for(std::size_t i = 0; i < independ_faces.size(); i++) {
+            faces_polygon_id[independ_faces[i]] = i;
+        }
+        for (auto p : face_connect_relations) {
+            faces_polygon_id[std::get<1>(p)] = faces_polygon_id[std::get<0>(p)];
+        }
+        std::vector<size_t> edges_polygon_id(edges_face_id.size());
+        for (std::size_t i = 0; i < edges_face_id.size(); i++) {
+            edges_polygon_id[i] = faces_polygon_id[edges_face_id[i]];
+        }
+        std::vector<std::vector<ring> > ret_polygons(independ_faces.size());
+        
+        /*
+        for (std::size_t i = 0; i < direct_edges_exist.size(); i++) {
+
+            if (direct_edges_exist[i] == fake_bool::fake_false) continue;
+
+            std::size_t cur_first_id = i;
+            ring r;
+            // ring is closed, need to push one duplicated point
+            r.push_back(hot_pixels[target(direct_edges[i])]);
+            direct_edges_exist[i] = fake_bool::fake_false;
+            do {
+                i = next_direct_edges[i];
+                r.push_back(hot_pixels[target(direct_edges[i])]);
+                direct_edges_exist[i] = fake_bool::fake_false;
+            } while (cur_first_id != i);
+            ret_polygons[edges_face_id[cur_first_id]].push_back(std::move(r));
+            cur_first_id = i;
+        }
+        
+        for (auto& polygon :ret_polygons) {
+            for(std::size_t i = 1; i < polygon.size(); i++) {
+                if (bg::area(polygon[i]) > 0) {
+                    auto temp = std::move(polygon[0]);
+                    polygon[0] = std::move(polygon[i]);
+                    polygon[i] = std::move(temp);
+                }
+            }
+        }
+        */
     }
 
     std::vector<ring> ret_rings;
