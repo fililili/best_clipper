@@ -144,7 +144,7 @@ auto construct_rings(const auto& segs, auto filter) {
     for (std::size_t i = 0; i < segs.size(); i++) {
         boxes[i] = { bg::return_envelope<box>(segs[i]), i };
     }
-    bg::index::rtree< std::pair<box, std::size_t>, bg::index::quadratic<128> > segs_box_rtree(boxes);
+    bg::index::rtree< std::pair<box, std::size_t>, bg::index::quadratic<128> > segs_box_rtree(std::move(boxes));
 
     std::vector<point> hot_pixels;
     hot_pixels.reserve(segs.size() * 2);
@@ -247,6 +247,8 @@ auto construct_rings(const auto& segs, auto filter) {
             }
         }
     }
+    segs_box_rtree.clear();
+    seg_pixel_pairs.clear();
     log_done_time("build edges");
 
     constexpr auto to_order = [](auto e) {
