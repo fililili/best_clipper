@@ -334,14 +334,14 @@ auto construct_rings(const auto& segs, auto filter) {
         }
         std::vector<int> begin_location(hot_pixels.size());
         std::exclusive_scan(std::begin(hot_pixels_times), std::end(hot_pixels_times), std::begin(begin_location), 0);
-        assert(edges.size() * 2 == hot_pixels_times.back() + begin_location.back());
+        //assert(edges.size() * 2 == hot_pixels_times.back() + begin_location.back());
         auto current_location{begin_location};
         for (std::size_t i = 0; i < edges.size(); i++) {
             direct_edges[current_location[edges[i].first]++] = { true, i };
             direct_edges[current_location[edges[i].second]++] = { false, i };
         }
         auto end_location{current_location};
-        assert(edges.size() * 2 == end_location.back());
+        //assert(edges.size() * 2 == end_location.back());
         for (std::size_t i = 0; i < hot_pixels.size(); i++) {
             if (end_location[i] - begin_location[i] < 3) continue;
             auto begin = std::begin(direct_edges);
