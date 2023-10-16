@@ -9,6 +9,7 @@
 #include <chrono>
 #include <string>
 #include <numeric>
+#include <type_traits>
 #include <boost/geometry.hpp>
 #include <boost/container/flat_map.hpp>
 
@@ -155,6 +156,21 @@ auto construct_face_graph() {
 
 }
 
+auto bucket_sort(auto vec, auto bucket_size, auto get_bucket, auto get_left) {
+    std::vector<int> times(bucket_size);
+    for (auto val : vec) {
+        times[get_bucket(val)]++;
+    }
+    std::vector<unsigned int> begin_location(times.size());
+    std::exclusive_scan(std::begin(times), std::end(times), std::begin(begin_location), 0);
+    std::vector<std::invoke_result_t<decltype(get_left), decltype(vec)::value_type> > left(vec.size());
+    auto current_location{ begin_location };
+    for (auto val : vec) {
+        left[current_location[get_bucket(val)]++] = get_left(val);
+    }
+    return std::tuple{ std::move(current_location), std::move(left) };
+}
+
 // construct a graph with edge property (power) by segs
 // segs should can create rings
 auto construct_rings(const auto& segs, auto filter) {
@@ -223,32 +239,24 @@ auto construct_rings(const auto& segs, auto filter) {
 
     std::vector<std::pair<std::size_t, std::size_t> > edges;
     {
-        std::vector<int> segs_times(segs.size());
-        for (auto [seg, _] : seg_pixel_pairs) {
-            segs_times[seg]++;
-        }
-        std::vector<int> begin_location(segs_times.size());
-        std::exclusive_scan(std::begin(segs_times), std::end(segs_times), std::begin(begin_location), 0);
-        decltype(seg_pixel_pairs) _seg_pixel_pairs{ seg_pixel_pairs.size() };
-        auto current_location{ begin_location };
-        for (std::size_t i = 0; i < seg_pixel_pairs.size(); i++) {
-            _seg_pixel_pairs[current_location[seg_pixel_pairs[i].first]++] = seg_pixel_pairs[i];
-        }
-        seg_pixel_pairs = std::move(_seg_pixel_pairs);
-        auto end_location{ current_location };
+        auto [segs_end_location, pixels] = bucket_sort(
+            seg_pixel_pairs,
+            segs.size(),
+            [](auto val) {return val.first; },
+            [](auto val) {return val.second; }
+        );
         for (std::size_t i = 0; i < segs.size(); i++) {
-            auto begin = std::begin(seg_pixel_pairs);
-            auto cur_begin = begin + begin_location[i];
-            auto cur_end = begin + end_location[i];
+            auto cur_begin = (i == 0) ? std::begin(pixels) : std::begin(pixels) + segs_end_location[i - 1];
+            auto cur_end = std::begin(pixels) + segs_end_location[i];
             auto cur_last = cur_end - 1;
             std::sort(cur_begin, cur_end,
                 [&](auto pi, auto pj) {
-                    return less_by_segment{ segs[i] }(hot_pixels[pi.second], hot_pixels[pj.second]);
+                    return less_by_segment{ segs[i] }(hot_pixels[pi], hot_pixels[pj]);
                 }
             );
 
             for (; cur_begin != cur_last; cur_begin++) {
-                edges.emplace_back(cur_begin->second, std::next(cur_begin)->second);
+                edges.emplace_back(*cur_begin, *std::next(cur_begin));
             }
         }
     }
