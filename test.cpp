@@ -131,6 +131,22 @@ bool is_point_on_segment(point p, segment s) {
     return true;
 }
 
+struct less_by_segment {
+    bool operator() (point p1, point p2) {
+        double x1 = bg::get<0>(p1);
+        double y1 = bg::get<1>(p1);
+        double x2 = bg::get<0>(p2);
+        double y2 = bg::get<1>(p2);
+        double x3 = bg::get<0, 0>(s);
+        double y3 = bg::get<0, 1>(s);
+        double x4 = bg::get<1, 0>(s);
+        double y4 = bg::get<1, 1>(s);
+
+        return (x2 - x1) * (x4 - x3) + (y2 - y1) * (y4 - y3) > 0;
+    }
+    segment s;
+};
+
 auto construct_graph() {
 
 }
@@ -204,25 +220,7 @@ auto construct_rings(const auto& segs, auto filter) {
     }
     log_done_time("find segs on hot_pixels");
 
-    // can be more precise
-    struct less_by_segment {
-        bool operator() (std::pair<std::size_t, std::size_t>  v1, std::pair<std::size_t, std::size_t>  v2) {
-            auto p1 = _hot_pixels[v1.second];
-            auto p2 = _hot_pixels[v2.second];
-            double x1 = bg::get<0>(p1);
-            double y1 = bg::get<1>(p1);
-            double x2 = bg::get<0>(p2);
-            double y2 = bg::get<1>(p2);
-            double x3 = bg::get<0, 0>(s);
-            double y3 = bg::get<0, 1>(s);
-            double x4 = bg::get<1, 0>(s);
-            double y4 = bg::get<1, 1>(s);
 
-            return (x2 - x1) * (x4 - x3) + (y2 - y1) * (y4 - y3) > 0;
-        }
-        segment s;
-        const std::vector<point>& _hot_pixels;
-    };
     std::vector<std::pair<std::size_t, std::size_t> > edges;
     {
         std::vector<int> segs_times(segs.size());
@@ -243,7 +241,11 @@ auto construct_rings(const auto& segs, auto filter) {
             auto cur_begin = begin + begin_location[i];
             auto cur_end = begin + end_location[i];
             auto cur_last = cur_end - 1;
-            std::sort(cur_begin, cur_end, less_by_segment{ segs[i], hot_pixels });
+            std::sort(cur_begin, cur_end,
+                [&](auto pi, auto pj) {
+                    return less_by_segment{ segs[i] }(hot_pixels[pi.second], hot_pixels[pj.second]);
+                }
+            );
 
             for (; cur_begin != cur_last; cur_begin++) {
                 edges.emplace_back(cur_begin->second, std::next(cur_begin)->second);
