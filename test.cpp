@@ -22,11 +22,6 @@ using ring = bg::model::ring<point>;
 using polygon = bg::model::polygon<point>;
 using multi_polygon = bg::model::multi_polygon<polygon>;
 
-enum class fake_bool {
-    fake_false,
-    fake_true
-};
-
 std::string get_time_string(auto t) {
     auto ti = std::chrono::system_clock::to_time_t(t);
     std::stringstream ss;
@@ -47,12 +42,12 @@ auto log_done_time(std::string work) {
 
 auto construct_multi_polygons(auto&& rings) {
     log_done_time("start of construct multi polygons");
-    std::vector<fake_bool> is_rings_cw(rings.size());
+    std::vector<bool> is_rings_cw(rings.size());
     for (std::size_t i = 0; i < rings.size(); i++) {
         if (bg::area(rings[i]) > 0)
-            is_rings_cw[i] = fake_bool::fake_true;
+            is_rings_cw[i] = true;
         else
-            is_rings_cw[i] = fake_bool::fake_false;
+            is_rings_cw[i] = false;
     }
     std::vector<std::pair<box, std::size_t>> cw_rings_box;
     multi_polygon ret;
@@ -61,7 +56,7 @@ auto construct_multi_polygons(auto&& rings) {
     cw_rings_box.reserve(rings.size());
     ret.reserve(rings.size());
     for (std::size_t i = 0; i < rings.size(); i++) {
-        if (is_rings_cw[i] == fake_bool::fake_true) {
+        if (is_rings_cw[i] == true) {
             cw_rings_box.emplace_back(bg::return_envelope<box>(rings[i]), ret.size());
             polygon poly{ std::move(rings[i]) };
             ret.emplace_back(std::move(poly));
@@ -71,7 +66,7 @@ auto construct_multi_polygons(auto&& rings) {
 
     bg::index::rtree< std::pair<box, std::size_t>, bg::index::quadratic<128> > rings_box_tree(cw_rings_box);
     for (std::size_t i = 0; i < rings.size(); i++) {
-        if (is_rings_cw[i] == fake_bool::fake_false) {
+        if (is_rings_cw[i] == false) {
             for (auto itr = rings_box_tree.qbegin(bg::index::contains(rings[i][0])); itr != rings_box_tree.qend(); ++itr) {
                 if (bg::relate(rings[i][0], bg::exterior_ring(ret[itr->second]), bg::de9im::static_mask<'T', 'F', 'F'>{})) {
                     bg::interior_rings(ret[itr->second]).emplace_back(std::move(rings[i]));
@@ -136,6 +131,14 @@ bool is_point_on_segment(point p, segment s) {
     return true;
 }
 
+auto construct_graph() {
+
+}
+
+auto construct_face_graph() {
+
+}
+
 // construct a graph with edge property (power) by segs
 // segs should can create rings
 auto construct_rings(const auto& segs, auto filter) {
@@ -166,7 +169,7 @@ auto construct_rings(const auto& segs, auto filter) {
 
     }
     log_done_time("find hot_pixels");
-    
+
     {
         std::sort(std::begin(hot_pixels), std::end(hot_pixels),
             [](auto p1, auto p2) {
@@ -180,7 +183,7 @@ auto construct_rings(const auto& segs, auto filter) {
         // reorder hot pixels to make memory cache better
         bg::index::rtree<point, bg::index::quadratic<128> > hot_pixels_rtree{ hot_pixels };
         hot_pixels = std::vector<point>{ std::begin(hot_pixels_rtree), std::end(hot_pixels_rtree) };
-        
+
     }
     log_done_time("order hot pixels");
 
@@ -228,20 +231,20 @@ auto construct_rings(const auto& segs, auto filter) {
         }
         std::vector<int> begin_location(segs_times.size());
         std::exclusive_scan(std::begin(segs_times), std::end(segs_times), std::begin(begin_location), 0);
-        decltype(seg_pixel_pairs) _seg_pixel_pairs{seg_pixel_pairs.size()};
-        auto current_location{begin_location};
+        decltype(seg_pixel_pairs) _seg_pixel_pairs{ seg_pixel_pairs.size() };
+        auto current_location{ begin_location };
         for (std::size_t i = 0; i < seg_pixel_pairs.size(); i++) {
             _seg_pixel_pairs[current_location[seg_pixel_pairs[i].first]++] = seg_pixel_pairs[i];
         }
         seg_pixel_pairs = std::move(_seg_pixel_pairs);
-        auto end_location{current_location};
+        auto end_location{ current_location };
         for (std::size_t i = 0; i < segs.size(); i++) {
             auto begin = std::begin(seg_pixel_pairs);
             auto cur_begin = begin + begin_location[i];
             auto cur_end = begin + end_location[i];
             auto cur_last = cur_end - 1;
-            std::sort(cur_begin, cur_end, less_by_segment{ segs[i], hot_pixels } );
-            
+            std::sort(cur_begin, cur_end, less_by_segment{ segs[i], hot_pixels });
+
             for (; cur_begin != cur_last; cur_begin++) {
                 edges.emplace_back(cur_begin->second, std::next(cur_begin)->second);
             }
@@ -326,7 +329,7 @@ auto construct_rings(const auto& segs, auto filter) {
         // never happen
         return std::pair{ quadrant::zero, 0.0 };
         };
-        
+
     std::vector<std::pair<bool, std::size_t> > direct_edges(edges.size() * 2);
     {
         std::vector<int> hot_pixels_times(hot_pixels.size());
@@ -337,12 +340,12 @@ auto construct_rings(const auto& segs, auto filter) {
         std::vector<int> begin_location(hot_pixels.size());
         std::exclusive_scan(std::begin(hot_pixels_times), std::end(hot_pixels_times), std::begin(begin_location), 0);
         //assert(edges.size() * 2 == hot_pixels_times.back() + begin_location.back());
-        auto current_location{begin_location};
+        auto current_location{ begin_location };
         for (std::size_t i = 0; i < edges.size(); i++) {
             direct_edges[current_location[edges[i].first]++] = { true, i };
             direct_edges[current_location[edges[i].second]++] = { false, i };
         }
-        auto end_location{current_location};
+        auto end_location{ current_location };
         //assert(edges.size() * 2 == end_location.back());
         for (std::size_t i = 0; i < hot_pixels.size(); i++) {
             if (end_location[i] - begin_location[i] < 3) continue;
@@ -438,7 +441,7 @@ auto construct_rings(const auto& segs, auto filter) {
             else {
                 for (; itr != faces_rtree.qend(); ++itr) {
                     if (bg::relate(p, cw_faces[itr->second].first, bg::de9im::static_mask<'T', 'F', 'F'>{})) {
-                        face_contain_relations.insert(std::pair<std::size_t, std::size_t>{ cw_faces[itr->second].second , face_id });
+                        face_contain_relations.insert(std::pair<std::size_t, std::size_t>{ cw_faces[itr->second].second, face_id });
                         break;
                     }
                 }
@@ -448,7 +451,7 @@ auto construct_rings(const auto& segs, auto filter) {
     cw_faces.clear();
     log_done_time("build face contain relations");
 
-    std::vector<fake_bool> direct_edges_exist(direct_edges.size());
+    std::vector<bool> direct_edges_exist(direct_edges.size());
     {
         std::vector<std::optional<int> > faces_cw_power(cur_face_id);
         std::stack<std::pair<std::size_t, std::size_t> > stk;
@@ -470,12 +473,12 @@ auto construct_rings(const auto& segs, auto filter) {
                     stk.push({ next_face_id, ccw_face_id_to_direct_edge_id[next_face_id] });
                 }
             }
-    
+
             auto cur_direct_edge = cur_first_direct_edge;
             do {
-                if (filter(faces_cw_power[cur_face_id].value())) direct_edges_exist[cur_direct_edge] = fake_bool::fake_true;
-                else direct_edges_exist[cur_direct_edge] = fake_bool::fake_false;
-    
+                if (filter(faces_cw_power[cur_face_id].value())) direct_edges_exist[cur_direct_edge] = true;
+                else direct_edges_exist[cur_direct_edge] = false;
+
                 auto dual = get_dual(cur_direct_edge);
                 auto next_face_id = edges_face_id[dual];
                 if (!faces_cw_power[next_face_id]) {
@@ -490,9 +493,9 @@ auto construct_rings(const auto& segs, auto filter) {
     log_done_time("traversal faces");
 
     for (auto&& [de1, de2] : direct_edge_pairs) {
-        if (direct_edges_exist[de1] == fake_bool::fake_true && direct_edges_exist[de2] == fake_bool::fake_true) {
-            direct_edges_exist[de1] = fake_bool::fake_false;
-            direct_edges_exist[de2] = fake_bool::fake_false;
+        if (direct_edges_exist[de1] == true && direct_edges_exist[de2] == true) {
+            direct_edges_exist[de1] = false;
+            direct_edges_exist[de2] = false;
             auto pre1 = pre_direct_edges[de1];
             auto pre2 = pre_direct_edges[de2];
             auto next1 = next_direct_edges[de1];
@@ -511,20 +514,20 @@ auto construct_rings(const auto& segs, auto filter) {
 
     std::vector<ring> ret_rings;
     {
-        
+
         for (std::size_t i = 0; i < direct_edges_exist.size(); i++) {
 
-            if (direct_edges_exist[i] == fake_bool::fake_false) continue;
+            if (direct_edges_exist[i] == false) continue;
 
             std::size_t cur_first_id = i;
             ring r;
             // ring is closed, need to push one duplicated point
             r.push_back(hot_pixels[target(direct_edges[i])]);
-            direct_edges_exist[i] = fake_bool::fake_false;
+            direct_edges_exist[i] = false;
             do {
                 i = next_direct_edges[i];
                 r.push_back(hot_pixels[target(direct_edges[i])]);
-                direct_edges_exist[i] = fake_bool::fake_false;
+                direct_edges_exist[i] = false;
             } while (cur_first_id != i);
             ret_rings.push_back(std::move(r));
             cur_first_id = i;
@@ -538,7 +541,7 @@ auto construct_rings(const auto& segs, auto filter) {
     return ret_rings; // graph
 }
 
-auto add (const auto& ps1, const auto& ps2) {
+auto add(const auto& ps1, const auto& ps2) {
     std::vector<segment > segs;
     segs.reserve(bg::num_segments(ps1) + bg::num_segments(ps2));
     bg::for_each_segment(ps1,
@@ -728,7 +731,7 @@ int main()
         "MULTIPOLYGON(((-1450 -1280, -1450 -800, -1200 -1000, -1000 -1280, -1450 -1280)))",
         "MULTIPOLYGON(((-1461 -786,-1442 -807,-1410 -832,-1389 -830,-1450 -775,-1061 -372,-720 -681,-1007 -702,-1005 -642,-1145 -830,-873 -855,-658 -741,-660 -736,-656 -740,-561 -689,-535 -717,-497 -747,-634 -790,-642 -773,-666 -800,-849 -858,-748 -867,-807 -964,-1012 -1200,-913 -1136,-956 -1205,-1026 -1244,-1000 -1280,-1450 -1280,-1450 -1023,-1608 -939,-1461 -786),(-1228 -977,-1244 -963,-1245 -964,-1228 -977),(-1123 -1108,-1058 -1133,-1193 -1009,-1123 -1108)),((-178 -1224,-344 -907,-361 -853,-84 -1068,273 -1394,61 -1669,-438 -1425,-178 -1224)),((-378 -839,-376 -844,-380 -838,-378 -839)))"
     );
-        
+
 
     return 0;
 }
