@@ -168,7 +168,7 @@ auto bucket_sort(auto vec, auto bucket_size, auto get_bucket, auto get_left) {
     for (auto val : vec) {
         left[current_location[get_bucket(val)]++] = get_left(val);
     }
-    return std::tuple{ std::move(current_location), std::move(left) };
+    return std::tuple{ std::move(begin_location), std::move(current_location), std::move(left) };
 }
 
 // construct a graph with edge property (power) by segs
@@ -239,14 +239,14 @@ auto construct_rings(const auto& segs, auto filter) {
 
     std::vector<std::pair<std::size_t, std::size_t> > edges;
     {
-        auto [segs_end_location, pixels] = bucket_sort(
+        auto [segs_begin_location, segs_end_location, pixels] = bucket_sort(
             seg_pixel_pairs,
             segs.size(),
             [](auto val) {return val.first; },
             [](auto val) {return val.second; }
         );
         for (std::size_t i = 0; i < segs.size(); i++) {
-            auto cur_begin = (i == 0) ? std::begin(pixels) : std::begin(pixels) + segs_end_location[i - 1];
+            auto cur_begin = std::begin(pixels) + segs_begin_location[i];
             auto cur_end = std::begin(pixels) + segs_end_location[i];
             auto cur_last = cur_end - 1;
             std::sort(cur_begin, cur_end,
