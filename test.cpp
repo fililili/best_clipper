@@ -335,10 +335,10 @@ auto construct_face_graph(auto duplicated_edges) {
 // construct a graph with edge property (power) by segs
 // segs should can create rings
 auto construct_rings(auto segs, auto filter) {
-    auto [edges, hot_pixels] = construct_graph(segs);
+    auto [edges, hot_pixels] = construct_graph(std::move(segs));
     auto edges_with_power =
         unique_edges(
-            sort_edges(edges_direction_to_power(edges), hot_pixels.size()),
+            sort_edges(edges_direction_to_power(std::move(edges) ), hot_pixels.size()),
             [](auto e1, auto e2) {
                 return std::tuple{ std::get<0>(e1), std::get<1>(e1), std::get<2>(e1) + std::get<2>(e2) };
             }
