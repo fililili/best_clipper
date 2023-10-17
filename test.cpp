@@ -148,13 +148,26 @@ struct less_by_segment {
     segment s;
 };
 
-auto construct_graph() {
-
-}
-
-auto construct_face_graph() {
-
-}
+auto get_direction(point v1, point v2) {
+    // can be more precise
+    double dx = bg::get<0>(v2) - bg::get<0>(v1);
+    double dy = bg::get<1>(v2) - bg::get<1>(v1);
+    enum class quadrant { _1, _2, _3, _4, zero };
+    if (dx > 0 && dy >= 0) {
+        return std::pair{ quadrant::_1, dy / dx };
+    }
+    else if (dx <= 0 && dy > 0) {
+        return std::pair{ quadrant::_2, -dx / dy };
+    }
+    else if (dx < 0 && dy <= 0) {
+        return std::pair{ quadrant::_3, dy / dx };
+    }
+    else if (dx >= 0 && dy < 0) {
+        return std::pair{ quadrant::_4, -dx / dy };
+    }
+    // never happen
+    return std::pair{ quadrant::zero, 0.0 };
+};
 
 auto bucket_sort(auto vec, auto bucket_size, auto get_bucket, auto get_left) {
     std::vector<int> times(bucket_size);
@@ -171,10 +184,8 @@ auto bucket_sort(auto vec, auto bucket_size, auto get_bucket, auto get_left) {
     return std::tuple{ std::move(begin_location), std::move(current_location), std::move(left) };
 }
 
-// construct a graph with edge property (power) by segs
-// segs should can create rings
-auto construct_rings(const auto& segs, auto filter) {
-    log_done_time("start of construct_rings");
+auto construct_graph(auto segs) {
+    log_done_time("start of construct_graph");
     std::vector<std::pair<box, std::size_t>> boxes(segs.size());
     for (std::size_t i = 0; i < segs.size(); i++) {
         boxes[i] = { bg::return_envelope<box>(segs[i]), i };
@@ -237,7 +248,157 @@ auto construct_rings(const auto& segs, auto filter) {
     log_done_time("find segs on hot_pixels");
 
 
-    std::vector<std::pair<std::size_t, std::size_t> > edges;
+    std::vector<std::tuple<std::size_t, std::size_t> > edges;
+    {
+        auto [segs_begin_location, segs_end_location, pixels] = bucket_sort(
+            seg_pixel_pairs,
+            segs.size(),
+            [](auto val) {return val.first; },
+            [](auto val) {return val.second; }
+        );
+        for (std::size_t i = 0; i < segs.size(); i++) {
+            auto cur_begin = std::begin(pixels) + segs_begin_location[i];
+            auto cur_end = std::begin(pixels) + segs_end_location[i];
+            auto cur_last = cur_end - 1;
+            std::sort(cur_begin, cur_end,
+                [&](auto pi, auto pj) {
+                    return less_by_segment{ segs[i] }(hot_pixels[pi], hot_pixels[pj]);
+                }
+            );
+
+            for (; cur_begin != cur_last; cur_begin++) {
+                edges.emplace_back(*cur_begin, *std::next(cur_begin));
+            }
+        }
+    }
+    log_done_time("build edges");
+    return std::tuple{std::move(edges), std::move(hot_pixels)};
+}
+
+auto edges_direction_to_power(auto edges) {
+    using edge_t = typename decltype(edges)::value_type;
+    using new_edge_t = decltype(std::tuple_cat(std::declval<edge_t>(), std::tuple<int>{} ) ) ;
+    std::vector<new_edge_t> ret(edges.size());
+    for(std::size_t i = 0; i < ret.size(); i++) {
+        ret[i] = std::tuple_cat(edges[i], std::tuple{1});
+        auto& v1 = std::get<0>(ret[i]);
+        auto& v2 = std::get<1>(ret[i]);
+        if (v1 < v2) {
+            std::get<std::tuple_size<new_edge_t>() - 1>(ret[i]) = 1;
+        }
+        else {
+            std::swap(v1, v2);
+            std::get<std::tuple_size<new_edge_t>() - 1>(ret[i]) = -1;
+        }
+    }
+    return ret;
+}
+
+auto sort_edges(auto edges, auto vertex_number) {
+    auto [begin_location, end_location, ordered_double_edges] = bucket_sort(
+        std::move(edges),
+        vertex_number,
+        [](auto val) { return std::get<0>(val); },
+        [](auto val) { return val; }
+    );
+    for (std::size_t i = 0; i < vertex_number; i++) {
+        auto cur_begin = std::begin(edges) + begin_location[i];
+        auto cur_end = std::begin(edges) + end_location[i];
+        std::sort(cur_begin, cur_end, [](auto e1, auto e2) { return std::get<1>(e1) < std::get<1>(e2); });
+    }
+}
+
+auto unique_edges(auto edges, auto merge_func) {
+    auto cur_begin = std::begin(edges);
+    auto cur_end = cur_begin;
+    constexpr auto equal = [](auto e1, auto e2) {
+        return std::get<0>(e1) == std::get<0>(e2) && std::get<1>(e1) == std::get<1>(e2);
+    };
+    auto cur_result = cur_begin;
+    while(cur_begin != std::end(edges)) {
+        if (cur_end == std::end(edges) || !equal(*cur_begin, *cur_end) ) {
+            cur_result++ = std::reduce(std::next(cur_begin), cur_begin, *cur_begin, merge_func);
+            cur_begin = cur_end;
+        }
+        else {
+            cur_end++;
+        }
+    }
+    edges.erase(cur_result, std::end(edges));
+    return std::move(edges);
+}
+
+auto construct_face_graph(auto duplicated_edges) {
+}
+
+// construct a graph with edge property (power) by segs
+// segs should can create rings
+auto construct_rings(const auto& segs, auto filter) {
+    //construct_graph(segs);
+    log_done_time("start of construct_rings");
+    std::vector<std::pair<box, std::size_t>> boxes(segs.size());
+    for (std::size_t i = 0; i < segs.size(); i++) {
+        boxes[i] = { bg::return_envelope<box>(segs[i]), i };
+    }
+    bg::index::rtree< std::pair<box, std::size_t>, bg::index::quadratic<128> > segs_box_rtree(std::move(boxes));
+
+    std::vector<point> hot_pixels;
+    hot_pixels.reserve(segs.size() * 2);
+
+    for (const auto& seg : segs) {
+        hot_pixels.emplace_back(bg::get<0, 0>(seg), bg::get<0, 1>(seg));
+    }
+
+    log_done_time("build segs rtree");
+    for (std::size_t i = 0; i < segs.size(); i++) {
+        std::for_each(segs_box_rtree.qbegin(bg::index::intersects(boxes[i].first)), segs_box_rtree.qend(),
+            [&](auto const& other_seg) {
+                std::optional<point> p = get_intersection(segs[i], segs[other_seg.second]); // find other_seg seg intersection
+                if (p) {
+                    hot_pixels.push_back(p.value());
+                }
+            }
+        );
+    }
+    
+    log_done_time("find hot_pixels");
+
+    {
+        std::sort(std::begin(hot_pixels), std::end(hot_pixels),
+            [](auto p1, auto p2) {
+                // can dig more to see if we can use a better sort algorithm to better order pixels
+                return std::pair{ bg::get<0>(p1), bg::get<1>(p1) } < std::pair{ bg::get<0>(p2), bg::get<1>(p2) };
+            }
+        ); // need define a better one
+        auto last = std::unique(std::begin(hot_pixels), std::end(hot_pixels), [](auto p1, auto p2) { return bg::equals(p1, p2); });
+        hot_pixels.erase(last, hot_pixels.end());
+
+        // reorder hot pixels to make memory cache better
+        bg::index::rtree<point, bg::index::quadratic<128> > hot_pixels_rtree{ hot_pixels };
+        hot_pixels = std::vector<point>{ std::begin(hot_pixels_rtree), std::end(hot_pixels_rtree) };
+
+    }
+    log_done_time("order hot pixels");
+
+    std::vector<std::pair<std::size_t, std::size_t> > seg_pixel_pairs;
+    for (std::size_t i = 0; i < hot_pixels.size(); i++) {
+        constexpr auto expand = 1;
+        auto min_corner = point{ bg::get<0>(hot_pixels[i]) - expand, bg::get<1>(hot_pixels[i]) - expand };
+        auto max_corner = point{ bg::get<0>(hot_pixels[i]) + expand, bg::get<1>(hot_pixels[i]) + expand };
+
+        std::for_each(segs_box_rtree.qbegin(bg::index::intersects(box{ min_corner, max_corner })), segs_box_rtree.qend(),
+            [&](auto const& val) {
+                if (is_point_on_segment(hot_pixels[i], segs[val.second])) {
+                    seg_pixel_pairs.emplace_back(val.second, i);
+                }
+            }
+        );
+
+    }
+    log_done_time("find segs on hot_pixels");
+
+
+    std::vector<std::tuple<std::size_t, std::size_t> > edges;
     {
         auto [segs_begin_location, segs_end_location, pixels] = bucket_sort(
             seg_pixel_pairs,
@@ -307,53 +468,33 @@ auto construct_rings(const auto& segs, auto filter) {
     log_done_time("build edges power");
 
     auto source = [&](auto de) {
-        if (de.first) return edges[de.second].first;
-        else return edges[de.second].second;
+        if (de.first) return std::get<0>(edges[de.second]);
+        else return std::get<1>(edges[de.second]);
         };
     auto target = [&](auto de) {
-        if (de.first) return edges[de.second].second;
-        else return edges[de.second].first;
+        if (de.first) return std::get<1>(edges[de.second]);
+        else return std::get<0>(edges[de.second]);
         };
     auto power = [&](auto de) {
         if (de.first) return edges_power[de.second];
         else return -edges_power[de.second];
         };
 
-    auto get_direction = [&](auto i) {
-        // can be more precise
-        double dx = bg::get<0>(hot_pixels[target(i)]) - bg::get<0>(hot_pixels[source(i)]);
-        double dy = bg::get<1>(hot_pixels[target(i)]) - bg::get<1>(hot_pixels[source(i)]);
-        enum class quadrant { _1, _2, _3, _4, zero };
-        if (dx > 0 && dy >= 0) {
-            return std::pair{ quadrant::_1, dy / dx };
-        }
-        else if (dx <= 0 && dy > 0) {
-            return std::pair{ quadrant::_2, -dx / dy };
-        }
-        else if (dx < 0 && dy <= 0) {
-            return std::pair{ quadrant::_3, dy / dx };
-        }
-        else if (dx >= 0 && dy < 0) {
-            return std::pair{ quadrant::_4, -dx / dy };
-        }
-        // never happen
-        return std::pair{ quadrant::zero, 0.0 };
-        };
 
     std::vector<std::pair<bool, std::size_t> > direct_edges(edges.size() * 2);
     {
         std::vector<int> hot_pixels_times(hot_pixels.size());
         for (auto edge : edges) {
-            hot_pixels_times[edge.first]++;
-            hot_pixels_times[edge.second]++;
+            hot_pixels_times[std::get<0>(edge)]++;
+            hot_pixels_times[std::get<1>(edge)]++;
         }
         std::vector<int> begin_location(hot_pixels.size());
         std::exclusive_scan(std::begin(hot_pixels_times), std::end(hot_pixels_times), std::begin(begin_location), 0);
         //assert(edges.size() * 2 == hot_pixels_times.back() + begin_location.back());
         auto current_location{ begin_location };
         for (std::size_t i = 0; i < edges.size(); i++) {
-            direct_edges[current_location[edges[i].first]++] = { true, i };
-            direct_edges[current_location[edges[i].second]++] = { false, i };
+            direct_edges[current_location[std::get<0>(edges[i])]++] = { true, i };
+            direct_edges[current_location[std::get<1>(edges[i])]++] = { false, i };
         }
         auto end_location{ current_location };
         //assert(edges.size() * 2 == end_location.back());
@@ -362,7 +503,7 @@ auto construct_rings(const auto& segs, auto filter) {
             auto begin = std::begin(direct_edges);
             std::sort(begin + begin_location[i], begin + end_location[i],
                 [&](auto i1, auto i2) {
-                    return get_direction(i1) < get_direction(i2);
+                    return get_direction(hot_pixels[source(i1)], hot_pixels[target(i1)]) < get_direction(hot_pixels[source(i2)], hot_pixels[target(i2)]);
                 }
             );
         }
