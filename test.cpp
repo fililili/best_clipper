@@ -163,7 +163,7 @@ auto bucket_sort(auto vec, auto bucket_size, auto get_bucket, auto get_left) {
     }
     std::vector<unsigned int> begin_location(times.size());
     std::exclusive_scan(std::begin(times), std::end(times), std::begin(begin_location), 0);
-    std::vector<std::invoke_result_t<decltype(get_left), decltype(vec)::value_type> > left(vec.size());
+    std::vector<std::invoke_result_t<decltype(get_left), typename decltype(vec)::value_type> > left(vec.size());
     auto current_location{ begin_location };
     for (auto val : vec) {
         left[current_location[get_bucket(val)]++] = get_left(val);
