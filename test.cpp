@@ -361,25 +361,22 @@ auto construct_rings(auto segs, auto filter) {
         else return -std::get<2>(edges_with_power[de.second]);
         };
 
-    std::vector<std::pair<bool, std::size_t> > direct_edges(edges_with_power.size() * 2);
+    std::vector<std::pair<bool, std::size_t> > duplicated_edges(edges_with_power.size() * 2);
     {
-        std::vector<int> hot_pixels_times(hot_pixels.size());
-        for (auto edge : edges_with_power) {
-            hot_pixels_times[std::get<0>(edge)]++;
-            hot_pixels_times[std::get<1>(edge)]++;
-        }
-        std::vector<int> begin_location(hot_pixels.size());
-        std::exclusive_scan(std::begin(hot_pixels_times), std::end(hot_pixels_times), std::begin(begin_location), 0);
-        auto current_location{ begin_location };
         for (std::size_t i = 0; i < edges_with_power.size(); i++) {
-            direct_edges[current_location[std::get<0>(edges_with_power[i])]++] = { true, i };
-            direct_edges[current_location[std::get<1>(edges_with_power[i])]++] = { false, i };
+            duplicated_edges[2 * i] = { true, i };
+            duplicated_edges[2 * i + 1] = { false, i };
         }
-        auto end_location{ current_location };
-        //assert(edges.size() * 2 == end_location.back());
+        auto [begin_location, end_location, _duplicated_edges] = bucket_sort(
+            std::move(duplicated_edges),
+            hot_pixels.size(),
+            [&](auto de) { return source(de); },
+            [&](auto de) { return de; }
+        );
+        duplicated_edges = std::move(_duplicated_edges);
         for (std::size_t i = 0; i < hot_pixels.size(); i++) {
             if (end_location[i] - begin_location[i] < 3) continue;
-            auto begin = std::begin(direct_edges);
+            auto begin = std::begin(duplicated_edges);
             std::sort(begin + begin_location[i], begin + end_location[i],
                 [&](auto i1, auto i2) {
                     return get_direction(hot_pixels[source(i1)], hot_pixels[target(i1)]) < get_direction(hot_pixels[source(i2)], hot_pixels[target(i2)]);
@@ -390,34 +387,34 @@ auto construct_rings(auto segs, auto filter) {
     log_done_time("sort direct edges");
 
     std::vector<std::pair<std::size_t, std::size_t> > direct_edge_pairs(edges_with_power.size());
-    for (std::size_t i = 0; i < direct_edges.size(); i++) {
-        if (direct_edges[i].first) direct_edge_pairs[direct_edges[i].second].second = i;
-        else direct_edge_pairs[direct_edges[i].second].first = i;
+    for (std::size_t i = 0; i < duplicated_edges.size(); i++) {
+        if (duplicated_edges[i].first) direct_edge_pairs[duplicated_edges[i].second].second = i;
+        else direct_edge_pairs[duplicated_edges[i].second].first = i;
     }
     auto get_dual = [&](auto i) {
-        if (direct_edges[i].first) {
-            return direct_edge_pairs[direct_edges[i].second].first;
+        if (duplicated_edges[i].first) {
+            return direct_edge_pairs[duplicated_edges[i].second].first;
         }
         else {
-            return direct_edge_pairs[direct_edges[i].second].second;
+            return direct_edge_pairs[duplicated_edges[i].second].second;
         }
         };
 
-    for (std::size_t i = 0; i < direct_edges.size(); i++) {
+    for (std::size_t i = 0; i < duplicated_edges.size(); i++) {
         auto dual = get_dual(i);
         //std::cout << "i = " << i << ", dual i = " << dual << std::endl;
     }
 
     // link direct edges, except the outer face, all faces are cw oriented
-    std::vector<std::size_t> next_direct_edges(direct_edges.size());
-    std::vector<std::size_t> pre_direct_edges(direct_edges.size());
+    std::vector<std::size_t> next_direct_edges(duplicated_edges.size());
+    std::vector<std::size_t> pre_direct_edges(duplicated_edges.size());
     {
         std::size_t cur_first = 0;
-        for (std::size_t i = 0; i < direct_edges.size(); i++) {
-            //std::cout << "source: " << source(direct_edges[i]) << ":  " << bg::wkt(hot_pixels[source(direct_edges[i])]) << "  ";
-            //std::cout << "target: " << target(direct_edges[i]) << ":  " << bg::wkt(hot_pixels[target(direct_edges[i])]) << "  ";
-            //std::cout << "power: " << power(direct_edges[i]) << std::endl;
-            if (i + 1 == direct_edges.size() || source(direct_edges[i + 1]) != source(direct_edges[cur_first])) {
+        for (std::size_t i = 0; i < duplicated_edges.size(); i++) {
+            //std::cout << "source: " << source(duplicated_edges[i]) << ":  " << bg::wkt(hot_pixels[source(duplicated_edges[i])]) << "  ";
+            //std::cout << "target: " << target(duplicated_edges[i]) << ":  " << bg::wkt(hot_pixels[target(duplicated_edges[i])]) << "  ";
+            //std::cout << "power: " << power(duplicated_edges[i]) << std::endl;
+            if (i + 1 == duplicated_edges.size() || source(duplicated_edges[i + 1]) != source(duplicated_edges[cur_first])) {
                 pre_direct_edges[cur_first] = get_dual(i);
                 next_direct_edges[get_dual(i)] = cur_first;
                 cur_first = i + 1;
@@ -430,20 +427,20 @@ auto construct_rings(auto segs, auto filter) {
     }
     log_done_time("connect direct edges");
 
-    std::vector<std::size_t> edges_face_id(direct_edges.size());
+    std::vector<std::size_t> edges_face_id(duplicated_edges.size());
     std::vector<std::pair<ring, std::size_t> > cw_faces;
     std::size_t cur_face_id = 1;
     boost::container::flat_map<std::size_t, std::size_t> ccw_face_id_to_direct_edge_id;
-    for (std::size_t i = 0; i < direct_edges.size(); i++) {
+    for (std::size_t i = 0; i < duplicated_edges.size(); i++) {
         if (edges_face_id[i] != 0) continue;
         auto cur_first_id = i;
         ring r;
         // ring is closed, need to push one duplicated point
-        r.push_back(hot_pixels[target(direct_edges[cur_first_id])]);
+        r.push_back(hot_pixels[target(duplicated_edges[cur_first_id])]);
         do {
             edges_face_id[i] = cur_face_id;
             i = next_direct_edges[i];
-            r.push_back(hot_pixels[target(direct_edges[i])]);
+            r.push_back(hot_pixels[target(duplicated_edges[i])]);
         } while (cur_first_id != i);
         if (bg::area(r) > 0) { // for cw orientation, the area > 0, may use more precise algorithm
             cw_faces.emplace_back(r, cur_face_id);
@@ -464,7 +461,7 @@ auto construct_rings(auto segs, auto filter) {
         }
         bg::index::rtree< std::pair<box, std::size_t>, bg::index::quadratic<128> > faces_rtree{ cw_faces_box };
         for (auto [face_id, direct_edge_id] : ccw_face_id_to_direct_edge_id) {
-            point p = hot_pixels[source(direct_edges[direct_edge_id])];
+            point p = hot_pixels[source(duplicated_edges[direct_edge_id])];
             auto itr = faces_rtree.qbegin(bg::index::contains(p));
             if (itr == faces_rtree.qend())
                 face_contain_relations.insert(std::pair<std::size_t, std::size_t>{ 0, face_id });
@@ -481,7 +478,7 @@ auto construct_rings(auto segs, auto filter) {
     cw_faces.clear();
     log_done_time("build face contain relations");
 
-    std::vector<bool> direct_edges_exist(direct_edges.size());
+    std::vector<bool> direct_edges_exist(duplicated_edges.size());
     {
         std::vector<std::optional<int> > faces_cw_power(cur_face_id);
         std::stack<std::pair<std::size_t, std::size_t> > stk;
@@ -512,7 +509,7 @@ auto construct_rings(auto segs, auto filter) {
                 auto dual = get_dual(cur_direct_edge);
                 auto next_face_id = edges_face_id[dual];
                 if (!faces_cw_power[next_face_id]) {
-                    faces_cw_power[next_face_id] = faces_cw_power[cur_face_id].value() + power(direct_edges[dual]);
+                    faces_cw_power[next_face_id] = faces_cw_power[cur_face_id].value() + power(duplicated_edges[dual]);
                     stk.push({ next_face_id, dual });
                 }
                 cur_direct_edge = next_direct_edges[cur_direct_edge];
@@ -552,11 +549,11 @@ auto construct_rings(auto segs, auto filter) {
             std::size_t cur_first_id = i;
             ring r;
             // ring is closed, need to push one duplicated point
-            r.push_back(hot_pixels[target(direct_edges[i])]);
+            r.push_back(hot_pixels[target(duplicated_edges[i])]);
             direct_edges_exist[i] = false;
             do {
                 i = next_direct_edges[i];
-                r.push_back(hot_pixels[target(direct_edges[i])]);
+                r.push_back(hot_pixels[target(duplicated_edges[i])]);
                 direct_edges_exist[i] = false;
             } while (cur_first_id != i);
             ret_rings.push_back(std::move(r));
