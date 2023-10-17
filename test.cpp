@@ -272,15 +272,15 @@ auto construct_graph(auto segs) {
         }
     }
     log_done_time("build edges");
-    return std::tuple{std::move(edges), std::move(hot_pixels)};
+    return std::tuple{ std::move(edges), std::move(hot_pixels) };
 }
 
 auto edges_direction_to_power(auto edges) {
     using edge_t = typename decltype(edges)::value_type;
-    using new_edge_t = decltype(std::tuple_cat(std::declval<edge_t>(), std::tuple<int>{} ) ) ;
+    using new_edge_t = decltype(std::tuple_cat(std::declval<edge_t>(), std::tuple<int>{}));
     std::vector<new_edge_t> ret(edges.size());
-    for(std::size_t i = 0; i < ret.size(); i++) {
-        ret[i] = std::tuple_cat(edges[i], std::tuple{1});
+    for (std::size_t i = 0; i < ret.size(); i++) {
+        ret[i] = std::tuple_cat(edges[i], std::tuple{ 1 });
         auto& v1 = std::get<0>(ret[i]);
         auto& v2 = std::get<1>(ret[i]);
         if (v1 < v2) {
@@ -302,10 +302,11 @@ auto sort_edges(auto edges, auto vertex_number) {
         [](auto val) { return val; }
     );
     for (std::size_t i = 0; i < vertex_number; i++) {
-        auto cur_begin = std::begin(edges) + begin_location[i];
-        auto cur_end = std::begin(edges) + end_location[i];
+        auto cur_begin = std::begin(ordered_double_edges) + begin_location[i];
+        auto cur_end = std::begin(ordered_double_edges) + end_location[i];
         std::sort(cur_begin, cur_end, [](auto e1, auto e2) { return std::get<1>(e1) < std::get<1>(e2); });
     }
+    return std::move(ordered_double_edges);
 }
 
 auto unique_edges(auto edges, auto merge_func) {
@@ -313,11 +314,11 @@ auto unique_edges(auto edges, auto merge_func) {
     auto cur_end = cur_begin;
     constexpr auto equal = [](auto e1, auto e2) {
         return std::get<0>(e1) == std::get<0>(e2) && std::get<1>(e1) == std::get<1>(e2);
-    };
+        };
     auto cur_result = cur_begin;
-    while(cur_begin != std::end(edges)) {
-        if (cur_end == std::end(edges) || !equal(*cur_begin, *cur_end) ) {
-            cur_result++ = std::reduce(std::next(cur_begin), cur_begin, *cur_begin, merge_func);
+    while (cur_begin != std::end(edges)) {
+        if (cur_end == std::end(edges) || !equal(*cur_begin, *cur_end)) {
+            *cur_result++ = std::reduce(std::next(cur_begin), cur_end, *cur_begin, merge_func);
             cur_begin = cur_end;
         }
         else {
@@ -333,79 +334,46 @@ auto construct_face_graph(auto duplicated_edges) {
 
 // construct a graph with edge property (power) by segs
 // segs should can create rings
-auto construct_rings(const auto& segs, auto filter) {
+auto construct_rings(auto segs, auto filter) {
     auto [edges, hot_pixels] = construct_graph(segs);
-
-    constexpr auto to_order = [](auto e) {
-        return decltype(e){ (std::max)(std::get<0>(e), std::get<1>(e)), (std::min)(std::get<0>(e), std::get<1>(e)) };
-        };
-
-    std::sort(std::begin(edges), std::end(edges), [&](auto e1, auto e2) {
-        return to_order(e1) < to_order(e2);
-        }
+    auto edges_with_power =
+        unique_edges(
+            sort_edges(edges_direction_to_power(edges), hot_pixels.size()),
+            [](auto e1, auto e2) {
+                return std::tuple{ std::get<0>(e1), std::get<1>(e1), std::get<2>(e1) + std::get<2>(e2) };
+            }
     );
-
-    std::vector<int> edges_power(edges.size());
-    // remove duplicated edges and calculate edges power
-    {
-        std::size_t i = 0;
-        std::size_t j = 0;
-        auto cur_first = 0;
-        auto cur_power = 0;
-        for (std::size_t i = 0; i < edges.size(); i++) {
-            if (to_order(edges[i]) == edges[i]) {
-                cur_power += 1;
-            }
-            else {
-                cur_power -= 1;
-            }
-            if (i == edges.size() - 1 || to_order(edges[i + 1]) != to_order(edges[cur_first])) {
-                if (cur_power == 0) {
-                    cur_first = i + 1;
-                }
-                else {
-                    edges[j] = to_order(edges[i]);
-                    edges_power[j] = cur_power;
-                    cur_power = 0;
-                    j++;
-                    cur_first = i + 1;
-                }
-            }
-        }
-        edges.erase(std::begin(edges) + j, std::end(edges));
-        edges_power.erase(std::begin(edges_power) + j, std::end(edges_power));
-    }
-
-    log_done_time("build edges power");
+    std::erase_if(edges_with_power, [](auto edge_with_power) {
+        return (std::get<2>(edge_with_power) == 0);
+    });
+    log_done_time("calculate edge power");
 
     auto source = [&](auto de) {
-        if (de.first) return std::get<0>(edges[de.second]);
-        else return std::get<1>(edges[de.second]);
+        if (de.first) return std::get<0>(edges_with_power[de.second]);
+        else return std::get<1>(edges_with_power[de.second]);
         };
     auto target = [&](auto de) {
-        if (de.first) return std::get<1>(edges[de.second]);
-        else return std::get<0>(edges[de.second]);
+        if (de.first) return std::get<1>(edges_with_power[de.second]);
+        else return std::get<0>(edges_with_power[de.second]);
         };
     auto power = [&](auto de) {
-        if (de.first) return edges_power[de.second];
-        else return -edges_power[de.second];
+        if (de.first) return std::get<2>(edges_with_power[de.second]);
+        else return -std::get<2>(edges_with_power[de.second]);
         };
 
-
-    std::vector<std::pair<bool, std::size_t> > direct_edges(edges.size() * 2);
+    std::vector<std::pair<bool, std::size_t> > direct_edges(edges_with_power.size() * 2);
     {
         std::vector<int> hot_pixels_times(hot_pixels.size());
-        for (auto edge : edges) {
+        for (auto edge : edges_with_power) {
             hot_pixels_times[std::get<0>(edge)]++;
             hot_pixels_times[std::get<1>(edge)]++;
         }
         std::vector<int> begin_location(hot_pixels.size());
         std::exclusive_scan(std::begin(hot_pixels_times), std::end(hot_pixels_times), std::begin(begin_location), 0);
-        //assert(edges.size() * 2 == hot_pixels_times.back() + begin_location.back());
         auto current_location{ begin_location };
-        for (std::size_t i = 0; i < edges.size(); i++) {
-            direct_edges[current_location[std::get<0>(edges[i])]++] = { true, i };
-            direct_edges[current_location[std::get<1>(edges[i])]++] = { false, i };
+        for (std::size_t i = 0; i < edges_with_power.size(); i++) {
+            direct_edges[current_location[std::get<0>(edges_with_power[i])]++] = { true, i };
+            direct_edges[current_location[std::get<1>(edges_with_power[i])]++] = { false, i };
         }
         auto end_location{ current_location };
         //assert(edges.size() * 2 == end_location.back());
@@ -421,7 +389,7 @@ auto construct_rings(const auto& segs, auto filter) {
     }
     log_done_time("sort direct edges");
 
-    std::vector<std::pair<std::size_t, std::size_t> > direct_edge_pairs(edges.size());
+    std::vector<std::pair<std::size_t, std::size_t> > direct_edge_pairs(edges_with_power.size());
     for (std::size_t i = 0; i < direct_edges.size(); i++) {
         if (direct_edges[i].first) direct_edge_pairs[direct_edges[i].second].second = i;
         else direct_edge_pairs[direct_edges[i].second].first = i;
@@ -628,7 +596,7 @@ auto add(const auto& ps1, const auto& ps2) {
     );
 
     constexpr auto filter = [](auto cw_power) { return cw_power > 0; };
-    return construct_multi_polygons(construct_rings(segs, filter));
+    return construct_multi_polygons(construct_rings(std::move(segs), filter));
 }
 auto self_or(auto r) {
     std::vector<segment > segs;
@@ -642,7 +610,7 @@ auto self_or(auto r) {
             segs.emplace_back(s);
         }
     );
-    auto rings = construct_rings(segs, [](auto cw_power) { return cw_power > 0; });
+    auto rings = construct_rings(std::move(segs), [](auto cw_power) { return cw_power > 0; });
     auto ret = construct_multi_polygons(std::move(rings));
     return ret;
 }
