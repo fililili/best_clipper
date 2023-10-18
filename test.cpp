@@ -185,6 +185,7 @@ auto bucket_sort(auto vec, auto bucket_size, auto get_bucket, auto get_left) {
 }
 
 // std has adjacent find, but the function result is not continuous
+// it's better to use c++23 chunk_by
 auto not_adjacent_find(auto begin, auto end, auto binary) {
     assert(begin != end);
     auto cur = begin;
@@ -420,19 +421,14 @@ auto construct_rings(auto segs, auto filter) {
     std::vector<std::size_t> next_direct_edges(duplicated_edges.size());
     std::vector<std::size_t> pre_direct_edges(duplicated_edges.size());
     {
-        std::size_t cur_first = 0;
-        for (std::size_t i = 0; i < duplicated_edges.size(); i++) {
-            //std::cout << "source: " << source(duplicated_edges[i]) << ":  " << bg::wkt(hot_pixels[source(duplicated_edges[i])]) << "  ";
-            //std::cout << "target: " << target(duplicated_edges[i]) << ":  " << bg::wkt(hot_pixels[target(duplicated_edges[i])]) << "  ";
-            //std::cout << "power: " << power(duplicated_edges[i]) << std::endl;
-            if (i + 1 == duplicated_edges.size() || source(duplicated_edges[i + 1]) != source(duplicated_edges[cur_first])) {
-                pre_direct_edges[cur_first] = get_dual(i);
-                next_direct_edges[get_dual(i)] = cur_first;
-                cur_first = i + 1;
-            }
-            else {
-                pre_direct_edges[i + 1] = get_dual(i);
-                next_direct_edges[get_dual(i)] = i + 1;
+        auto cur_begin = std::begin(duplicated_edges);
+        while(cur_begin != std::end(duplicated_edges)) {
+            auto cur_end = not_adjacent_find(cur_begin, std::end(duplicated_edges), [&](auto de1, auto de2) { return source(de1) == source(de2); });
+            pre_direct_edges[cur_begin - std::begin(duplicated_edges)] = get_dual(cur_end - 1 - std::begin(duplicated_edges));
+            next_direct_edges[get_dual(cur_end - 1 - std::begin(duplicated_edges))] = cur_begin - std::begin(duplicated_edges);
+            for (++cur_begin; cur_begin != cur_end; ++cur_begin) {
+                pre_direct_edges[cur_begin - std::begin(duplicated_edges)] = get_dual(cur_begin - 1 - std::begin(duplicated_edges));
+                next_direct_edges[get_dual(cur_begin - 1 - std::begin(duplicated_edges))] = cur_begin - std::begin(duplicated_edges);
             }
         }
     }
