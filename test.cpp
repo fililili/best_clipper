@@ -148,26 +148,29 @@ struct less_by_segment {
     segment s;
 };
 
-auto get_direction(point v1, point v2) {
-    // can be more precise
-    double dx = bg::get<0>(v2) - bg::get<0>(v1);
-    double dy = bg::get<1>(v2) - bg::get<1>(v1);
-    enum class quadrant { _1, _2, _3, _4, zero };
-    if (dx > 0 && dy >= 0) {
-        return std::pair{ quadrant::_1, dy / dx };
-    }
-    else if (dx <= 0 && dy > 0) {
-        return std::pair{ quadrant::_2, -dx / dy };
-    }
-    else if (dx < 0 && dy <= 0) {
-        return std::pair{ quadrant::_3, dy / dx };
-    }
-    else if (dx >= 0 && dy < 0) {
-        return std::pair{ quadrant::_4, -dx / dy };
-    }
-    // never happen
-    return std::pair{ quadrant::zero, 0.0 };
-};
+bool less_by_direction(point source, point target1, point target2) {
+    constexpr auto get_direction = [](point v1, point v2) {
+        // can be more precise
+        double dx = bg::get<0>(v2) - bg::get<0>(v1);
+        double dy = bg::get<1>(v2) - bg::get<1>(v1);
+        enum class quadrant { _1, _2, _3, _4, zero };
+        if (dx > 0 && dy >= 0) {
+            return std::pair{ quadrant::_1, dy / dx };
+        }
+        else if (dx <= 0 && dy > 0) {
+            return std::pair{ quadrant::_2, -dx / dy };
+        }
+        else if (dx < 0 && dy <= 0) {
+            return std::pair{ quadrant::_3, dy / dx };
+        }
+        else if (dx >= 0 && dy < 0) {
+            return std::pair{ quadrant::_4, -dx / dy };
+        }
+        // never happen
+        return std::pair{ quadrant::zero, 0.0 };
+    };
+    return get_direction(source, target1) < get_direction(source, target2);
+}
 
 auto bucket_sort(auto vec, auto bucket_size, auto get_bucket, auto get_left) {
     std::vector<int> times(bucket_size);
@@ -189,7 +192,7 @@ auto bucket_sort(auto vec, auto bucket_size, auto get_bucket, auto get_left) {
 auto not_adjacent_find(auto begin, auto end, auto binary) {
     assert(begin != end);
     auto cur = begin;
-    while(std::next(cur) != end) {
+    while (std::next(cur) != end) {
         if (binary(*cur, *std::next(cur))) {
             ++cur;
         }
@@ -329,7 +332,7 @@ auto unique_edges(auto edges, auto merge_func) {
     constexpr auto equal = [](auto e1, auto e2) {
         return std::get<0>(e1) == std::get<0>(e2) && std::get<1>(e1) == std::get<1>(e2);
         };
-        
+
     auto cur_begin = std::begin(edges);
     auto cur_result = cur_begin;
     while (cur_begin != std::end(edges)) {
@@ -341,6 +344,72 @@ auto unique_edges(auto edges, auto merge_func) {
     return std::move(edges);
 }
 
+struct duplicated_edge_t {
+    auto source(const auto& edges) {
+        if (reverse) {
+            return std::get<1>(edges[edge_index]);
+        }
+        else {
+            return std::get<0>(edges[edge_index]);
+        }
+    }
+    auto target(const auto& edges) {
+        if (reverse) {
+            return std::get<0>(edges[edge_index]);
+        }
+        else {
+            return std::get<1>(edges[edge_index]);
+        }
+    }
+    template <auto power_index>
+    auto power(const auto& edges) {
+        if (reverse) {
+            return -std::get<power_index>(edges[edge_index]);
+        }
+        else {
+            return -std::get<power_index>(edges[edge_index]);
+        }
+    }
+    auto index() {
+        if (reverse) {
+            return 2 * edge_index + 1;
+        }
+        else {
+            return 2 * edge_index;
+        }
+    }
+    std::size_t edge_index;
+    bool reverse;
+};
+
+auto construct_duplicated_edges(const auto& edges) {
+    std::vector<duplicated_edge_t> ret;
+    for (std::size_t i = 0; i < edges.size(); i++) {
+        ret[2 * i] = { true, i };
+        ret[2 * i + 1] = { false, i };
+    }
+    return ret;
+}
+
+auto sort_duplicated_edges(const auto& edges, const auto& hot_pixels, auto duplicated_edges) {
+    auto [begin_location, end_location, _duplicated_edges] = bucket_sort(
+        std::move(duplicated_edges),
+        hot_pixels.size(),
+        [&](auto de) { return de.source(edges); },
+        [&](auto de) { return de; }
+    );
+    duplicated_edges = std::move(_duplicated_edges);
+    for (std::size_t i = 0; i < hot_pixels.size(); i++) {
+        if (end_location[i] - begin_location[i] < 3) continue;
+        auto begin = std::begin(duplicated_edges);
+        std::sort(begin + begin_location[i], begin + end_location[i],
+            [&](auto i1, auto i2) {
+                return less_by_direction(hot_pixels[i], hot_pixels[i1.target(edges)], hot_pixels[i1.target(edges)]);
+            }
+        );
+    }
+}
+
 auto construct_face_graph(auto duplicated_edges) {
 }
 
@@ -350,14 +419,14 @@ auto construct_rings(auto segs, auto filter) {
     auto [edges, hot_pixels] = construct_graph(std::move(segs));
     auto edges_with_power =
         unique_edges(
-            sort_edges(edges_direction_to_power(std::move(edges) ), hot_pixels.size()),
+            sort_edges(edges_direction_to_power(std::move(edges)), hot_pixels.size()),
             [](auto e1, auto e2) {
                 return std::tuple{ std::get<0>(e1), std::get<1>(e1), std::get<2>(e1) + std::get<2>(e2) };
             }
     );
     std::erase_if(edges_with_power, [](auto edge_with_power) {
         return (std::get<2>(edge_with_power) == 0);
-    });
+        });
     log_done_time("calculate edge power");
 
     auto source = [&](auto de) {
@@ -391,7 +460,7 @@ auto construct_rings(auto segs, auto filter) {
             auto begin = std::begin(duplicated_edges);
             std::sort(begin + begin_location[i], begin + end_location[i],
                 [&](auto i1, auto i2) {
-                    return get_direction(hot_pixels[source(i1)], hot_pixels[target(i1)]) < get_direction(hot_pixels[source(i2)], hot_pixels[target(i2)]);
+                    return less_by_direction(hot_pixels[i], hot_pixels[target(i1)], hot_pixels[target(i2)] );
                 }
             );
         }
@@ -422,7 +491,7 @@ auto construct_rings(auto segs, auto filter) {
     std::vector<std::size_t> pre_direct_edges(duplicated_edges.size());
     {
         auto cur_begin = std::begin(duplicated_edges);
-        while(cur_begin != std::end(duplicated_edges)) {
+        while (cur_begin != std::end(duplicated_edges)) {
             auto cur_end = not_adjacent_find(cur_begin, std::end(duplicated_edges), [&](auto de1, auto de2) { return source(de1) == source(de2); });
             pre_direct_edges[cur_begin - std::begin(duplicated_edges)] = get_dual(cur_end - 1 - std::begin(duplicated_edges));
             next_direct_edges[get_dual(cur_end - 1 - std::begin(duplicated_edges))] = cur_begin - std::begin(duplicated_edges);
