@@ -602,6 +602,35 @@ auto add(const auto& ps1, const auto& ps2) {
     constexpr auto filter = [](auto cw_power) { return cw_power > 0; };
     return construct_multi_polygons(construct_rings(std::move(segs), filter));
 }
+
+auto intersection(const auto& ps1, const auto& ps2) {
+    std::vector<segment > segs;
+    segs.reserve(bg::num_segments(ps1) + bg::num_segments(ps2));
+    bg::for_each_segment(ps1,
+        [&](const auto& seg) {
+            segment s;
+            boost::geometry::set<0, 0>(s, boost::geometry::get<0, 0>(seg));
+            boost::geometry::set<0, 1>(s, boost::geometry::get<0, 1>(seg));
+            boost::geometry::set<1, 0>(s, boost::geometry::get<1, 0>(seg));
+            boost::geometry::set<1, 1>(s, boost::geometry::get<1, 1>(seg));
+            segs.emplace_back(s);
+        }
+    );
+    bg::for_each_segment(ps2,
+        [&](const auto& seg) {
+            segment s;
+            boost::geometry::set<0, 0>(s, boost::geometry::get<0, 0>(seg));
+            boost::geometry::set<0, 1>(s, boost::geometry::get<0, 1>(seg));
+            boost::geometry::set<1, 0>(s, boost::geometry::get<1, 0>(seg));
+            boost::geometry::set<1, 1>(s, boost::geometry::get<1, 1>(seg));
+            segs.emplace_back(s);
+        }
+    );
+
+    constexpr auto filter = [](auto cw_power) { return cw_power > 1; };
+    return construct_multi_polygons(construct_rings(std::move(segs), filter));
+}
+
 auto self_or(auto r) {
     std::vector<segment > segs;
     bg::for_each_segment(r,
