@@ -184,6 +184,21 @@ auto bucket_sort(auto vec, auto bucket_size, auto get_bucket, auto get_left) {
     return std::tuple{ std::move(begin_location), std::move(current_location), std::move(left) };
 }
 
+// std has adjacent find, but the function result is not continuous
+auto not_adjacent_find(auto begin, auto end, auto binary) {
+    assert(begin != end);
+    auto cur = begin;
+    while(std::next(cur) != end) {
+        if (binary(*cur, *std::next(cur))) {
+            ++cur;
+        }
+        else {
+            break;
+        }
+    }
+    return std::next(cur);
+}
+
 auto construct_graph(auto segs) {
     log_done_time("start of construct_graph");
     std::vector<std::pair<box, std::size_t>> boxes(segs.size());
@@ -310,20 +325,16 @@ auto sort_edges(auto edges, auto vertex_number) {
 }
 
 auto unique_edges(auto edges, auto merge_func) {
-    auto cur_begin = std::begin(edges);
-    auto cur_end = cur_begin;
     constexpr auto equal = [](auto e1, auto e2) {
         return std::get<0>(e1) == std::get<0>(e2) && std::get<1>(e1) == std::get<1>(e2);
         };
+        
+    auto cur_begin = std::begin(edges);
     auto cur_result = cur_begin;
     while (cur_begin != std::end(edges)) {
-        if (cur_end == std::end(edges) || !equal(*cur_begin, *cur_end)) {
-            *cur_result++ = std::reduce(std::next(cur_begin), cur_end, *cur_begin, merge_func);
-            cur_begin = cur_end;
-        }
-        else {
-            cur_end++;
-        }
+        auto cur_end = not_adjacent_find(cur_begin, std::end(edges), equal);
+        *cur_result++ = std::reduce(std::next(cur_begin), cur_end, *cur_begin, merge_func);
+        cur_begin = cur_end;
     }
     edges.erase(cur_result, std::end(edges));
     return std::move(edges);
