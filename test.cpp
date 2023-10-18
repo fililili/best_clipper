@@ -346,71 +346,116 @@ auto unique_edges(auto edges, auto merge_func) {
 
 struct duplicated_edge_t {
     auto source(const auto& edges) {
-        if (reverse) {
-            return std::get<1>(edges[edge_index]);
+        if (i % 2 == 0) {
+            return std::get<1>(edges[i / 2]);
         }
         else {
-            return std::get<0>(edges[edge_index]);
+            return std::get<0>(edges[i / 2]);
         }
     }
     auto target(const auto& edges) {
-        if (reverse) {
-            return std::get<0>(edges[edge_index]);
+        if (i % 2 == 0) {
+            return std::get<0>(edges[i / 2]);
         }
         else {
-            return std::get<1>(edges[edge_index]);
+            return std::get<1>(edges[i / 2]);
         }
     }
     template <auto power_index>
     auto power(const auto& edges) {
-        if (reverse) {
-            return -std::get<power_index>(edges[edge_index]);
+        if (i % 2 == 0) {
+            return -std::get<power_index>(edges[i / 2]);
         }
         else {
-            return -std::get<power_index>(edges[edge_index]);
+            return std::get<power_index>(edges[i / 2]);
         }
     }
-    auto index() {
-        if (reverse) {
-            return 2 * edge_index + 1;
+    auto dual() {
+        if (i % 2 == 0) {
+            return i + 1;
         }
         else {
-            return 2 * edge_index;
+            return i - 1;
         }
     }
-    std::size_t edge_index;
-    bool reverse;
+    operator const std::size_t&() const{
+        return i;
+    }
+
+    std::size_t i;
 };
 
-auto construct_duplicated_edges(const auto& edges) {
-    std::vector<duplicated_edge_t> ret;
-    for (std::size_t i = 0; i < edges.size(); i++) {
-        ret[2 * i] = { true, i };
-        ret[2 * i + 1] = { false, i };
+auto connect_duplicated_edges(const auto& edges, const auto& hot_pixels) {
+    std::vector<duplicated_edge_t> duplicated_edges(edges.size() * 2);
+    for (std::size_t i = 0; i < duplicated_edges.size(); i++) {
+        duplicated_edges[i] = duplicated_edge_t{ i };
     }
-    return ret;
-}
 
-auto sort_duplicated_edges(const auto& edges, const auto& hot_pixels, auto duplicated_edges) {
-    auto [begin_location, end_location, _duplicated_edges] = bucket_sort(
+    auto [begin_location, end_location, sort_duplicated_edges] = bucket_sort(
         std::move(duplicated_edges),
         hot_pixels.size(),
         [&](auto de) { return de.source(edges); },
         [&](auto de) { return de; }
     );
-    duplicated_edges = std::move(_duplicated_edges);
     for (std::size_t i = 0; i < hot_pixels.size(); i++) {
         if (end_location[i] - begin_location[i] < 3) continue;
-        auto begin = std::begin(duplicated_edges);
-        std::sort(begin + begin_location[i], begin + end_location[i],
+        std::sort(
+            std::begin(sort_duplicated_edges) + begin_location[i],
+            std::begin(sort_duplicated_edges) + end_location[i],
             [&](auto i1, auto i2) {
-                return less_by_direction(hot_pixels[i], hot_pixels[i1.target(edges)], hot_pixels[i1.target(edges)]);
+                return less_by_direction(hot_pixels[i], hot_pixels[i1.target(edges)], hot_pixels[i2.target(edges)]);
             }
         );
     }
+    std::vector<duplicated_edge_t> next_duplicated_edges(sort_duplicated_edges.size());
+    for (std::size_t i = 0; i < hot_pixels.size(); i++) {
+        auto cur_begin = std::begin(sort_duplicated_edges) + begin_location[i];
+        auto cur_end = std::begin(sort_duplicated_edges) + end_location[i];
+        if (cur_begin == cur_end) continue;
+        assert(cur_begin + 1 != cur_end);
+        next_duplicated_edges[(cur_end - 1)->dual()] = *cur_begin;
+        for (++cur_begin; cur_begin != cur_end; ++cur_begin) {
+            next_duplicated_edges[(cur_begin - 1)->dual()] = *cur_begin;
+        }
+    }
+    return next_duplicated_edges;
 }
 
-auto construct_face_graph(auto duplicated_edges) {
+auto traversal_face(const std::vector<duplicated_edge_t>& next_duplicated_edges, auto face_traversal) {
+    auto size = next_duplicated_edges.size();
+    std::vector<bool> duplicated_edges_visited(size);
+    std::size_t cur_face_id = 0;
+
+    for (std::size_t i = 0; i < size; i++) {
+        if (duplicated_edges_visited[i]) continue;
+        ++cur_face_id;
+        duplicated_edge_t cur_first{ i };
+        face_traversal.begin_face(cur_face_id);
+        do {
+            face_traversal.begin_edge(i);
+            duplicated_edges_visited[i] = true;
+            i = next_duplicated_edges[i];
+        } while (i != cur_first);
+    }
+}
+
+auto build_face_nearby_relations(const auto& next_duplicated_edges, const auto& edges_with_power) {
+    struct face_id_calculation_traversal {
+        void begin_face(std::size_t face_id) { cur_face_id = face_id; }
+        void begin_edge(duplicated_edge_t duplicated_edge) {
+            duplicated_edges_face_id[duplicated_edge] = cur_face_id;
+        }
+        std::vector<std::size_t>& duplicated_edges_face_id;
+        std::size_t cur_face_id;
+    };
+    std::vector<std::size_t> duplicated_edges_face_id(next_duplicated_edges.size());
+    traversal_face(next_duplicated_edges, face_id_calculation_traversal{ duplicated_edges_face_id, 0 });
+    
+    std::vector<std::tuple<std::size_t, std::size_t, int> > face_nearby_relations(next_duplicated_edges.size());
+    for (std::size_t i = 0; i < face_nearby_relations.size(); i++) {
+        duplicated_edge_t de{ i };
+        face_nearby_relations[de] = { duplicated_edges_face_id[de.dual()], duplicated_edges_face_id[de], de.power<2>(edges_with_power)};
+    }
 }
 
 // construct a graph with edge property (power) by segs
@@ -428,6 +473,8 @@ auto construct_rings(auto segs, auto filter) {
         return (std::get<2>(edge_with_power) == 0);
         });
     log_done_time("calculate edge power");
+    // will use later
+    //build_face_nearby_relations(connect_duplicated_edges(edges_with_power, hot_pixels), edges_with_power);
 
     auto source = [&](auto de) {
         if (de.first) return std::get<0>(edges_with_power[de.second]);
@@ -725,15 +772,15 @@ auto benchmark(int size) {
 
     ring r1, r2;
     point p{ 0, 0 };
-    r1.emplace_back(p);
+    r1.emplace_back(0, 0);
     for (int i = 0; i < size; i++) {
         bg::set<0>(p, bg::get<0>(p) + distrib(gen));
         bg::set<1>(p, bg::get<1>(p) + distrib(gen));
         r1.emplace_back(p);
     }
-    r2.emplace_back(0, 0);
+    r1.emplace_back(0, 0);
     p = point{ 0, 0 };
-    r2.emplace_back(p);
+    r2.emplace_back(0, 0);
     for (int i = 0; i < size; i++) {
         bg::set<0>(p, bg::get<0>(p) + distrib(gen));
         bg::set<1>(p, bg::get<1>(p) + distrib(gen));
@@ -743,9 +790,11 @@ auto benchmark(int size) {
     std::cout << "\n\n-----------------" << std::endl;
     auto before = std::chrono::system_clock::now();
     std::cout << "run self r1 ----------------------:" << std::endl;
+    std::cout << bg::wkt(r1) << std::endl;
     auto sr1 = self_or(r1);
     std::cout << bg::wkt(sr1) << std::endl;
     std::cout << "run self r2 ----------------------:" << std::endl;
+    std::cout << bg::wkt(r2) << std::endl;
     auto sr2 = self_or(r2);
     std::cout << bg::wkt(sr2) << std::endl;
     std::cout << "run r1 + r2 ----------------------:" << std::endl;
