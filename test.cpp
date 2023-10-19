@@ -432,7 +432,7 @@ auto traversal_face(const std::vector<duplicated_edge_t>& next_duplicated_edges,
         duplicated_edge_t cur_first{ i };
         face_traversal.begin_face(cur_face_id);
         do {
-            face_traversal.begin_edge(i);
+            face_traversal.begin_edge({i});
             duplicated_edges_visited[i] = true;
             i = next_duplicated_edges[i];
         } while (i != cur_first);
@@ -472,6 +472,31 @@ auto construct_rings(auto segs, auto filter) {
     std::erase_if(edges_with_power, [](auto edge_with_power) {
         return (std::get<2>(edge_with_power) == 0);
         });
+    {
+#ifndef NDEBUG
+        // check whether construct graph result is right
+        // current geometry function is not precise, may have problems, here.
+        std::vector<int> hot_pixels_times(hot_pixels.size());
+        std::vector<int> hot_pixels_power(hot_pixels.size());
+        for (auto edge_with_power : edges_with_power) {
+            auto s = std::get<0>(edge_with_power);
+            auto t = std::get<1>(edge_with_power);
+            auto p = std::get<2>(edge_with_power);
+            hot_pixels_times[s]++;
+            hot_pixels_times[t]++;
+            hot_pixels_power[s]+=p;
+            hot_pixels_power[t]-=p;
+        }
+        for(std::size_t i = 0; i <hot_pixels.size(); i++) {
+            if (hot_pixels_times[i] == 1 || hot_pixels_power[i] != 0) {
+                std::cout << hot_pixels_times[i] << std::endl;
+                std::cout << hot_pixels_power[i] << std::endl;
+                std::cout << bg::wkt(hot_pixels[i]) << std::endl;
+                assert(false);
+            }
+        }
+#endif
+    }
     log_done_time("calculate edge power");
     // will use later
     //build_face_nearby_relations(connect_duplicated_edges(edges_with_power, hot_pixels), edges_with_power);
@@ -851,6 +876,7 @@ void test_self_or_rectangle(int size) {
 
 int main()
 {
+    //while(1)
     benchmark(400);
     /*
     benchmark(100);
