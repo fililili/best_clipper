@@ -602,6 +602,7 @@ auto construct_rings(auto segs, auto filter) {
 
     boost::container::flat_multimap<std::size_t, std::size_t> face_contain_relations;
     {
+        std::vector<std::pair<std::size_t, std::size_t> > _face_contain_relations;
         std::vector<std::pair<box, std::size_t> > cw_faces_box(cw_faces.size());
         for (std::size_t i = 0; i < cw_faces.size(); i++) {
             cw_faces_box[i].first = bg::return_envelope<box>(cw_faces[i].first);
@@ -612,16 +613,17 @@ auto construct_rings(auto segs, auto filter) {
             point p = hot_pixels[source(duplicated_edges[direct_edge_id])];
             auto itr = faces_rtree.qbegin(bg::index::contains(p));
             if (itr == faces_rtree.qend())
-                face_contain_relations.insert(std::pair<std::size_t, std::size_t>{ 0, face_id });
+                _face_contain_relations.emplace_back(0, face_id);
             else {
                 for (; itr != faces_rtree.qend(); ++itr) {
                     if (bg::relate(p, cw_faces[itr->second].first, bg::de9im::static_mask<'T', 'F', 'F'>{})) {
-                        face_contain_relations.insert(std::pair<std::size_t, std::size_t>{ cw_faces[itr->second].second, face_id });
+                        _face_contain_relations.emplace_back(cw_faces[itr->second].second, face_id);
                         break;
                     }
                 }
             }
         }
+        face_contain_relations.insert(std::begin(_face_contain_relations), std::end(_face_contain_relations));
     }
     cw_faces.clear();
     log_done_time("build face contain relations");
