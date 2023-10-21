@@ -579,17 +579,15 @@ auto construct_rings(auto segs, auto filter) {
         for (auto [face_id, direct_edge] : ccw_face_id_to_direct_edge) {
             point p = hot_pixels[direct_edge.source(edges_with_power)];
             auto itr = faces_rtree.qbegin(bg::index::contains(p));
-            if (itr == faces_rtree.qend())
-                _face_contain_relations.emplace_back(0, face_id);
-            else {
-                for (; itr != faces_rtree.qend(); ++itr) {
-                    if (bg::relate(p, cw_faces[itr->second].first, bg::de9im::static_mask<'T', 'F', 'F'>{})) {
-                        _face_contain_relations.emplace_back(cw_faces[itr->second].second, face_id);
-                        break;
-                    }
+            bool find = false;
+            for (auto itr = faces_rtree.qbegin(bg::index::contains(p)); itr != faces_rtree.qend(); ++itr) {
+                if (bg::relate(p, cw_faces[itr->second].first, bg::de9im::static_mask<'T', 'F', 'F'>{})) {
+                    _face_contain_relations.emplace_back(cw_faces[itr->second].second, face_id);
+                    find = true;
                 }
-                _face_contain_relations.emplace_back(0, face_id);
             }
+            if (!find)
+                _face_contain_relations.emplace_back(0, face_id);
         }
         face_contain_relations.insert(std::begin(_face_contain_relations), std::end(_face_contain_relations));
     }
