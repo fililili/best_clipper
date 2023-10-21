@@ -456,6 +456,7 @@ auto build_face_nearby_relations(const auto& next_duplicated_edges, const auto& 
         duplicated_edge_t de{ i };
         face_nearby_relations[de] = { duplicated_edges_face_id[de.dual()], duplicated_edges_face_id[de], de.power<2>(edges_with_power) };
     }
+    return face_nearby_relations;
 }
 
 // construct a graph with edge property (power) by segs
@@ -608,7 +609,7 @@ auto construct_rings(auto segs, auto filter) {
     }
     log_done_time("build face contain relations");
 
-    std::vector<bool> direct_edges_exist(duplicated_edges.size());
+    std::vector<bool> faces_exist(face_num);
     {
         std::vector<std::optional<int> > faces_cw_power(face_num);
         std::stack<std::pair<std::size_t, duplicated_edge_t> > stk;
@@ -632,10 +633,9 @@ auto construct_rings(auto segs, auto filter) {
             }
 
             auto cur_direct_edge = cur_first_direct_edge;
+            if (filter(faces_cw_power[cur_face_id].value())) faces_exist[cur_face_id] = true;
+            else faces_exist[cur_face_id] = false;
             do {
-                if (filter(faces_cw_power[cur_face_id].value())) direct_edges_exist[cur_direct_edge] = true;
-                else direct_edges_exist[cur_direct_edge] = false;
-
                 auto d = cur_direct_edge.dual();
                 auto next_face_id = duplicated_edges_face_id[d];
                 if (!faces_cw_power[next_face_id]) {
@@ -648,6 +648,10 @@ auto construct_rings(auto segs, auto filter) {
     }
     log_done_time("traversal faces");
 
+    std::vector<bool> direct_edges_exist(duplicated_edges.size());
+    for (std::size_t i = 0; i < edges_with_power.size() * 2; i++) {
+        direct_edges_exist[i] = faces_exist[duplicated_edges_face_id[i]];
+    }
     for (std::size_t i = 0; i < edges_with_power.size(); i++) {
         auto de1 = duplicated_edge_t{ 2 * i };
         auto de2 = duplicated_edge_t{ 2 * i + 1 };
@@ -835,6 +839,8 @@ void test_union_rectangle(int size) {
     auto before = std::chrono::system_clock::now();
     assert(bg::is_valid(first));
     assert(bg::is_valid(second));
+    assert(bg::equals(self_or(first), first));
+    assert(bg::equals(self_or(second), second));
     auto ret = add(first, second);
     assert(bg::is_valid(ret));
     assert(bg::area(ret) == (1 + 6 * size));
@@ -921,7 +927,7 @@ int main()
         "MULTIPOLYGON(((-1450 -1280, -1450 -800, -1200 -1000, -1000 -1280, -1450 -1280)))",
         "MULTIPOLYGON(((-1461 -786,-1442 -807,-1410 -832,-1389 -830,-1450 -775,-1061 -372,-720 -681,-1007 -702,-1005 -642,-1145 -830,-873 -855,-658 -741,-660 -736,-656 -740,-561 -689,-535 -717,-497 -747,-634 -790,-642 -773,-666 -800,-849 -858,-748 -867,-807 -964,-1012 -1200,-913 -1136,-956 -1205,-1026 -1244,-1000 -1280,-1450 -1280,-1450 -1023,-1608 -939,-1461 -786),(-1245 -964,-1228 -977,-1244 -963,-1245 -964),(-1123 -1108,-1058 -1133,-1193 -1009,-1123 -1108)),((-826 -400,-578 -670,-688 -679,-802 -443,-826 -400)),((-433 -621,-300 -283,-289 -294,-432 -660,-517 -666,-433 -621)),((-178 -1224,-344 -907,-361 -853,-84 -1068,273 -1394,61 -1669,-438 -1425,-178 -1224)),((-378 -839,-376 -844,-380 -838,-378 -839)))"
     );
-
+    test_union_rectangle(100);
 
     return 0;
 }
