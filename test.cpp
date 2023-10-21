@@ -439,7 +439,7 @@ auto traversal_face(const std::vector<duplicated_edge_t>& next_duplicated_edges,
     }
 }
 
-auto build_face_nearby_relations(const auto& next_duplicated_edges, const auto& edges_with_power) {
+auto build_face_nearby_relations(const auto& next_duplicated_edges) {
     struct face_id_calculation_traversal {
         void begin_face(std::size_t face_id) { cur_face_id = face_id; }
         void begin_edge(duplicated_edge_t duplicated_edge) {
@@ -451,10 +451,11 @@ auto build_face_nearby_relations(const auto& next_duplicated_edges, const auto& 
     std::vector<std::size_t> duplicated_edges_face_id(next_duplicated_edges.size());
     traversal_face(next_duplicated_edges, face_id_calculation_traversal{ duplicated_edges_face_id, 0 });
 
-    std::vector<std::tuple<std::size_t, std::size_t, int> > face_nearby_relations(next_duplicated_edges.size());
+    std::vector<std::pair<std::size_t, std::pair<std::size_t, duplicated_edge_t> > > face_nearby_relations(next_duplicated_edges.size());
     for (std::size_t i = 0; i < face_nearby_relations.size(); i++) {
         duplicated_edge_t de{ i };
-        face_nearby_relations[de] = { duplicated_edges_face_id[de.dual()], duplicated_edges_face_id[de], de.power<2>(edges_with_power) };
+        face_nearby_relations[de] = { duplicated_edges_face_id[de.dual()], {duplicated_edges_face_id[de], de } };
+        face_nearby_relations[de] = { duplicated_edges_face_id[de], {duplicated_edges_face_id[de.dual()], de.dual()}};
     }
     return face_nearby_relations;
 }
@@ -560,8 +561,8 @@ auto construct_rings(auto segs, auto filter) {
     log_done_time("build faces");
 
     boost::container::flat_multimap<std::size_t, std::size_t> face_contain_relations;
-    boost::container::flat_map<std::size_t, duplicated_edge_t> ccw_face_id_to_direct_edge;
     {
+        boost::container::flat_map<std::size_t, duplicated_edge_t> ccw_face_id_to_direct_edge;
         std::vector<bool> __visited(duplicated_edges.size());
         std::vector<std::pair<ring, std::size_t> > cw_faces;
         std::size_t cur_face_id = 1;
@@ -608,42 +609,46 @@ auto construct_rings(auto segs, auto filter) {
         face_contain_relations.insert(std::begin(_face_contain_relations), std::end(_face_contain_relations));
     }
     log_done_time("build face contain relations");
+    auto _face_neary_realtions = build_face_nearby_relations(next_duplicated_edges);
+    boost::container::flat_multimap<std::size_t, std::pair<std::size_t, duplicated_edge_t> > face_nearby_relations{
+        std::begin(_face_neary_realtions),
+        std::end(_face_neary_realtions)
+    };
 
     std::vector<bool> faces_exist(face_num);
     {
         std::vector<std::optional<int> > faces_cw_power(face_num);
-        std::stack<std::pair<std::size_t, duplicated_edge_t> > stk;
+        std::stack<std::size_t > stk;
         faces_cw_power[0] = 0;
         for (auto [b, e] = face_contain_relations.equal_range(0); b != e; b++) {
             auto next_face_id = (*b).second;
             if (!faces_cw_power[next_face_id]) {
                 faces_cw_power[next_face_id] = 0;
-                stk.push({ next_face_id, ccw_face_id_to_direct_edge[next_face_id] });
+                stk.push({ next_face_id });
             }
         }
         while (!stk.empty()) {
-            auto [cur_face_id, cur_first_direct_edge] = stk.top();
+            auto cur_face_id = stk.top();
             stk.pop();
+
+            if (filter(faces_cw_power[cur_face_id].value())) faces_exist[cur_face_id] = true;
+
             for (auto [b, e] = face_contain_relations.equal_range(cur_face_id); b != e; b++) {
                 auto next_face_id = (*b).second;
                 if (!faces_cw_power[next_face_id]) {
                     faces_cw_power[next_face_id] = faces_cw_power[cur_face_id];
-                    stk.push({ next_face_id, ccw_face_id_to_direct_edge[next_face_id] });
+                    stk.push({ next_face_id });
                 }
             }
-
-            auto cur_direct_edge = cur_first_direct_edge;
-            if (filter(faces_cw_power[cur_face_id].value())) faces_exist[cur_face_id] = true;
-            else faces_exist[cur_face_id] = false;
-            do {
-                auto d = cur_direct_edge.dual();
-                auto next_face_id = duplicated_edges_face_id[d];
+            
+            for (auto [b, e] = face_nearby_relations.equal_range(cur_face_id); b != e; b++) {
+                auto next_face_id = (*b).second.first;
+                auto duplicated_edge = (*b).second.second;
                 if (!faces_cw_power[next_face_id]) {
-                    faces_cw_power[next_face_id] = faces_cw_power[cur_face_id].value() + d.power<2>(edges_with_power);
-                    stk.push({ next_face_id, d });
+                    faces_cw_power[next_face_id] = faces_cw_power[cur_face_id].value() + duplicated_edge.power<2>(edges_with_power);
+                    stk.push({ next_face_id });
                 }
-                cur_direct_edge = { next_duplicated_edges[cur_direct_edge] };
-            } while (cur_direct_edge != cur_first_direct_edge);
+            }
         }
     }
     log_done_time("traversal faces");
