@@ -498,34 +498,60 @@ auto build_face_contains_relations(const auto& next_duplicated_edges, const auto
         decltype(edges_with_power) _edges_with_power;
         std::vector<std::pair<ring, std::size_t> >& cw_faces;
         std::vector<std::pair<point, std::size_t> >& ccw_face_id_to_direct_edge;
+        std::size_t& cur_face_id;
 
         ring cur_r{};
-        std::size_t cur_face_id{};
     };
 
     std::vector<std::pair<ring, std::size_t> > cw_faces;
-    std::vector<std::pair<point, std::size_t> > ccw_face_id_to_direct_edge;
-    traversal_face(next_duplicated_edges, faces_record_traversal{ hot_pixels, edges_with_power, cw_faces, ccw_face_id_to_direct_edge });
+    std::vector<std::pair<point, std::size_t> > ccw_faces;
+    std::size_t cur_face_id;
+    traversal_face(next_duplicated_edges, faces_record_traversal{ hot_pixels, edges_with_power, cw_faces, ccw_faces, cur_face_id });
+    auto face_num = cur_face_id + 1;
 
-    std::vector<std::pair<std::size_t, std::size_t> > face_contain_relations;
-    std::vector<std::pair<box, std::size_t> > cw_faces_box(cw_faces.size());
-    for (std::size_t i = 0; i < cw_faces.size(); i++) {
-        cw_faces_box[i].first = bg::return_envelope<box>(cw_faces[i].first);
-        cw_faces_box[i].second = i;
-    }
-    bg::index::rtree< std::pair<box, std::size_t>, bg::index::quadratic<128> > faces_rtree{ cw_faces_box };
-    for (auto [p, face_id] : ccw_face_id_to_direct_edge) {
-        auto itr = faces_rtree.qbegin(bg::index::contains(p));
-        bool find = false;
-        for (auto itr = faces_rtree.qbegin(bg::index::contains(p)); itr != faces_rtree.qend(); ++itr) {
-            if (bg::relate(p, cw_faces[itr->second].first, bg::de9im::static_mask<'T', 'F', 'F'>{})) {
-                face_contain_relations.emplace_back(cw_faces[itr->second].second, face_id);
-                find = true;
+    std::vector<std::pair<std::size_t, std::size_t> > face_full_contain_relations;
+    {
+        std::vector<std::pair<box, std::size_t> > cw_faces_box(cw_faces.size());
+        for (std::size_t i = 0; i < cw_faces.size(); i++) {
+            cw_faces_box[i].first = bg::return_envelope<box>(cw_faces[i].first);
+            cw_faces_box[i].second = i;
+        }
+        bg::index::rtree< std::pair<box, std::size_t>, bg::index::quadratic<128> > faces_rtree{ cw_faces_box };
+        for (auto [p, face_id] : ccw_faces) {
+            auto itr = faces_rtree.qbegin(bg::index::contains(p));
+            face_full_contain_relations.emplace_back(0, face_id);
+            for (auto itr = faces_rtree.qbegin(bg::index::contains(p)); itr != faces_rtree.qend(); ++itr) {
+                if (bg::relate(p, cw_faces[itr->second].first, bg::de9im::static_mask<'T', 'F', 'F'>{})) {
+                    face_full_contain_relations.emplace_back(cw_faces[itr->second].second, face_id);
+                }
             }
         }
-        if (!find)
-            face_contain_relations.emplace_back(0, face_id);
     }
+    std::vector<std::size_t> out_faces_times(face_num);
+    for (auto [out_face, in_face] : face_full_contain_relations) {
+        out_faces_times[out_face]++;
+    }
+
+    auto [begin_location, end_location, out_faces] = bucket_sort(
+        std::move(face_full_contain_relations),
+        face_num,
+        [](auto pair) { return std::get<1>(pair); },
+        [](auto pair) { return std::get<0>(pair); }
+    );
+
+    std::vector<std::pair<std::size_t, std::size_t> > face_contain_relations;
+
+    for (std::size_t in_face = 0; in_face < face_num; in_face++) {
+        if (end_location[in_face] - begin_location[in_face]  == 0) continue;
+        auto out_face = out_faces[begin_location[in_face] ];
+        for (std::size_t j = begin_location[in_face]; j < end_location[in_face]; j++) {
+            if (out_faces_times[out_faces[j] ] < out_faces_times[out_face]) {
+                out_face = out_faces[j];
+            }
+        }
+        face_contain_relations.emplace_back(out_face, in_face);
+    }
+
     return boost::container::flat_multimap<std::size_t, std::size_t>{
         std::begin(face_contain_relations),
         std::end(face_contain_relations)
