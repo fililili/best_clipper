@@ -634,7 +634,7 @@ auto construct_rings(auto segs, auto filter) {
                 auto next_face_id = (*b).second.first;
                 auto duplicated_edge = (*b).second.second;
                 if (!faces_cw_power[next_face_id]) {
-                    faces_cw_power[next_face_id] = faces_cw_power[cur_face_id].value() + duplicated_edge.power<2>(edges_with_power);
+                    faces_cw_power[next_face_id] = faces_cw_power[cur_face_id].value() + duplicated_edge.template power<2>(edges_with_power);
                     stk.push({ next_face_id });
                 }
             }
