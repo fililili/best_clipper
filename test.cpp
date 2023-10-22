@@ -474,6 +474,57 @@ auto build_face_nearby_relations(const auto& next_duplicated_edges, const auto& 
     };
 }
 
+auto build_face_contains_relations(const auto& next_duplicated_edges, const auto& edges_with_power, const auto& hot_pixels) {
+    boost::container::flat_map<std::size_t, duplicated_edge_t> ccw_face_id_to_direct_edge;
+    std::vector<bool> __visited(next_duplicated_edges.size());
+    std::vector<std::pair<ring, std::size_t> > cw_faces;
+    std::size_t cur_face_id = 1;
+    for (std::size_t i = 0; i < next_duplicated_edges.size(); i++) {
+        if (__visited[i]) continue;
+        auto cur_first_id = i;
+        ring r;
+        // ring is closed, need to push one duplicated point
+        r.push_back(hot_pixels[duplicated_edge_t{ cur_first_id }.target(edges_with_power)]);
+        do {
+            __visited[i] = true;
+            i = next_duplicated_edges[i];
+            r.push_back(hot_pixels[duplicated_edge_t{ i }.target(edges_with_power)]);
+        } while (cur_first_id != i);
+        if (bg::area(r) > 0) { // for cw orientation, the area > 0, may use more precise algorithm
+            cw_faces.emplace_back(r, cur_face_id);
+        }
+        else {
+            ccw_face_id_to_direct_edge.insert(std::pair{ cur_face_id, cur_first_id });
+        }
+        cur_face_id++;
+    }
+
+    std::vector<std::pair<std::size_t, std::size_t> > face_contain_relations;
+    std::vector<std::pair<box, std::size_t> > cw_faces_box(cw_faces.size());
+    for (std::size_t i = 0; i < cw_faces.size(); i++) {
+        cw_faces_box[i].first = bg::return_envelope<box>(cw_faces[i].first);
+        cw_faces_box[i].second = i;
+    }
+    bg::index::rtree< std::pair<box, std::size_t>, bg::index::quadratic<128> > faces_rtree{ cw_faces_box };
+    for (auto [face_id, direct_edge] : ccw_face_id_to_direct_edge) {
+        point p = hot_pixels[direct_edge.source(edges_with_power)];
+        auto itr = faces_rtree.qbegin(bg::index::contains(p));
+        bool find = false;
+        for (auto itr = faces_rtree.qbegin(bg::index::contains(p)); itr != faces_rtree.qend(); ++itr) {
+            if (bg::relate(p, cw_faces[itr->second].first, bg::de9im::static_mask<'T', 'F', 'F'>{})) {
+                face_contain_relations.emplace_back(cw_faces[itr->second].second, face_id);
+                find = true;
+            }
+        }
+        if (!find)
+            face_contain_relations.emplace_back(0, face_id);
+    }
+    return boost::container::flat_multimap<std::size_t, std::size_t>{
+        std::begin(face_contain_relations),
+        std::end(face_contain_relations)
+    };
+}
+
 // construct a graph with edge property (power) by segs
 // segs should can create rings
 auto construct_rings(auto segs, auto filter) {
@@ -521,59 +572,13 @@ auto construct_rings(auto segs, auto filter) {
     auto [duplicated_edges_face_id, face_num] = log_duplicated_edges_face_id(next_duplicated_edges);
     log_done_time("build faces");
 
-    boost::container::flat_multimap<std::size_t, std::size_t> face_contain_relations;
-    {
-        boost::container::flat_map<std::size_t, duplicated_edge_t> ccw_face_id_to_direct_edge;
-        std::vector<bool> __visited(edges_with_power.size() * 2);
-        std::vector<std::pair<ring, std::size_t> > cw_faces;
-        std::size_t cur_face_id = 1;
-        for (std::size_t i = 0; i < edges_with_power.size() * 2; i++) {
-            if (__visited[i]) continue;
-            auto cur_first_id = i;
-            ring r;
-            // ring is closed, need to push one duplicated point
-            r.push_back(hot_pixels[duplicated_edge_t{ cur_first_id }.target(edges_with_power)]);
-            do {
-                __visited[i] = true;
-                i = next_duplicated_edges[i];
-                r.push_back(hot_pixels[duplicated_edge_t{ i }.target(edges_with_power)]);
-            } while (cur_first_id != i);
-            if (bg::area(r) > 0) { // for cw orientation, the area > 0, may use more precise algorithm
-                cw_faces.emplace_back(r, cur_face_id);
-            }
-            else {
-                ccw_face_id_to_direct_edge.insert(std::pair{ cur_face_id, cur_first_id });
-            }
-            cur_face_id++;
-        }
-
-        std::vector<std::pair<std::size_t, std::size_t> > _face_contain_relations;
-        std::vector<std::pair<box, std::size_t> > cw_faces_box(cw_faces.size());
-        for (std::size_t i = 0; i < cw_faces.size(); i++) {
-            cw_faces_box[i].first = bg::return_envelope<box>(cw_faces[i].first);
-            cw_faces_box[i].second = i;
-        }
-        bg::index::rtree< std::pair<box, std::size_t>, bg::index::quadratic<128> > faces_rtree{ cw_faces_box };
-        for (auto [face_id, direct_edge] : ccw_face_id_to_direct_edge) {
-            point p = hot_pixels[direct_edge.source(edges_with_power)];
-            auto itr = faces_rtree.qbegin(bg::index::contains(p));
-            bool find = false;
-            for (auto itr = faces_rtree.qbegin(bg::index::contains(p)); itr != faces_rtree.qend(); ++itr) {
-                if (bg::relate(p, cw_faces[itr->second].first, bg::de9im::static_mask<'T', 'F', 'F'>{})) {
-                    _face_contain_relations.emplace_back(cw_faces[itr->second].second, face_id);
-                    find = true;
-                }
-            }
-            if (!find)
-                _face_contain_relations.emplace_back(0, face_id);
-        }
-        face_contain_relations.insert(std::begin(_face_contain_relations), std::end(_face_contain_relations));
-    }
-    log_done_time("build face contain relations");
-    auto face_nearby_relations = build_face_nearby_relations(next_duplicated_edges, duplicated_edges_face_id);
-
     std::vector<bool> faces_exist(face_num);
     {
+        auto face_contain_relations = build_face_contains_relations(next_duplicated_edges, edges_with_power, hot_pixels);
+        log_done_time("build face contain relations");
+        auto face_nearby_relations = build_face_nearby_relations(next_duplicated_edges, duplicated_edges_face_id);
+        log_done_time("build face nearby relations");
+
         std::vector<std::optional<int> > faces_cw_power(face_num);
         std::stack<std::size_t > stk;
         faces_cw_power[0] = 0;
