@@ -408,17 +408,20 @@ auto connect_duplicated_edges(const auto& edges, const auto& hot_pixels) {
         );
     }
     std::vector<duplicated_edge_t> next_duplicated_edges(sort_duplicated_edges.size());
+    std::vector<duplicated_edge_t> pre_duplicated_edges(sort_duplicated_edges.size());
     for (std::size_t i = 0; i < hot_pixels.size(); i++) {
         auto cur_begin = std::begin(sort_duplicated_edges) + begin_location[i];
         auto cur_end = std::begin(sort_duplicated_edges) + end_location[i];
         if (cur_begin == cur_end) continue;
         assert(cur_begin + 1 != cur_end);
         next_duplicated_edges[(cur_end - 1)->dual()] = *cur_begin;
+        pre_duplicated_edges[*cur_begin] = (cur_end - 1)->dual();
         for (++cur_begin; cur_begin != cur_end; ++cur_begin) {
             next_duplicated_edges[(cur_begin - 1)->dual()] = *cur_begin;
+            pre_duplicated_edges[*cur_begin] = (cur_begin - 1)->dual();
         }
     }
-    return next_duplicated_edges;
+    return std::pair{ std::move(next_duplicated_edges), std::move(pre_duplicated_edges) };
 }
 
 auto traversal_face(const std::vector<duplicated_edge_t>& next_duplicated_edges, auto face_traversal) {
@@ -439,25 +442,36 @@ auto traversal_face(const std::vector<duplicated_edge_t>& next_duplicated_edges,
     }
 }
 
-auto build_face_nearby_relations(const auto& next_duplicated_edges) {
+auto log_duplicated_edges_face_id(const auto& next_duplicated_edges) {
     struct face_id_calculation_traversal {
         void begin_face(std::size_t face_id) { cur_face_id = face_id; }
         void begin_edge(duplicated_edge_t duplicated_edge) {
             duplicated_edges_face_id[duplicated_edge] = cur_face_id;
         }
         std::vector<std::size_t>& duplicated_edges_face_id;
-        std::size_t cur_face_id;
+        std::size_t& cur_face_id;
     };
-    std::vector<std::size_t> duplicated_edges_face_id(next_duplicated_edges.size());
-    traversal_face(next_duplicated_edges, face_id_calculation_traversal{ duplicated_edges_face_id, 0 });
 
+    std::vector<std::size_t> duplicated_edges_face_id(next_duplicated_edges.size());
+    std::size_t cur_face_id = 1;
+    face_id_calculation_traversal face_id_traversal{ duplicated_edges_face_id, cur_face_id };
+    traversal_face(next_duplicated_edges, face_id_traversal);
+
+    return std::pair{ std::move(duplicated_edges_face_id), cur_face_id + 1 };
+}
+
+auto build_face_nearby_relations(const auto& next_duplicated_edges, const auto& duplicated_edges_face_id) {
     std::vector<std::pair<std::size_t, std::pair<std::size_t, duplicated_edge_t> > > face_nearby_relations(next_duplicated_edges.size());
     for (std::size_t i = 0; i < face_nearby_relations.size(); i++) {
         duplicated_edge_t de{ i };
         face_nearby_relations[de] = { duplicated_edges_face_id[de.dual()], {duplicated_edges_face_id[de], de } };
         face_nearby_relations[de] = { duplicated_edges_face_id[de], {duplicated_edges_face_id[de.dual()], de.dual()}};
     }
-    return face_nearby_relations;
+
+    return boost::container::flat_multimap<std::size_t, std::pair<std::size_t, duplicated_edge_t> >{
+        std::begin(face_nearby_relations),
+        std::end(face_nearby_relations)
+    };
 }
 
 // construct a graph with edge property (power) by segs
@@ -500,73 +514,20 @@ auto construct_rings(auto segs, auto filter) {
 #endif
     }
     log_done_time("calculate edge power");
-    // will use later
-    //build_face_nearby_relations(connect_duplicated_edges(edges_with_power, hot_pixels), edges_with_power);
 
-    std::vector<duplicated_edge_t> duplicated_edges(edges_with_power.size() * 2);
-    {
-        for (std::size_t i = 0; i < duplicated_edges.size(); i++) {
-            duplicated_edges[i] = { i };
-        }
-        auto [begin_location, end_location, _duplicated_edges] = bucket_sort(
-            std::move(duplicated_edges),
-            hot_pixels.size(),
-            [&](auto de) { return de.source(edges_with_power); },
-            [&](auto de) { return de; }
-        );
-        duplicated_edges = std::move(_duplicated_edges);
-        for (std::size_t i = 0; i < hot_pixels.size(); i++) {
-            if (end_location[i] - begin_location[i] < 3) continue;
-            auto begin = std::begin(duplicated_edges);
-            std::sort(begin + begin_location[i], begin + end_location[i],
-                [&](auto i1, auto i2) {
-                    return less_by_direction(hot_pixels[i], hot_pixels[i1.target(edges_with_power)], hot_pixels[i2.target(edges_with_power)]);
-                }
-            );
-        }
-    }
-    log_done_time("sort direct edges");
-
-    // link direct edges, except the outer face, all faces are cw oriented
-    std::vector<duplicated_edge_t> next_duplicated_edges(duplicated_edges.size());
-    std::vector<duplicated_edge_t> pre_duplicated_edges(duplicated_edges.size());
-    {
-        auto cur_begin = std::begin(duplicated_edges);
-        while (cur_begin != std::end(duplicated_edges)) {
-            auto cur_end = not_adjacent_find(cur_begin, std::end(duplicated_edges), [&](auto de1, auto de2) { return de1.source(edges_with_power) == de2.source(edges_with_power); });
-            pre_duplicated_edges[*cur_begin] = (cur_end - 1)->dual();
-            next_duplicated_edges[(cur_end - 1)->dual()] = *cur_begin;
-            for (++cur_begin; cur_begin != cur_end; ++cur_begin) {
-                pre_duplicated_edges[*cur_begin] = (cur_begin - 1)->dual();
-                next_duplicated_edges[(cur_begin - 1)->dual()] = *cur_begin;
-            }
-        }
-    }
+    auto [next_duplicated_edges, pre_duplicated_edges] = connect_duplicated_edges(edges_with_power, hot_pixels);
     log_done_time("connect direct edges");
 
-    struct face_id_calculation_traversal {
-        void begin_face(std::size_t face_id) { cur_face_id = face_id; }
-        void begin_edge(duplicated_edge_t duplicated_edge) {
-            duplicated_edges_face_id[duplicated_edge] = cur_face_id;
-        }
-        std::vector<std::size_t>& duplicated_edges_face_id;
-        std::size_t& cur_face_id;
-    };
-
-    std::vector<std::size_t> duplicated_edges_face_id(duplicated_edges.size());
-    std::size_t face_num = 1;
-    face_id_calculation_traversal face_id_traversal{ duplicated_edges_face_id, face_num };
-    traversal_face(next_duplicated_edges, face_id_traversal);
-    face_num += 1;
+    auto [duplicated_edges_face_id, face_num] = log_duplicated_edges_face_id(next_duplicated_edges);
     log_done_time("build faces");
 
     boost::container::flat_multimap<std::size_t, std::size_t> face_contain_relations;
     {
         boost::container::flat_map<std::size_t, duplicated_edge_t> ccw_face_id_to_direct_edge;
-        std::vector<bool> __visited(duplicated_edges.size());
+        std::vector<bool> __visited(edges_with_power.size() * 2);
         std::vector<std::pair<ring, std::size_t> > cw_faces;
         std::size_t cur_face_id = 1;
-        for (std::size_t i = 0; i < duplicated_edges.size(); i++) {
+        for (std::size_t i = 0; i < edges_with_power.size() * 2; i++) {
             if (__visited[i]) continue;
             auto cur_first_id = i;
             ring r;
@@ -609,24 +570,14 @@ auto construct_rings(auto segs, auto filter) {
         face_contain_relations.insert(std::begin(_face_contain_relations), std::end(_face_contain_relations));
     }
     log_done_time("build face contain relations");
-    auto _face_neary_realtions = build_face_nearby_relations(next_duplicated_edges);
-    boost::container::flat_multimap<std::size_t, std::pair<std::size_t, duplicated_edge_t> > face_nearby_relations{
-        std::begin(_face_neary_realtions),
-        std::end(_face_neary_realtions)
-    };
+    auto face_nearby_relations = build_face_nearby_relations(next_duplicated_edges, duplicated_edges_face_id);
 
     std::vector<bool> faces_exist(face_num);
     {
         std::vector<std::optional<int> > faces_cw_power(face_num);
         std::stack<std::size_t > stk;
         faces_cw_power[0] = 0;
-        for (auto [b, e] = face_contain_relations.equal_range(0); b != e; b++) {
-            auto next_face_id = (*b).second;
-            if (!faces_cw_power[next_face_id]) {
-                faces_cw_power[next_face_id] = 0;
-                stk.push({ next_face_id });
-            }
-        }
+        stk.push(0);
         while (!stk.empty()) {
             auto cur_face_id = stk.top();
             stk.pop();
@@ -653,7 +604,7 @@ auto construct_rings(auto segs, auto filter) {
     }
     log_done_time("traversal faces");
 
-    std::vector<bool> direct_edges_exist(duplicated_edges.size());
+    std::vector<bool> direct_edges_exist(edges_with_power.size() * 2);
     for (std::size_t i = 0; i < edges_with_power.size() * 2; i++) {
         direct_edges_exist[i] = faces_exist[duplicated_edges_face_id[i]];
     }
