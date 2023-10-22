@@ -439,6 +439,7 @@ auto traversal_face(const std::vector<duplicated_edge_t>& next_duplicated_edges,
             duplicated_edges_visited[i] = true;
             i = next_duplicated_edges[i];
         } while (i != cur_first);
+        face_traversal.end_face();
     }
 }
 
@@ -448,6 +449,7 @@ auto log_duplicated_edges_face_id(const auto& next_duplicated_edges) {
         void begin_edge(duplicated_edge_t duplicated_edge) {
             duplicated_edges_face_id[duplicated_edge] = cur_face_id;
         }
+        void end_face() {}
         std::vector<std::size_t>& duplicated_edges_face_id;
         std::size_t& cur_face_id;
     };
@@ -475,29 +477,35 @@ auto build_face_nearby_relations(const auto& next_duplicated_edges, const auto& 
 }
 
 auto build_face_contains_relations(const auto& next_duplicated_edges, const auto& edges_with_power, const auto& hot_pixels) {
-    boost::container::flat_map<std::size_t, duplicated_edge_t> ccw_face_id_to_direct_edge;
-    std::vector<bool> __visited(next_duplicated_edges.size());
+    struct faces_record_traversal {
+        void begin_face(std::size_t face_id) {
+            cur_face_id = face_id;
+            cur_r = {};
+        }
+        void begin_edge(duplicated_edge_t duplicated_edge) {
+            cur_r.push_back(_hot_pixels[duplicated_edge.target(_edges_with_power)]);
+        }
+        void end_face() {
+            cur_r.push_back(cur_r[0]); // ring is closed, need to push one duplicated point
+            if (bg::area(cur_r) > 0) { // for cw orientation, the area > 0, may use more precise algorithm
+                cw_faces.emplace_back(std::move(cur_r), cur_face_id);
+            }
+            else {
+                ccw_face_id_to_direct_edge.emplace_back(cur_r[0], cur_face_id);
+            }
+        }
+        decltype(hot_pixels) _hot_pixels;
+        decltype(edges_with_power) _edges_with_power;
+        std::vector<std::pair<ring, std::size_t> >& cw_faces;
+        std::vector<std::pair<point, std::size_t> >& ccw_face_id_to_direct_edge;
+
+        ring cur_r{};
+        std::size_t cur_face_id{};
+    };
+
     std::vector<std::pair<ring, std::size_t> > cw_faces;
-    std::size_t cur_face_id = 1;
-    for (std::size_t i = 0; i < next_duplicated_edges.size(); i++) {
-        if (__visited[i]) continue;
-        auto cur_first_id = i;
-        ring r;
-        // ring is closed, need to push one duplicated point
-        r.push_back(hot_pixels[duplicated_edge_t{ cur_first_id }.target(edges_with_power)]);
-        do {
-            __visited[i] = true;
-            i = next_duplicated_edges[i];
-            r.push_back(hot_pixels[duplicated_edge_t{ i }.target(edges_with_power)]);
-        } while (cur_first_id != i);
-        if (bg::area(r) > 0) { // for cw orientation, the area > 0, may use more precise algorithm
-            cw_faces.emplace_back(r, cur_face_id);
-        }
-        else {
-            ccw_face_id_to_direct_edge.insert(std::pair{ cur_face_id, cur_first_id });
-        }
-        cur_face_id++;
-    }
+    std::vector<std::pair<point, std::size_t> > ccw_face_id_to_direct_edge;
+    traversal_face(next_duplicated_edges, faces_record_traversal{ hot_pixels, edges_with_power, cw_faces, ccw_face_id_to_direct_edge });
 
     std::vector<std::pair<std::size_t, std::size_t> > face_contain_relations;
     std::vector<std::pair<box, std::size_t> > cw_faces_box(cw_faces.size());
@@ -506,8 +514,7 @@ auto build_face_contains_relations(const auto& next_duplicated_edges, const auto
         cw_faces_box[i].second = i;
     }
     bg::index::rtree< std::pair<box, std::size_t>, bg::index::quadratic<128> > faces_rtree{ cw_faces_box };
-    for (auto [face_id, direct_edge] : ccw_face_id_to_direct_edge) {
-        point p = hot_pixels[direct_edge.source(edges_with_power)];
+    for (auto [p, face_id] : ccw_face_id_to_direct_edge) {
         auto itr = faces_rtree.qbegin(bg::index::contains(p));
         bool find = false;
         for (auto itr = faces_rtree.qbegin(bg::index::contains(p)); itr != faces_rtree.qend(); ++itr) {
