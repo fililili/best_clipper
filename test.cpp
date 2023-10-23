@@ -463,17 +463,16 @@ auto log_duplicated_edges_face_id(const auto& next_duplicated_edges) {
 }
 
 auto build_face_nearby_relations(const auto& next_duplicated_edges, const auto& duplicated_edges_face_id) {
-    std::vector<std::pair<std::size_t, std::pair<std::size_t, duplicated_edge_t> > > face_nearby_relations(next_duplicated_edges.size());
+    std::vector<std::tuple<std::size_t, std::size_t, duplicated_edge_t> > face_nearby_relations(next_duplicated_edges.size());
     for (std::size_t i = 0; i < face_nearby_relations.size(); i++) {
         duplicated_edge_t de{ i };
-        face_nearby_relations[de] = { duplicated_edges_face_id[de.dual()], {duplicated_edges_face_id[de], de } };
-        face_nearby_relations[de] = { duplicated_edges_face_id[de], {duplicated_edges_face_id[de.dual()], de.dual()}};
+        face_nearby_relations[de] = { duplicated_edges_face_id[de.dual()], duplicated_edges_face_id[de], de };
+        face_nearby_relations[de] = { duplicated_edges_face_id[de], duplicated_edges_face_id[de.dual()], de.dual()};
     }
 
-    return boost::container::flat_multimap<std::size_t, std::pair<std::size_t, duplicated_edge_t> >{
-        std::begin(face_nearby_relations),
-        std::end(face_nearby_relations)
-    };
+    log_done_time("build face nearby relations");
+
+    return face_nearby_relations;
 }
 
 auto build_face_contains_relations(const auto& next_duplicated_edges, const auto& edges_with_power, const auto& hot_pixels) {
@@ -552,10 +551,33 @@ auto build_face_contains_relations(const auto& next_duplicated_edges, const auto
         face_contain_relations.emplace_back(out_face, in_face);
     }
 
-    return boost::container::flat_multimap<std::size_t, std::size_t>{
-        std::begin(face_contain_relations),
-        std::end(face_contain_relations)
-    };
+    log_done_time("build face contains relations");
+    
+    return face_contain_relations;
+}
+
+template <auto power_i>
+auto group_face_relations(auto face_contain_relations, auto face_nearby_relations, auto face_num, const auto& edges_with_power) {
+    std::vector<std::tuple<std::size_t, std::size_t, int> > face_relations(face_contain_relations.size() + face_nearby_relations.size());
+    for (std::size_t i = 0; i < face_contain_relations.size(); i++) {
+        auto t = std::tuple<std::size_t, std::size_t, int>{std::get<0>(face_contain_relations[i]), std::get<1>(face_contain_relations[i]), 0};
+        face_relations[i] = t;
+    }
+    for (std::size_t i = 0; i < face_nearby_relations.size(); i++) {
+        face_relations[i + face_contain_relations.size()] = std::tuple{
+            std::get<0>(face_nearby_relations[i]),
+            std::get<1>(face_nearby_relations[i]),
+            std::get<2>(face_nearby_relations[i]).template power<power_i>(edges_with_power)
+        };
+    }
+    return bucket_sort(
+        face_relations,
+        face_num,
+        [](auto val) { return std::get<0>(val); },
+        [](auto val) { return std::pair{ std::get<1>(val), std::get<2>(val) }; }
+    );
+    log_done_time("group face relations");
+    
 }
 
 // construct a graph with edge property (power) by segs
@@ -607,34 +629,30 @@ auto construct_rings(auto segs, auto filter) {
 
     std::vector<bool> faces_exist(face_num);
     {
-        auto face_contain_relations = build_face_contains_relations(next_duplicated_edges, edges_with_power, hot_pixels);
-        log_done_time("build face contain relations");
-        auto face_nearby_relations = build_face_nearby_relations(next_duplicated_edges, duplicated_edges_face_id);
-        log_done_time("build face nearby relations");
+        auto [begin_location, end_location, face_relations] = group_face_relations<2>(
+            build_face_contains_relations(next_duplicated_edges, edges_with_power, hot_pixels),
+            build_face_nearby_relations(next_duplicated_edges, duplicated_edges_face_id),
+            face_num,
+            edges_with_power
+        );
 
-        std::vector<std::optional<int> > faces_cw_power(face_num);
+        std::vector<int > faces_cw_power(face_num);
+        std::vector<bool> faces_visited(face_num);
         std::stack<std::size_t > stk;
+        faces_visited[0] = true;
         faces_cw_power[0] = 0;
         stk.push(0);
         while (!stk.empty()) {
             auto cur_face_id = stk.top();
             stk.pop();
 
-            if (filter(faces_cw_power[cur_face_id].value())) faces_exist[cur_face_id] = true;
+            if (filter(faces_cw_power[cur_face_id]) ) faces_exist[cur_face_id] = true;
 
-            for (auto [b, e] = face_contain_relations.equal_range(cur_face_id); b != e; b++) {
-                auto next_face_id = (*b).second;
-                if (!faces_cw_power[next_face_id]) {
-                    faces_cw_power[next_face_id] = faces_cw_power[cur_face_id];
-                    stk.push({ next_face_id });
-                }
-            }
-            
-            for (auto [b, e] = face_nearby_relations.equal_range(cur_face_id); b != e; b++) {
-                auto next_face_id = (*b).second.first;
-                auto duplicated_edge = (*b).second.second;
-                if (!faces_cw_power[next_face_id]) {
-                    faces_cw_power[next_face_id] = faces_cw_power[cur_face_id].value() + duplicated_edge.template power<2>(edges_with_power);
+            for (auto i = begin_location[cur_face_id]; i < end_location[cur_face_id]; i++) {
+                auto [next_face_id, power] = face_relations[i];
+                if (!faces_visited[next_face_id]) {
+                    faces_visited[next_face_id] = true;
+                    faces_cw_power[next_face_id] = faces_cw_power[cur_face_id] + power;
                     stk.push({ next_face_id });
                 }
             }
