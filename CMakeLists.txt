@@ -46,7 +46,7 @@ else()
     message(FATAL_ERROR "Boost::container target not found!")
 endif()
 
-add_executable(best_clipper_basic test.cpp)
-target_compile_features(best_clipper_basic PRIVATE cxx_std_20)
-
-target_link_libraries(best_clipper_basic PRIVATE GraphBLAS_static Boost::geometry Boost::container)
+add_subdirectory(src)
+enable_testing()
+add_subdirectory(tests)
+add_subdirectory(benchmarks)
