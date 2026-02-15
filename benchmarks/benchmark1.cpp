@@ -40,6 +40,40 @@ auto benchmark(int size) {
     std::cout << "benchmark size = " << size << ", total runtime: " << (after - before) / 1s << "s" << std::endl;
 }
 
+void test_union_rectangle(int size) {
+    using namespace std::chrono_literals;
+    multi_polygon first, second;
+    for (int i = 0; i < size; i++) {
+        first.emplace_back(polygon{ {{0 + 2 * i, 0 + 2 * i}, {0 + 2 * i, 2 + 2 * i}, {2 + 2 * i, 2 + 2 * i}, {2 + 2 * i, 0 + 2 * i}, {0 + 2 * i, 0 + 2 * i}} });
+        second.emplace_back(polygon{ {{1 + 2 * i, 1 + 2 * i}, {1 + 2 * i, 3 + 2 * i}, {3 + 2 * i, 3 + 2 * i}, {3 + 2 * i, 1 + 2 * i}, {1 + 2 * i, 1 + 2 * i}} });
+    }
+    auto before = std::chrono::system_clock::now();
+    assert(bg::is_valid(first));
+    assert(bg::is_valid(second));
+    assert(bg::equals(self_or(first), first));
+    assert(bg::equals(self_or(second), second));
+    auto ret = add(first, second);
+    assert(bg::is_valid(ret));
+    assert(bg::area(ret) == (1 + 6 * size));
+    auto after = std::chrono::system_clock::now();
+    std::cout << "benchmark size = " << size << ", total runtime: " << (after - before) / 1s << "s" << std::endl;
+}
+
+void test_self_or_rectangle(int size) {
+    using namespace std::chrono_literals;
+    multi_polygon poly;
+    for (int i = 0; i < size; i++) {
+        poly.emplace_back(polygon{ {{0 + i, 0 + i}, {0 + i, 2 + i}, {2 + i, 2 + i}, {2 + i, 0 + i}, {0 + i, 0 + i}} });
+    }
+    auto before = std::chrono::system_clock::now();
+    std::cout << bg::wkt(poly) << std::endl;
+    auto ret = self_or(poly);
+    assert(bg::is_valid(ret));
+    assert(bg::area(ret) == (1 + 3 * size));
+    auto after = std::chrono::system_clock::now();
+    std::cout << "benchmark size = " << size << ", total runtime: " << (after - before) / 1s << "s" << std::endl;
+}
+
 int main()
 {
     //while(1)

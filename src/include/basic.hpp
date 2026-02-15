@@ -12,6 +12,11 @@
 #include <type_traits>
 #include <boost/geometry.hpp>
 #include <boost/container/flat_map.hpp>
+extern "C" {
+#define _CRT_USE_C_COMPLEX_H
+#include <GraphBLAS.h>
+#undef _CRT_USE_C_COMPLEX_H
+}
 
 //#define LOG_TIME
 
