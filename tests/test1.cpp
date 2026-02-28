@@ -90,3 +90,60 @@ TEST(BasicUnion, RectangleSelfOr) {
     test_self_or_rectangle(300);
     test_self_or_rectangle(2521);
 }
+
+void test_intersection(const std::string& first_s,
+    const std::string& second_s,
+    const std::string& ret_s) {
+    multi_polygon first, second, ret, result;
+    bg::read_wkt(first_s, first);
+    ASSERT_TRUE(bg::is_valid(first)) << "First polygon is invalid: " << first_s;
+
+    bg::read_wkt(second_s, second);
+    ASSERT_TRUE(bg::is_valid(second)) << "Second polygon is invalid: " << second_s;
+
+    bg::read_wkt(ret_s, ret);
+    ASSERT_TRUE(bg::is_valid(ret)) << "Expected result is invalid: " << ret_s;
+
+    result = intersection(first, second);
+    EXPECT_TRUE(bg::equals(result, ret))
+        << "Expected: " << bg::wkt(ret) << "\n"
+        << "Actual  : " << bg::wkt(result);
+}
+
+TEST(BasicTest, Intersection) {
+    test_intersection(
+        "MULTIPOLYGON(((0 0, 0 2, 2 2, 2 0, 0 0)))",
+        "MULTIPOLYGON(((1 1, 1 3, 3 3, 3 1, 1 1)))",
+        "MULTIPOLYGON(((1 1, 1 2, 2 2, 2 1, 1 1)))"
+    );
+
+    test_intersection(
+        "MULTIPOLYGON(((0 0, 0 3, 3 3, 3 0, 0 0)))",
+        "MULTIPOLYGON(((1 1, 1 2, 2 2, 2 1, 1 1)))",
+        "MULTIPOLYGON(((1 1, 1 2, 2 2, 2 1, 1 1)))"
+    );
+    
+    test_intersection(
+        "MULTIPOLYGON(((0 0, 0 1, 1 1, 1 0, 0 0)))",
+        "MULTIPOLYGON(((2 2, 2 3, 3 3, 3 2, 2 2)))",
+        "MULTIPOLYGON()"
+    );
+
+    test_intersection(
+        "MULTIPOLYGON(((0 0, 0 1, 1 1, 1 0, 0 0)))",
+        "MULTIPOLYGON(((1 0, 1 1, 2 1, 2 0, 1 0)))",
+        "MULTIPOLYGON()"
+    );
+
+    test_intersection(
+        "MULTIPOLYGON(((0 0, 0 1, 1 1, 1 0, 0 0)))",
+        "MULTIPOLYGON(((1 1, 1 2, 2 2, 2 1, 1 1)))",
+        "MULTIPOLYGON()"
+    );
+
+    test_intersection(
+        "MULTIPOLYGON(((0 0, 0 10, 10 10, 10 0, 0 0)), ((20 0, 20 10, 30 10, 30 0, 20 0)))",
+        "MULTIPOLYGON(((5 5, 5 15, 15 15, 15 5, 5 5)))",
+        "MULTIPOLYGON(((5 5, 5 10, 10 10, 10 5, 5 5)))"
+    );
+}
