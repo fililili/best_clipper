@@ -349,6 +349,47 @@ auto unique_edges(auto edges, auto merge_func) {
     return std::move(edges);
 }
 
+auto construct_edges_with_power(auto segs) {
+    auto [edges, hot_pixels] = construct_graph(std::move(segs));
+    auto edges_with_power =
+        unique_edges(
+            sort_edges(edges_direction_to_power(std::move(edges)), hot_pixels.size()),
+            [](auto e1, auto e2) {
+                return std::tuple{ std::get<0>(e1), std::get<1>(e1), std::get<2>(e1) + std::get<2>(e2) };
+            }
+        );
+    std::erase_if(edges_with_power, [](auto edge_with_power) {
+        return (std::get<2>(edge_with_power) == 0);
+        });
+    {
+#ifndef NDEBUG
+        // check whether construct graph result is right
+        // current geometry function is not precise, may have problems, here.
+        std::vector<int> hot_pixels_times(hot_pixels.size());
+        std::vector<int> hot_pixels_power(hot_pixels.size());
+        for (auto edge_with_power : edges_with_power) {
+            auto s = std::get<0>(edge_with_power);
+            auto t = std::get<1>(edge_with_power);
+            auto p = std::get<2>(edge_with_power);
+            hot_pixels_times[s]++;
+            hot_pixels_times[t]++;
+            hot_pixels_power[s] += p;
+            hot_pixels_power[t] -= p;
+        }
+        for (std::size_t i = 0; i < hot_pixels.size(); i++) {
+            if (hot_pixels_times[i] == 1 || hot_pixels_power[i] != 0) {
+                std::cout << hot_pixels_times[i] << std::endl;
+                std::cout << hot_pixels_power[i] << std::endl;
+                std::cout << bg::wkt(hot_pixels[i]) << std::endl;
+                assert(false);
+            }
+        }
+#endif
+    }
+    log_done_time("calculate edge power");
+    return std::tuple{ std::move(hot_pixels), std::move(edges_with_power) };
+}
+
 struct duplicated_edge_t {
     auto source(const auto& edges) {
         if (i % 2 == 0) {
@@ -588,42 +629,7 @@ auto group_face_relations(auto face_contain_relations, auto face_nearby_relation
 // construct a graph with edge property (power) by segs
 // segs should can create rings
 auto construct_rings(auto segs, auto filter) {
-    auto [edges, hot_pixels] = construct_graph(std::move(segs));
-    auto edges_with_power =
-        unique_edges(
-            sort_edges(edges_direction_to_power(std::move(edges)), hot_pixels.size()),
-            [](auto e1, auto e2) {
-                return std::tuple{ std::get<0>(e1), std::get<1>(e1), std::get<2>(e1) + std::get<2>(e2) };
-            }
-    );
-    std::erase_if(edges_with_power, [](auto edge_with_power) {
-        return (std::get<2>(edge_with_power) == 0);
-        });
-    {
-#ifndef NDEBUG
-        // check whether construct graph result is right
-        // current geometry function is not precise, may have problems, here.
-        std::vector<int> hot_pixels_times(hot_pixels.size());
-        std::vector<int> hot_pixels_power(hot_pixels.size());
-        for (auto edge_with_power : edges_with_power) {
-            auto s = std::get<0>(edge_with_power);
-            auto t = std::get<1>(edge_with_power);
-            auto p = std::get<2>(edge_with_power);
-            hot_pixels_times[s]++;
-            hot_pixels_times[t]++;
-            hot_pixels_power[s] += p;
-            hot_pixels_power[t] -= p;
-        }
-        for (std::size_t i = 0; i < hot_pixels.size(); i++) {
-            if (hot_pixels_times[i] == 1 || hot_pixels_power[i] != 0) {
-                std::cout << hot_pixels_times[i] << std::endl;
-                std::cout << hot_pixels_power[i] << std::endl;
-                std::cout << bg::wkt(hot_pixels[i]) << std::endl;
-                assert(false);
-            }
-        }
-#endif
-    }
+    auto [hot_pixels, edges_with_power] = construct_edges_with_power(std::move(segs));
     log_done_time("calculate edge power");
 
     auto [next_duplicated_edges, pre_duplicated_edges] = connect_duplicated_edges(edges_with_power, hot_pixels);
