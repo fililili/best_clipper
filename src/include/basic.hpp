@@ -19,6 +19,28 @@ extern "C" {
 }
 
 //#define LOG_TIME
+#include <GraphBLAS.h>   // 根据实际路径调整
+
+class GraphBLASHandle {
+public:
+    // 构造函数：初始化 GraphBLAS，模式可指定（默认 GrB_NONBLOCKING）
+    explicit GraphBLASHandle(GrB_Mode mode = GrB_NONBLOCKING) {
+        GrB_init(mode);  // 实际可能检查返回值，这里简化
+    }
+
+    // 析构函数：结束 GraphBLAS
+    ~GraphBLASHandle() {
+        GrB_finalize();
+    }
+
+    // 禁止拷贝和移动
+    GraphBLASHandle(const GraphBLASHandle&) = delete;
+    GraphBLASHandle& operator=(const GraphBLASHandle&) = delete;
+    // 在某个 .cpp 文件中定义静态实例（确保全局唯一）
+};
+class GraphBLASInitializer {
+    inline static GraphBLASHandle g_graphblas_handle;  // 默认使用 GrB_NONBLOCKING
+};
 
 namespace bg = boost::geometry;
 using point = bg::model::d2::point_xy<int>;
@@ -192,22 +214,6 @@ auto bucket_sort(auto vec, auto bucket_size, auto get_bucket, auto get_left) {
     return std::tuple{ std::move(begin_location), std::move(current_location), std::move(left) };
 }
 
-// std has adjacent find, but the function result is not continuous
-// it's better to use c++23 chunk_by
-auto not_adjacent_find(auto begin, auto end, auto binary) {
-    assert(begin != end);
-    auto cur = begin;
-    while (std::next(cur) != end) {
-        if (binary(*cur, *std::next(cur))) {
-            ++cur;
-        }
-        else {
-            break;
-        }
-    }
-    return std::next(cur);
-}
-
 auto construct_graph(auto segs) {
     log_done_time("start of construct_graph");
     std::vector<std::pair<box, std::size_t>> boxes(segs.size());
@@ -301,82 +307,54 @@ auto construct_graph(auto segs) {
     return std::tuple{ std::move(edges_start), std::move(edges_end), std::move(hot_pixels) };
 }
 
-auto edges_direction_to_power(auto edges) {
-    using edge_t = typename decltype(edges)::value_type;
-    using new_edge_t = decltype(std::tuple_cat(std::declval<edge_t>(), std::tuple<int>{}));
-    std::vector<new_edge_t> ret(edges.size());
-    for (std::size_t i = 0; i < ret.size(); i++) {
-        ret[i] = std::tuple_cat(edges[i], std::tuple{ 1 });
-        auto& v1 = std::get<0>(ret[i]);
-        auto& v2 = std::get<1>(ret[i]);
-        if (v1 < v2) {
-            std::get<std::tuple_size<new_edge_t>() - 1>(ret[i]) = 1;
-        }
-        else {
-            std::swap(v1, v2);
-            std::get<std::tuple_size<new_edge_t>() - 1>(ret[i]) = -1;
-        }
-    }
-    return ret;
-}
-
-auto sort_edges(auto edges, auto vertex_number) {
-    auto [begin_location, end_location, ordered_double_edges] = bucket_sort(
-        std::move(edges),
-        vertex_number,
-        [](auto val) { return std::get<0>(val); },
-        [](auto val) { return val; }
-    );
-    for (std::size_t i = 0; i < vertex_number; i++) {
-        auto cur_begin = std::begin(ordered_double_edges) + begin_location[i];
-        auto cur_end = std::begin(ordered_double_edges) + end_location[i];
-        std::sort(cur_begin, cur_end, [](auto e1, auto e2) { return std::get<1>(e1) < std::get<1>(e2); });
-    }
-    return std::move(ordered_double_edges);
-}
-
-auto unique_edges(auto edges, auto merge_func) {
-    constexpr auto equal = [](auto e1, auto e2) {
-        return std::get<0>(e1) == std::get<0>(e2) && std::get<1>(e1) == std::get<1>(e2);
-        };
-
-    auto cur_begin = std::begin(edges);
-    auto cur_result = cur_begin;
-    while (cur_begin != std::end(edges)) {
-        auto cur_end = not_adjacent_find(cur_begin, std::end(edges), equal);
-        *cur_result++ = std::reduce(std::next(cur_begin), cur_end, *cur_begin, merge_func);
-        cur_begin = cur_end;
-    }
-    edges.erase(cur_result, std::end(edges));
-    return std::move(edges);
-}
 
 auto construct_edges_with_power(auto segs) {
     auto [_edges_start, _edges_end, hot_pixels] = construct_graph(std::move(segs));
-	std::vector<std::pair<std::size_t, std::size_t> > edges;
-	for (std::size_t i = 0; i < _edges_start.size(); i++) {
-        edges.emplace_back(_edges_start[i], _edges_end[i]);
-    }
-    auto edges_with_power =
-        unique_edges(
-            sort_edges(edges_direction_to_power(std::move(edges)), hot_pixels.size()),
-            [](auto e1, auto e2) {
-                return std::tuple{ std::get<0>(e1), std::get<1>(e1), std::get<2>(e1) + std::get<2>(e2) };
-            }
-        );
-    std::erase_if(edges_with_power, [](auto edge_with_power) {
-        return (std::get<2>(edge_with_power) == 0);
-        });
-    std::vector<std::size_t> edges_start(edges_with_power.size());
-    std::vector<std::size_t> edges_end(edges_with_power.size());
-    std::vector<std::size_t> powers(edges_with_power.size());
-	for (std::size_t i = 0; i < edges_with_power.size(); i++) {
-        edges_start[i] = std::get<0>(edges_with_power[i]);
-        edges_end[i] = std::get<1>(edges_with_power[i]);
-        powers[i] = std::get<2>(edges_with_power[i]);
-    }
+    static_assert(std::is_same_v< GrB_Index, std::size_t>);
+    GrB_Index nvals = _edges_start.size();
+    std::vector<std::int32_t> X(nvals, 1);  // 所有边的初始值为 1
+
+    GrB_Matrix C = nullptr;
+    GrB_Index n = hot_pixels.size();
+    GrB_Matrix_new(&C, GrB_INT32, n, n);
+    GrB_Matrix_build_INT32(C, _edges_start.data(), _edges_end.data(), X.data(), nvals, GrB_PLUS_INT32);
+
+    // 2. 计算转置矩阵 T = C^T
+    GrB_Matrix T = nullptr;
+    GrB_Matrix_new(&T, GrB_INT32, n, n);
+    GrB_transpose(T, nullptr, nullptr, C, GrB_NULL);
+
+    GrB_Matrix T_neg = nullptr;
+    GrB_Matrix_new(&T_neg, GrB_INT32, n, n);
+    GrB_Matrix_apply(T_neg, nullptr, nullptr, GrB_AINV_INT32, T, GrB_NULL);  // T_neg = -T
+
+    // 3. 计算 M = C - T  (净流量矩阵)
+    GrB_Matrix M = nullptr;
+    GrB_Matrix_new(&M, GrB_INT32, n, n);
+    GrB_Matrix_eWiseAdd_BinaryOp(M, nullptr, nullptr, GrB_PLUS_INT32, C, T_neg, GrB_NULL);
+
+    // 4. 选择上三角部分（包含严格上三角，假设无自环）
+    GrB_Matrix result = nullptr;
+    GrB_Matrix_new(&result, GrB_INT32, n, n);
+    GrB_Matrix_select_INT32(result, GrB_NULL, GrB_NULL, GrB_TRIU, M, 0, GrB_NULL);
+
+    // 5. 提取最终的非零元
+    GrB_Index nvals_out;
+    GrB_Matrix_nvals(&nvals_out, result);
+    std::vector<GrB_Index> edges_start(nvals_out), edges_end(nvals_out);
+    std::vector<std::int32_t> powers(nvals_out);
+    GrB_Matrix_extractTuples_INT32(edges_start.data(), edges_end.data(), powers.data(), &nvals_out, result);
+
+    // 7. 清理 GraphBLAS 对象
+    GrB_Matrix_free(&C);
+    GrB_Matrix_free(&T);
+    GrB_Matrix_free(&M);
+    GrB_Matrix_free(&result);
     {
 #ifndef NDEBUG
+        for (std::size_t i = 0; i < edges_start.size(); i++) {
+            std::cout << edges_start[i] << " " << edges_end[i] << " " << powers[i] << std::endl;
+        }
         // check whether construct graph result is right
         // current geometry function is not precise, may have problems, here.
         std::vector<int> hot_pixels_times(hot_pixels.size());
