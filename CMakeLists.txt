@@ -10,23 +10,6 @@ set(CPM_DEBUG 1)
 include(cmake/CPM.cmake)
 
 CPMAddPackage(
-    NAME GraphBLAS
-    GITHUB_REPOSITORY DrTimothyAldenDavis/GraphBLAS
-    GIT_TAG v10.3.1
-    OPTIONS
-        "GRAPHBLAS_BUILD_STATIC_LIBS ON"
-        "BUILD_SHARED_LIBS OFF"
-        "BUILD_STATIC_LIBS ON"
-        "GRAPHBLAS_USE_CUDA ON"
-)
-
-if(TARGET GraphBLAS_static)
-    message(STATUS "GraphBLAS target found")
-else()
-    message(FATAL_ERROR "GraphBLAS_static target not found!")
-endif()
-
-CPMAddPackage(
     NAME boost
     GITHUB_REPOSITORY boostorg/boost
     GIT_TAG boost-1.90.0
