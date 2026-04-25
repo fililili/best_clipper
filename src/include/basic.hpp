@@ -1,19 +1,16 @@
-#include <iostream>
-#include <vector>
-#include <cassert>
-#include <algorithm>
-#include <ranges>
-#include <optional>
-#include <stack>
-#include <random>
-#include <chrono>
-#include <string>
-#include <numeric>
-#include <type_traits>
-#include <boost/geometry.hpp>
-#include <boost/container/flat_map.hpp>
+#pragma once
 
-//#define LOG_TIME
+#include <algorithm>
+#include <boost/container/flat_map.hpp>
+#include <boost/geometry.hpp>
+#include <cassert>
+#include <cmath>
+#include <limits>
+#include <numeric>
+#include <optional>
+#include <queue>
+#include <ranges>
+#include <vector>
 
 namespace bg = boost::geometry;
 using point = bg::model::d2::point_xy<int>;
@@ -23,777 +20,857 @@ using ring = bg::model::ring<point>;
 using polygon = bg::model::polygon<point>;
 using multi_polygon = bg::model::multi_polygon<polygon>;
 
-std::string get_time_string(auto t) {
-    auto ti = std::chrono::system_clock::to_time_t(t);
-    std::stringstream ss;
-    ss << std::put_time(std::localtime(&ti), "%Y-%m-%d %H:%M:%S");
-    return ss.str();
+// ---------------------------------------------------------------------------
+// Utility
+// ---------------------------------------------------------------------------
+
+inline auto bucket_sort(auto vec, auto bucket_size, auto get_bucket, auto get_left) {
+    std::vector<int> times(bucket_size);
+    for (auto val : vec) times[get_bucket(val)]++;
+    std::vector<unsigned int> begin_location(times.size());
+    std::exclusive_scan(std::begin(times), std::end(times), std::begin(begin_location), 0);
+    std::vector<std::invoke_result_t<decltype(get_left), typename decltype(vec)::value_type>> left(
+        vec.size());
+    auto current_location{begin_location};
+    for (auto val : vec) left[current_location[get_bucket(val)]++] = get_left(val);
+    return std::tuple{std::move(begin_location), std::move(current_location), std::move(left)};
 }
 
-auto log_done_time(std::string work) {
-#ifdef LOG_TIME
-    using namespace std::chrono_literals;
-    static auto before_time = std::chrono::system_clock::now();
-    auto after_time = std::chrono::system_clock::now();
-    std::cout << work << " is done, before time: " << get_time_string(before_time) << ", after time: " << get_time_string(after_time) << ", runtime: " << (after_time - before_time) / 1s << "s" << std::endl;
-    before_time = after_time;
-#endif
+inline auto not_adjacent_find(auto begin, auto end, auto binary) {
+    assert(begin != end);
+    auto cur = begin;
+    while (std::next(cur) != end) {
+        if (binary(*cur, *std::next(cur))) ++cur;
+        else break;
+    }
+    return std::next(cur);
 }
 
-
-auto construct_multi_polygons(auto&& rings) {
-    log_done_time("start of construct multi polygons");
-    std::vector<bool> is_rings_cw(rings.size());
-    for (std::size_t i = 0; i < rings.size(); i++) {
-        if (bg::area(rings[i]) > 0)
-            is_rings_cw[i] = true;
-        else
-            is_rings_cw[i] = false;
-    }
-    std::vector<std::pair<box, std::size_t>> cw_rings_box;
-    multi_polygon ret;
-    log_done_time("judge cw");
-
-    cw_rings_box.reserve(rings.size());
-    ret.reserve(rings.size());
-    for (std::size_t i = 0; i < rings.size(); i++) {
-        if (is_rings_cw[i] == true) {
-            cw_rings_box.emplace_back(bg::return_envelope<box>(rings[i]), ret.size());
-            polygon poly{ std::move(rings[i]) };
-            ret.emplace_back(std::move(poly));
-        }
-    }
-    log_done_time("build multi polygon");
-
-    bg::index::rtree< std::pair<box, std::size_t>, bg::index::quadratic<128> > rings_box_tree(cw_rings_box);
-    for (std::size_t i = 0; i < rings.size(); i++) {
-        if (is_rings_cw[i] == false) {
-            for (auto itr = rings_box_tree.qbegin(bg::index::contains(rings[i][0])); itr != rings_box_tree.qend(); ++itr) {
-                if (bg::relate(rings[i][0], bg::exterior_ring(ret[itr->second]), bg::de9im::static_mask<'T', 'F', 'F'>{})) {
-                    bg::interior_rings(ret[itr->second]).emplace_back(std::move(rings[i]));
-                    break;
-                }
-            }
-        }
-    }
-    log_done_time("find hole parent");
-    return ret;
-
-}
-
-
-// may be overflow, need study more
-// current algorithm from https://leetcode.cn/problems/intersection-lcci/solutions/197813/jiao-dian-by-leetcode-solution/
-std::optional<point> get_intersection(segment s1, segment s2) {
-    using ctype = decltype(bg::get<0, 0>(s1));
-    double x1 = bg::get<0, 0>(s1);
-    double y1 = bg::get<0, 1>(s1);
-    double x2 = bg::get<1, 0>(s1);
-    double y2 = bg::get<1, 1>(s1);
-    double x3 = bg::get<0, 0>(s2);
-    double y3 = bg::get<0, 1>(s2);
-    double x4 = bg::get<1, 0>(s2);
-    double y4 = bg::get<1, 1>(s2);
-    if ((y4 - y3) * (x2 - x1) == (y2 - y1) * (x4 - x3)) return {}; // return empty when paraller
-    double t1 = (double)(x3 * (y4 - y3) + y1 * (x4 - x3) - y3 * (x4 - x3) - x1 * (y4 - y3)) / ((x2 - x1) * (y4 - y3) - (x4 - x3) * (y2 - y1));
-    double t2 = (double)(x1 * (y2 - y1) + y3 * (x2 - x1) - y1 * (x2 - x1) - x3 * (y2 - y1)) / ((x4 - x3) * (y2 - y1) - (x2 - x1) * (y4 - y3));
-    // 判断 t1 和 t2 是否均在 (0, 1) 之间
-    if (t1 > 0.0 && t1 < 1.0 && t2 > 0.0 && t2 < 1.0) {
-        // -0.5 < x <= 0.5 to 0
-        return point{ static_cast<ctype>(std::ceil(x1 + t1 * (x2 - x1) - 0.5)), static_cast<ctype>(std::ceil(y1 + t1 * (y2 - y1) - 0.5)) };
-    }
-    else {
-        return {};
-    }
-}
-
-bool is_point_on_segment(point p, segment s) {
-    // will use better algorithm
-    auto x = bg::get<0>(p);
-    auto y = bg::get<1>(p);
-    auto x1 = bg::get<0, 0>(s);
-    auto y1 = bg::get<0, 1>(s);
-    auto x2 = bg::get<1, 0>(s);
-    auto y2 = bg::get<1, 1>(s);
-    if ((x2 - x1) * (x - x1) + (y2 - y1) * (y - y1) < 0 || (x2 - x1) * (x2 - x) + (y2 - y1) * (y2 - y) < 0) return false;
-
-    if ((2 * x + 1 - x1 - x2) * (y1 - y2) > (2 * y + 1 - y1 - y2) * (x1 - x2) &&
-        (2 * x + 1 - x1 - x2) * (y1 - y2) >= (2 * y - 1 - y1 - y2) * (x1 - x2) &&
-        (2 * x - 1 - x1 - x2) * (y1 - y2) >= (2 * y + 1 - y1 - y2) * (x1 - x2) &&
-        (2 * x - 1 - x1 - x2) * (y1 - y2) >= (2 * y - 1 - y1 - y2) * (x1 - x2)) {
-        return false;
-    }
-    if ((2 * x + 1 - x1 - x2) * (y1 - y2) < (2 * y + 1 - y1 - y2) * (x1 - x2) &&
-        (2 * x + 1 - x1 - x2) * (y1 - y2) <= (2 * y - 1 - y1 - y2) * (x1 - x2) &&
-        (2 * x - 1 - x1 - x2) * (y1 - y2) <= (2 * y + 1 - y1 - y2) * (x1 - x2) &&
-        (2 * x - 1 - x1 - x2) * (y1 - y2) <= (2 * y - 1 - y1 - y2) * (x1 - x2)) {
-        return false;
-    }
-    return true;
-}
+// ---------------------------------------------------------------------------
+// Geometry
+// ---------------------------------------------------------------------------
 
 struct less_by_segment {
-    bool operator() (point p1, point p2) {
-        double x1 = bg::get<0>(p1);
-        double y1 = bg::get<1>(p1);
-        double x2 = bg::get<0>(p2);
-        double y2 = bg::get<1>(p2);
-        double x3 = bg::get<0, 0>(s);
-        double y3 = bg::get<0, 1>(s);
-        double x4 = bg::get<1, 0>(s);
-        double y4 = bg::get<1, 1>(s);
-
+    bool operator()(point p1, point p2) const {
+        int64_t x1 = bg::get<0>(p1), y1 = bg::get<1>(p1);
+        int64_t x2 = bg::get<0>(p2), y2 = bg::get<1>(p2);
+        int64_t x3 = bg::get<0, 0>(s), y3 = bg::get<0, 1>(s);
+        int64_t x4 = bg::get<1, 0>(s), y4 = bg::get<1, 1>(s);
         return (x2 - x1) * (x4 - x3) + (y2 - y1) * (y4 - y3) > 0;
     }
     segment s;
 };
 
-bool less_by_direction(point source, point target1, point target2) {
-    constexpr auto get_direction = [](point v1, point v2) {
-        // can be more precise
-        double dx = bg::get<0>(v2) - bg::get<0>(v1);
-        double dy = bg::get<1>(v2) - bg::get<1>(v1);
+inline bool less_by_direction(point source, point target1, point target2) {
+    auto get_direction = [](point v1, point v2) {
+        int64_t dx = bg::get<0>(v2) - bg::get<0>(v1);
+        int64_t dy = bg::get<1>(v2) - bg::get<1>(v1);
         enum class quadrant { _1, _2, _3, _4, zero };
-        if (dx > 0 && dy >= 0) {
-            return std::pair{ quadrant::_1, dy / dx };
-        }
-        else if (dx <= 0 && dy > 0) {
-            return std::pair{ quadrant::_2, -dx / dy };
-        }
-        else if (dx < 0 && dy <= 0) {
-            return std::pair{ quadrant::_3, dy / dx };
-        }
-        else if (dx >= 0 && dy < 0) {
-            return std::pair{ quadrant::_4, -dx / dy };
-        }
-        // never happen
-        return std::pair{ quadrant::zero, 0.0 };
-        };
+        if (dx > 0 && dy >= 0) return std::pair{quadrant::_1, (long double)dy / dx};
+        if (dx <= 0 && dy > 0) return std::pair{quadrant::_2, -(long double)dx / dy};
+        if (dx < 0 && dy <= 0) return std::pair{quadrant::_3, (long double)dy / dx};
+        if (dx >= 0 && dy < 0) return std::pair{quadrant::_4, -(long double)dx / dy};
+        return std::pair{quadrant::zero, 0.0L};
+    };
     return get_direction(source, target1) < get_direction(source, target2);
 }
 
-auto bucket_sort(auto vec, auto bucket_size, auto get_bucket, auto get_left) {
-    std::vector<int> times(bucket_size);
-    for (auto val : vec) {
-        times[get_bucket(val)]++;
-    }
-    std::vector<unsigned int> begin_location(times.size());
-    std::exclusive_scan(std::begin(times), std::end(times), std::begin(begin_location), 0);
-    std::vector<std::invoke_result_t<decltype(get_left), typename decltype(vec)::value_type> > left(vec.size());
-    auto current_location{ begin_location };
-    for (auto val : vec) {
-        left[current_location[get_bucket(val)]++] = get_left(val);
-    }
-    return std::tuple{ std::move(begin_location), std::move(current_location), std::move(left) };
+inline int64_t cross(int64_t x1, int64_t y1, int64_t x2, int64_t y2) {
+    return x1 * y2 - y1 * x2;
 }
 
-// std has adjacent find, but the function result is not continuous
-// it's better to use c++23 chunk_by
-auto not_adjacent_find(auto begin, auto end, auto binary) {
-    assert(begin != end);
-    auto cur = begin;
-    while (std::next(cur) != end) {
-        if (binary(*cur, *std::next(cur))) {
-            ++cur;
-        }
-        else {
-            break;
-        }
-    }
-    return std::next(cur);
+inline std::optional<point> get_intersection(segment s1, segment s2) {
+    int64_t x1 = bg::get<0, 0>(s1), y1 = bg::get<0, 1>(s1);
+    int64_t x2 = bg::get<1, 0>(s1), y2 = bg::get<1, 1>(s1);
+    int64_t x3 = bg::get<0, 0>(s2), y3 = bg::get<0, 1>(s2);
+    int64_t x4 = bg::get<1, 0>(s2), y4 = bg::get<1, 1>(s2);
+    int64_t dx1 = x2 - x1, dy1 = y2 - y1;
+    int64_t dx2 = x4 - x3, dy2 = y4 - y3;
+    int64_t d = cross(dx1, dy1, dx2, dy2);
+    if (d == 0) return {};
+    int64_t t1_num = cross(x3 - x1, y3 - y1, dx2, dy2);
+    int64_t t2_num = cross(x3 - x1, y3 - y1, dx1, dy1);
+    if (d < 0) { d = -d; t1_num = -t1_num; t2_num = -t2_num; }
+    if (t1_num <= 0 || t1_num >= d || t2_num <= 0 || t2_num >= d) return {};
+    long double fx = (long double)x1 + (long double)t1_num * dx1 / d;
+    long double fy = (long double)y1 + (long double)t1_num * dy1 / d;
+    return point{static_cast<int>(std::ceil(fx - 0.5L)),
+                 static_cast<int>(std::ceil(fy - 0.5L))};
 }
 
-struct edge_t {
-	std::size_t start;
-	std::size_t end;
+inline bool is_point_on_segment(point p, segment s) {
+    int64_t x = bg::get<0>(p), y = bg::get<1>(p);
+    int64_t x1 = bg::get<0, 0>(s), y1 = bg::get<0, 1>(s);
+    int64_t x2 = bg::get<1, 0>(s), y2 = bg::get<1, 1>(s);
+    if ((x2 - x1) * (x - x1) + (y2 - y1) * (y - y1) < 0) return false;
+    if ((x2 - x1) * (x2 - x) + (y2 - y1) * (y2 - y) < 0) return false;
+    int64_t dx = x2 - x1, dy = y2 - y1;
+    if ((2 * x + 1 - x1 - x2) * dy > (2 * y + 1 - y1 - y2) * dx &&
+        (2 * x + 1 - x1 - x2) * dy >= (2 * y - 1 - y1 - y2) * dx &&
+        (2 * x - 1 - x1 - x2) * dy >= (2 * y + 1 - y1 - y2) * dx &&
+        (2 * x - 1 - x1 - x2) * dy >= (2 * y - 1 - y1 - y2) * dx)
+        return false;
+    if ((2 * x + 1 - x1 - x2) * dy < (2 * y + 1 - y1 - y2) * dx &&
+        (2 * x + 1 - x1 - x2) * dy <= (2 * y - 1 - y1 - y2) * dx &&
+        (2 * x - 1 - x1 - x2) * dy <= (2 * y + 1 - y1 - y2) * dx &&
+        (2 * x - 1 - x1 - x2) * dy <= (2 * y - 1 - y1 - y2) * dx)
+        return false;
+    return true;
+}
+
+// ---------------------------------------------------------------------------
+// Data types
+// ---------------------------------------------------------------------------
+
+struct edge_t { std::size_t start; std::size_t end; };
+struct edge_with_power_t { std::size_t start, end; int power; };
+
+struct chain_build_result {
+    std::vector<std::size_t> indices, offsets;
+    std::vector<int> powers;
+    std::vector<std::size_t> edge_to_chain;
 };
 
-struct edge_with_power_t {
-    std::size_t start;
-    std::size_t end;
-    int power;
+struct dup_chain_view {
+    std::size_t id;
+    std::size_t chain_id() const { return id / 2; }
+    bool is_forward() const { return id % 2 == 0; }
+    std::size_t source_node(const chain_build_result& c) const {
+        if (is_forward()) return c.indices[c.offsets[chain_id()]];
+        else return c.indices[c.offsets[chain_id() + 1] - 1];
+    }
+    std::size_t target_node(const chain_build_result& c) const {
+        if (is_forward()) return c.indices[c.offsets[chain_id() + 1] - 1];
+        else return c.indices[c.offsets[chain_id()]];
+    }
+    std::size_t next_along_source(const chain_build_result& c) const {
+        if (is_forward()) return c.indices[c.offsets[chain_id()] + 1];
+        else return c.indices[c.offsets[chain_id() + 1] - 2];
+    }
+    int power(const chain_build_result& c) const {
+        if (is_forward()) return c.powers[chain_id()];
+        else return -c.powers[chain_id()];
+    }
+    dup_chain_view dual() const { return {id ^ 1}; }
 };
 
-std::tuple<std::vector<edge_t>, std::vector<point> > construct_graph(auto segs) {
-    log_done_time("start of construct_graph");
+// ---------------------------------------------------------------------------
+// Step 1-3: edges with power
+// ---------------------------------------------------------------------------
+
+inline std::tuple<std::vector<edge_t>, std::vector<point>> construct_graph(auto segs) {
     std::vector<std::pair<box, std::size_t>> boxes(segs.size());
-    for (std::size_t i = 0; i < segs.size(); i++) {
-        boxes[i] = { bg::return_envelope<box>(segs[i]), i };
-    }
-    bg::index::rtree< std::pair<box, std::size_t>, bg::index::quadratic<128> > segs_box_rtree(std::move(boxes));
+    for (std::size_t i = 0; i < segs.size(); i++)
+        boxes[i] = {bg::return_envelope<box>(segs[i]), i};
+    bg::index::rtree<std::pair<box, std::size_t>, bg::index::quadratic<128>> segs_box_rtree(
+        std::move(boxes));
 
     std::vector<point> hot_pixels;
     hot_pixels.reserve(segs.size() * 2);
-
     for (const auto& seg : segs) {
         hot_pixels.emplace_back(bg::get<0, 0>(seg), bg::get<0, 1>(seg));
+        hot_pixels.emplace_back(bg::get<1, 0>(seg), bg::get<1, 1>(seg));
     }
 
-    log_done_time("build segs rtree");
-    for (std::size_t i = 0; i < segs.size(); i++) {
-        std::for_each(segs_box_rtree.qbegin(bg::index::intersects(boxes[i].first)), segs_box_rtree.qend(),
-            [&](auto const& other_seg) {
-                std::optional<point> p = get_intersection(segs[i], segs[other_seg.second]); // find other_seg seg intersection
-                if (p) {
+    for (std::size_t i = 0; i < segs.size(); i++)
+        std::for_each(
+            segs_box_rtree.qbegin(bg::index::intersects(boxes[i].first)), segs_box_rtree.qend(),
+            [&](auto const& o) {
+                if (auto p = get_intersection(segs[i], segs[o.second]))
                     hot_pixels.push_back(p.value());
-                }
-            }
-        );
-
-    }
-    log_done_time("find hot_pixels");
+            });
 
     {
-        std::sort(std::begin(hot_pixels), std::end(hot_pixels),
-            [](auto p1, auto p2) {
-                // can dig more to see if we can use a better sort algorithm to better order pixels
-                return std::pair{ bg::get<0>(p1), bg::get<1>(p1) } < std::pair{ bg::get<0>(p2), bg::get<1>(p2) };
-            }
-        ); // need define a better one
-        auto last = std::unique(std::begin(hot_pixels), std::end(hot_pixels), [](auto p1, auto p2) { return bg::equals(p1, p2); });
+        std::sort(std::begin(hot_pixels), std::end(hot_pixels), [](auto p1, auto p2) {
+            return std::pair{bg::get<0>(p1), bg::get<1>(p1)} <
+                   std::pair{bg::get<0>(p2), bg::get<1>(p2)};
+        });
+        auto last = std::unique(std::begin(hot_pixels), std::end(hot_pixels),
+                                [](auto p1, auto p2) { return bg::equals(p1, p2); });
         hot_pixels.erase(last, hot_pixels.end());
-
-        // reorder hot pixels to make memory cache better
-        bg::index::rtree<point, bg::index::quadratic<128> > hot_pixels_rtree{ hot_pixels };
-        hot_pixels = std::vector<point>{ std::begin(hot_pixels_rtree), std::end(hot_pixels_rtree) };
-
+        bg::index::rtree<point, bg::index::quadratic<128>> hp_rtree{hot_pixels};
+        hot_pixels = std::vector<point>{std::begin(hp_rtree), std::end(hp_rtree)};
     }
-    log_done_time("order hot pixels");
 
-    std::vector<std::pair<std::size_t, std::size_t> > seg_pixel_pairs;
+    std::vector<std::pair<std::size_t, std::size_t>> seg_pixel_pairs;
     for (std::size_t i = 0; i < hot_pixels.size(); i++) {
         constexpr auto expand = 1;
-        auto min_corner = point{ bg::get<0>(hot_pixels[i]) - expand, bg::get<1>(hot_pixels[i]) - expand };
-        auto max_corner = point{ bg::get<0>(hot_pixels[i]) + expand, bg::get<1>(hot_pixels[i]) + expand };
-
-        std::for_each(segs_box_rtree.qbegin(bg::index::intersects(box{ min_corner, max_corner })), segs_box_rtree.qend(),
+        auto mc = point{bg::get<0>(hot_pixels[i]) - expand, bg::get<1>(hot_pixels[i]) - expand};
+        auto Mc = point{bg::get<0>(hot_pixels[i]) + expand, bg::get<1>(hot_pixels[i]) + expand};
+        std::for_each(
+            segs_box_rtree.qbegin(bg::index::intersects(box{mc, Mc})), segs_box_rtree.qend(),
             [&](auto const& val) {
-                if (is_point_on_segment(hot_pixels[i], segs[val.second])) {
+                if (is_point_on_segment(hot_pixels[i], segs[val.second]))
                     seg_pixel_pairs.emplace_back(val.second, i);
-                }
-            }
-        );
-
+            });
     }
-    log_done_time("find segs on hot_pixels");
 
-
-    std::vector<edge_t > edges;
+    std::vector<edge_t> edges;
     {
-        auto [segs_begin_location, segs_end_location, pixels] = bucket_sort(
-            seg_pixel_pairs,
-            segs.size(),
-            [](auto val) {return val.first; },
-            [](auto val) {return val.second; }
-        );
+        auto [segs_begin, segs_end, pixels] = bucket_sort(
+            seg_pixel_pairs, segs.size(), [](auto val) { return val.first; },
+            [](auto val) { return val.second; });
         for (std::size_t i = 0; i < segs.size(); i++) {
-            auto cur_begin = std::begin(pixels) + segs_begin_location[i];
-            auto cur_end = std::begin(pixels) + segs_end_location[i];
-            auto cur_last = cur_end - 1;
-            std::sort(cur_begin, cur_end,
-                [&](auto pi, auto pj) {
-                    return less_by_segment{ segs[i] }(hot_pixels[pi], hot_pixels[pj]);
-                }
-            );
+            auto cb = std::begin(pixels) + segs_begin[i], ce = std::begin(pixels) + segs_end[i];
+            std::sort(cb, ce, [&](auto pi, auto pj) {
+                return less_by_segment{segs[i]}(hot_pixels[pi], hot_pixels[pj]);
+            });
+            for (; cb != ce - 1; cb++) edges.emplace_back(*cb, *std::next(cb));
+        }
+    }
+    return {std::move(edges), std::move(hot_pixels)};
+}
 
-            for (; cur_begin != cur_last; cur_begin++) {
-                edges.emplace_back(*cur_begin, *std::next(cur_begin));
+inline std::vector<edge_with_power_t> edges_to_power(std::vector<edge_t> edges) {
+    std::vector<edge_with_power_t> r(edges.size());
+    for (std::size_t i = 0; i < r.size(); i++) {
+        r[i] = {edges[i].start, edges[i].end, 1};
+        if (r[i].start > r[i].end) { std::swap(r[i].start, r[i].end); r[i].power = -1; }
+    }
+    return r;
+}
+
+inline std::vector<edge_with_power_t> sort_edges_by_start(std::vector<edge_with_power_t> edges,
+                                                           std::size_t nv) {
+    auto [bl, el, ordered] = bucket_sort(
+        std::move(edges), nv, [](edge_with_power_t e) { return e.start; },
+        [](edge_with_power_t e) { return e; });
+    for (std::size_t i = 0; i < nv; i++) {
+        auto cb = std::begin(ordered) + bl[i], ce = std::begin(ordered) + el[i];
+        std::sort(cb, ce, [](auto a, auto b) { return a.end < b.end; });
+    }
+    return ordered;
+}
+
+inline std::vector<edge_with_power_t> unique_edges(std::vector<edge_with_power_t> edges) {
+    constexpr auto eq = [](edge_with_power_t a, edge_with_power_t b) {
+        return a.start == b.start && a.end == b.end;
+    };
+    constexpr auto mg = [](edge_with_power_t a, edge_with_power_t b) {
+        return edge_with_power_t{a.start, a.end, a.power + b.power};
+    };
+    auto cur = std::begin(edges), out = cur;
+    while (cur != std::end(edges)) {
+        auto nxt = not_adjacent_find(cur, std::end(edges), eq);
+        *out++ = std::reduce(std::next(cur), nxt, *cur, mg);
+        cur = nxt;
+    }
+    edges.erase(out, std::end(edges));
+    return edges;
+}
+
+inline auto construct_edges_with_power(auto segs) {
+    auto [edges, hp] = construct_graph(std::move(segs));
+    auto ewp = unique_edges(sort_edges_by_start(edges_to_power(std::move(edges)), hp.size()));
+    std::erase_if(ewp, [](auto e) { return e.power == 0; });
+    return std::tuple{std::move(hp), std::move(ewp)};
+}
+
+// ---------------------------------------------------------------------------
+// Step 4: chains
+// ---------------------------------------------------------------------------
+
+inline std::size_t edge_dest(const edge_with_power_t& e) { return e.power > 0 ? e.end : e.start; }
+inline std::size_t edge_ts(const edge_with_power_t& e) { return e.power > 0 ? e.start : e.end; }
+
+inline chain_build_result build_chains(const std::vector<edge_with_power_t>& sorted_edges,
+                                       const std::vector<std::size_t>& edge_offsets,
+                                       std::size_t node_num) {
+    std::vector<std::uint32_t> out_deg(node_num), in_deg(node_num);
+    std::vector<int> out_pow(node_num), in_pow(node_num);
+    for (const auto& e : sorted_edges) {
+        auto s = edge_ts(e), d = edge_dest(e);
+        out_deg[s]++; in_deg[d]++; out_pow[s] = e.power; in_pow[d] = e.power;
+    }
+
+    std::vector<bool> is_end(node_num);
+    for (std::size_t i = 0; i < node_num; i++)
+        is_end[i] = !(out_deg[i] == 1 && in_deg[i] == 1 && out_pow[i] == in_pow[i]);
+
+    std::vector<bool> visited(node_num), edge_used(sorted_edges.size());
+    std::vector<std::size_t> idx, off{0};
+    std::vector<int> pows;
+    std::vector<std::size_t> e2c(sorted_edges.size(), ~0ULL);
+
+    for (std::size_t i = 0; i < node_num; i++) {
+        if (!is_end[i]) continue;
+        visited[i] = true;
+        for (std::size_t j = edge_offsets[i]; j < edge_offsets[i + 1]; j++) {
+            if (edge_used[j] || edge_ts(sorted_edges[j]) != i) continue;
+            edge_used[j] = true; idx.push_back(i);
+            pows.push_back(std::abs(sorted_edges[j].power)); e2c[j] = off.size() - 1;
+            auto cur = edge_dest(sorted_edges[j]);
+            while (!is_end[cur]) {
+                visited[cur] = true; idx.push_back(cur);
+                std::size_t nj = ~0ULL;
+                for (std::size_t k = edge_offsets[cur]; k < edge_offsets[cur + 1]; k++)
+                    if (!edge_used[k] && edge_ts(sorted_edges[k]) == cur) { nj = k; break; }
+                assert(nj != ~0ULL);
+                edge_used[nj] = true; e2c[nj] = off.size() - 1;
+                cur = edge_dest(sorted_edges[nj]);
             }
+            idx.push_back(cur); off.push_back(idx.size());
         }
     }
-    log_done_time("build edges");
-    return std::tuple{ std::move(edges), std::move(hot_pixels) };
+
+    for (std::size_t i = 0; i < node_num; i++) {
+        if (visited[i]) continue;
+        std::size_t sj = ~0ULL;
+        for (std::size_t j = edge_offsets[i]; j < edge_offsets[i + 1]; j++)
+            if (!edge_used[j] && edge_ts(sorted_edges[j]) == i) { sj = j; break; }
+        if (sj == ~0ULL) continue;
+        visited[i] = true; edge_used[sj] = true;
+        idx.push_back(i); pows.push_back(std::abs(sorted_edges[sj].power)); e2c[sj] = off.size() - 1;
+        auto cur = edge_dest(sorted_edges[sj]);
+        while (i != cur) {
+            visited[cur] = true; idx.push_back(cur);
+            std::size_t nj = ~0ULL;
+            for (std::size_t k = edge_offsets[cur]; k < edge_offsets[cur + 1]; k++)
+                if (!edge_used[k] && edge_ts(sorted_edges[k]) == cur) { nj = k; break; }
+            assert(nj != ~0ULL);
+            edge_used[nj] = true; e2c[nj] = off.size() - 1;
+            cur = edge_dest(sorted_edges[nj]);
+        }
+        idx.push_back(cur); off.push_back(idx.size());
+    }
+
+    return {std::move(idx), std::move(off), std::move(pows), std::move(e2c)};
 }
 
-std::vector<edge_with_power_t> edges_direction_to_power(std::vector<edge_t> edges) {
-    std::vector<edge_with_power_t> ret(edges.size());
-    for (std::size_t i = 0; i < ret.size(); i++) {
-        ret[i] = { edges[i].start, edges[i].end, 1};
-        auto& v1 = ret[i].start;
-        auto& v2 = ret[i].end;
-        if (v1 < v2) {
-            ret[i].power = 1;
-        }
-        else {
-            std::swap(v1, v2);
-            ret[i].power = -1;
-        }
-    }
-    return ret;
-}
+// ---------------------------------------------------------------------------
+// DSU helper
+// ---------------------------------------------------------------------------
 
-std::vector<edge_with_power_t> sort_edges(std::vector<edge_with_power_t> edges, std::size_t vertex_number) {
-    auto [begin_location, end_location, ordered_double_edges] = bucket_sort(
-        std::move(edges),
-        vertex_number,
-        [](edge_with_power_t val) { return val.start; },
-        [](edge_with_power_t val) { return val; }
-    );
-    for (std::size_t i = 0; i < vertex_number; i++) {
-        auto cur_begin = std::begin(ordered_double_edges) + begin_location[i];
-        auto cur_end = std::begin(ordered_double_edges) + end_location[i];
-        std::sort(cur_begin, cur_end, [](edge_with_power_t e1, edge_with_power_t e2) { return e1.end < e2.end; });
+struct dsu_t {
+    std::vector<std::size_t> p;
+    std::size_t find(std::size_t x) {
+        std::size_t r = x;
+        while (p[r] != r) r = p[r];
+        while (x != r) { auto n = p[x]; p[x] = r; x = n; }
+        return r;
     }
-    return std::move(ordered_double_edges);
-}
-
-std::vector<edge_with_power_t> unique_edges(std::vector<edge_with_power_t> edges) {
-    constexpr auto equal = [](edge_with_power_t e1, edge_with_power_t e2) {
-        return e1.start == e2.start && e1.end == e2.end;
-        };
-    constexpr auto merge_func = [](edge_with_power_t e1, edge_with_power_t e2) {
-        return edge_with_power_t{ e1.start, e1.end, e1.power + e2.power };
-        };
-
-    auto cur_begin = std::begin(edges);
-    auto cur_result = cur_begin;
-    while (cur_begin != std::end(edges)) {
-        auto cur_end = not_adjacent_find(cur_begin, std::end(edges), equal);
-        *cur_result++ = std::reduce(std::next(cur_begin), cur_end, *cur_begin, merge_func);
-        cur_begin = cur_end;
+    void unite(std::size_t a, std::size_t b) {
+        a = find(a); b = find(b);
+        if (a != b) p[a] = b;
     }
-    edges.erase(cur_result, std::end(edges));
-    return std::move(edges);
-}
-
-auto construct_edges_with_power(auto segs) {
-    auto [edges, hot_pixels] = construct_graph(std::move(segs));
-    auto edges_with_power =
-        unique_edges(
-            sort_edges(edges_direction_to_power(std::move(edges)), hot_pixels.size())
-        );
-    std::erase_if(edges_with_power, [](auto edge_with_power) {
-        return edge_with_power.power == 0;
-        });
-    {
-#ifndef NDEBUG
-        // check whether construct graph result is right
-        // current geometry function is not precise, may have problems, here.
-        std::vector<int> hot_pixels_times(hot_pixels.size());
-        std::vector<int> hot_pixels_power(hot_pixels.size());
-        for (auto edge_with_power : edges_with_power) {
-            hot_pixels_times[edge_with_power.start]++;
-            hot_pixels_times[edge_with_power.end]++;
-            hot_pixels_power[edge_with_power.start] += p;
-            hot_pixels_power[edges_with_power.end] -= p;
-        }
-        for (std::size_t i = 0; i < hot_pixels.size(); i++) {
-            if (hot_pixels_times[i] == 1 || hot_pixels_power[i] != 0) {
-                std::cout << hot_pixels_times[i] << std::endl;
-                std::cout << hot_pixels_power[i] << std::endl;
-                std::cout << bg::wkt(hot_pixels[i]) << std::endl;
-                assert(false);
-            }
-        }
-#endif
+    void compress() {
+        for (std::size_t i = 0; i < p.size(); i++) p[i] = find(i);
     }
-    log_done_time("calculate edge power");
-    return std::tuple{ std::move(hot_pixels), std::move(edges_with_power) };
-}
-
-struct duplicated_edge_t {
-    std::size_t source(const std::vector<edge_with_power_t>& edges) {
-        if (i % 2 == 0) {
-            return edges[i / 2].end;
-        }
-        else {
-            return edges[i / 2].start;
-        }
-    }
-    std::size_t target(const std::vector<edge_with_power_t>& edges) {
-        if (i % 2 == 0) {
-            return edges[i / 2].start;
-        }
-        else {
-            return edges[i / 2].end;
-        }
-    }
-    int power(const std::vector<edge_with_power_t>& edges) {
-        if (i % 2 == 0) {
-            return -edges[i / 2].power;
-        }
-        else {
-            return edges[i / 2].power;
-        }
-    }
-    duplicated_edge_t dual() {
-        if (i % 2 == 0) {
-            return duplicated_edge_t{ i + 1 };
-        }
-        else {
-            return duplicated_edge_t{ i - 1 };
-        }
-    }
-    operator const std::size_t& () const {
-        return i;
-    }
-
-    std::size_t i;
 };
 
-auto connect_duplicated_edges(const std::vector<edge_with_power_t>& edges, const std::vector<point>& hot_pixels) {
-    std::vector<duplicated_edge_t> duplicated_edges(edges.size() * 2);
-    for (std::size_t i = 0; i < duplicated_edges.size(); i++) {
-        duplicated_edges[i] = duplicated_edge_t{ i };
-    }
-
-    auto [begin_location, end_location, sort_duplicated_edges] = bucket_sort(
-        std::move(duplicated_edges),
-        hot_pixels.size(),
-        [&](auto de) { return de.source(edges); },
-        [&](auto de) { return de; }
-    );
-    for (std::size_t i = 0; i < hot_pixels.size(); i++) {
-        if (end_location[i] - begin_location[i] < 3) continue;
-        std::sort(
-            std::begin(sort_duplicated_edges) + begin_location[i],
-            std::begin(sort_duplicated_edges) + end_location[i],
-            [&](auto i1, auto i2) {
-                return less_by_direction(hot_pixels[i], hot_pixels[i1.target(edges)], hot_pixels[i2.target(edges)]);
-            }
-        );
-    }
-    std::vector<duplicated_edge_t> next_duplicated_edges(sort_duplicated_edges.size());
-    std::vector<duplicated_edge_t> pre_duplicated_edges(sort_duplicated_edges.size());
-    for (std::size_t i = 0; i < hot_pixels.size(); i++) {
-        auto cur_begin = std::begin(sort_duplicated_edges) + begin_location[i];
-        auto cur_end = std::begin(sort_duplicated_edges) + end_location[i];
-        if (cur_begin == cur_end) continue;
-        assert(cur_begin + 1 != cur_end);
-        next_duplicated_edges[(cur_end - 1)->dual()] = *cur_begin;
-        pre_duplicated_edges[*cur_begin] = (cur_end - 1)->dual();
-        for (++cur_begin; cur_begin != cur_end; ++cur_begin) {
-            next_duplicated_edges[(cur_begin - 1)->dual()] = *cur_begin;
-            pre_duplicated_edges[*cur_begin] = (cur_begin - 1)->dual();
-        }
-    }
-    return std::pair{ std::move(next_duplicated_edges), std::move(pre_duplicated_edges) };
+inline dsu_t make_dsu(std::size_t n) {
+    dsu_t d; d.p.resize(n);
+    for (std::size_t i = 0; i < n; i++) d.p[i] = i;
+    return d;
 }
 
-auto traversal_face(const std::vector<duplicated_edge_t>& next_duplicated_edges, auto face_traversal) {
-    auto size = next_duplicated_edges.size();
-    std::vector<bool> duplicated_edges_visited(size);
-    std::size_t cur_face_id = 0;
+// ---------------------------------------------------------------------------
+// Step 5-6: angular sort, next/prev, coplanar pairs (sector adjacency)
+// ---------------------------------------------------------------------------
 
-    for (std::size_t i = 0; i < size; i++) {
-        if (duplicated_edges_visited[i]) continue;
-        ++cur_face_id;
-        duplicated_edge_t cur_first{ i };
-        face_traversal.begin_face(cur_face_id);
-        do {
-            face_traversal.begin_edge({ i });
-            duplicated_edges_visited[i] = true;
-            i = next_duplicated_edges[i];
-        } while (i != cur_first);
-        face_traversal.end_face();
-    }
-}
+inline auto build_dc_graph(const chain_build_result& chains,
+                           const std::vector<point>& hot_pixels) {
+    std::size_t num_dcs = (chains.offsets.size() - 1) * 2;
+    std::size_t nv = hot_pixels.size();
 
-auto log_duplicated_edges_face_id(const auto& next_duplicated_edges) {
-    struct face_id_calculation_traversal {
-        void begin_face(std::size_t face_id) { cur_face_id = face_id; }
-        void begin_edge(duplicated_edge_t duplicated_edge) {
-            duplicated_edges_face_id[duplicated_edge] = cur_face_id;
-        }
-        void end_face() {}
-        std::vector<std::size_t>& duplicated_edges_face_id;
-        std::size_t& cur_face_id;
-    };
+    std::vector<dup_chain_view> all;
+    all.reserve(num_dcs);
+    for (std::size_t i = 0; i < num_dcs; i++) all.push_back({i});
 
-    std::vector<std::size_t> duplicated_edges_face_id(next_duplicated_edges.size());
-    std::size_t cur_face_id = 1;
-    face_id_calculation_traversal face_id_traversal{ duplicated_edges_face_id, cur_face_id };
-    traversal_face(next_duplicated_edges, face_id_traversal);
+    auto [begin_loc, end_loc, sorted_dcs] = bucket_sort(
+        all, nv, [&](dup_chain_view dc) { return dc.source_node(chains); },
+        [](dup_chain_view dc) { return dc; });
 
-    return std::pair{ std::move(duplicated_edges_face_id), cur_face_id + 1 };
-}
-
-auto build_face_nearby_relations(const auto& next_duplicated_edges, const auto& duplicated_edges_face_id) {
-    std::vector<std::tuple<std::size_t, std::size_t, duplicated_edge_t> > face_nearby_relations(next_duplicated_edges.size());
-    for (std::size_t i = 0; i < face_nearby_relations.size(); i++) {
-        duplicated_edge_t de{ i };
-        face_nearby_relations[de] = { duplicated_edges_face_id[de.dual()], duplicated_edges_face_id[de], de };
-        face_nearby_relations[de] = { duplicated_edges_face_id[de], duplicated_edges_face_id[de.dual()], de.dual()};
+    for (std::size_t v = 0; v < nv; v++) {
+        auto cb = begin_loc[v], ce = end_loc[v];
+        if (ce - cb < 2) continue;
+        std::sort(sorted_dcs.begin() + cb, sorted_dcs.begin() + ce,
+                  [&](dup_chain_view a, dup_chain_view b) {
+                      return less_by_direction(hot_pixels[v],
+                                               hot_pixels[a.next_along_source(chains)],
+                                               hot_pixels[b.next_along_source(chains)]);
+                  });
     }
 
-    log_done_time("build face nearby relations");
+    std::vector<dup_chain_view> next_dc(num_dcs, {~0ULL}), prev_dc(num_dcs, {~0ULL});
+    std::vector<std::pair<std::size_t, std::size_t>> coplanar;
 
-    return face_nearby_relations;
+    for (std::size_t v = 0; v < nv; v++) {
+        auto cb = begin_loc[v], ce = end_loc[v];
+        if (cb == ce) continue;
+        assert(cb + 1 != ce);
+        for (auto it = cb + 1; it < ce; ++it) {
+            auto prev = sorted_dcs[it - 1], cur = sorted_dcs[it];
+            // Face boundary: prev.dual() arrives at v, cur departs from v
+            next_dc[prev.dual().id] = cur;
+            prev_dc[cur.id] = prev.dual();
+            // Coplanarity: left(prev) = right(cur)  →  prev ~ cur.dual()
+            coplanar.emplace_back(prev.id, cur.dual().id);
+        }
+        auto first = sorted_dcs[cb], last = sorted_dcs[ce - 1];
+        next_dc[last.dual().id] = first;
+        prev_dc[first.id] = last.dual();
+        coplanar.emplace_back(last.id, first.dual().id);
+    }
+
+    return std::tuple{
+        std::move(sorted_dcs),
+        std::vector<std::size_t>(begin_loc.begin(), begin_loc.end()),
+        std::vector<std::size_t>(end_loc.begin(), end_loc.end()),
+        std::move(next_dc), std::move(prev_dc), std::move(coplanar)};
 }
 
-auto build_face_contains_relations(const auto& next_duplicated_edges, const auto& edges_with_power, const auto& hot_pixels) {
-    struct faces_record_traversal {
-        void begin_face(std::size_t face_id) {
-            cur_face_id = face_id;
-            cur_r = {};
-        }
-        void begin_edge(duplicated_edge_t duplicated_edge) {
-            cur_r.push_back(_hot_pixels[duplicated_edge.target(_edges_with_power)]);
-        }
-        void end_face() {
-            cur_r.push_back(cur_r[0]); // ring is closed, need to push one duplicated point
-            if (bg::area(cur_r) > 0) { // for cw orientation, the area > 0, may use more precise algorithm
-                cw_faces.emplace_back(std::move(cur_r), cur_face_id);
-            }
-            else {
-                ccw_face_id_to_direct_edge.emplace_back(cur_r[0], cur_face_id);
-            }
-        }
-        decltype(hot_pixels) _hot_pixels;
-        decltype(edges_with_power) _edges_with_power;
-        std::vector<std::pair<ring, std::size_t> >& cw_faces;
-        std::vector<std::pair<point, std::size_t> >& ccw_face_id_to_direct_edge;
-        std::size_t& cur_face_id;
+// ---------------------------------------------------------------------------
+// Step 7: ray casting. Returns coplanar pairs from the ray.
+// ---------------------------------------------------------------------------
 
-        ring cur_r{};
-    };
+// Cast ray in -x direction from leftmost vertex v.
+// Finds the DC at v whose left face contains the -x ray, then finds the nearest
+// DC hit by the ray. These two DCs are coplanar (share the exterior face).
+// If the ray hits nothing, the DC at v is the exterior face itself (w=0).
+inline std::vector<std::pair<std::size_t, std::size_t>> cast_ray_minus_x(
+    std::size_t v,
+    const std::vector<point>& hot_pixels,
+    const chain_build_result& chains,
+    const std::vector<dup_chain_view>& sorted_dcs,
+    const std::vector<std::size_t>& dc_begin,
+    const std::vector<std::size_t>& dc_end) {
 
-    std::vector<std::pair<ring, std::size_t> > cw_faces;
-    std::vector<std::pair<point, std::size_t> > ccw_faces;
-    std::size_t cur_face_id;
-    traversal_face(next_duplicated_edges, faces_record_traversal{ hot_pixels, edges_with_power, cw_faces, ccw_faces, cur_face_id });
-    auto face_num = cur_face_id + 1;
+    auto beg = dc_begin[v], end = dc_end[v];
+    if (beg == end) return {};
 
-    std::vector<std::pair<std::size_t, std::size_t> > face_full_contain_relations;
-    {
-        std::vector<std::pair<box, std::size_t> > cw_faces_box(cw_faces.size());
-        for (std::size_t i = 0; i < cw_faces.size(); i++) {
-            cw_faces_box[i].first = bg::return_envelope<box>(cw_faces[i].first);
-            cw_faces_box[i].second = i;
-        }
-        bg::index::rtree< std::pair<box, std::size_t>, bg::index::quadratic<128> > faces_rtree{ cw_faces_box };
-        for (auto [p, face_id] : ccw_faces) {
-            auto itr = faces_rtree.qbegin(bg::index::contains(p));
-            face_full_contain_relations.emplace_back(0, face_id);
-            for (auto itr = faces_rtree.qbegin(bg::index::contains(p)); itr != faces_rtree.qend(); ++itr) {
-                if (bg::relate(p, cw_faces[itr->second].first, bg::de9im::static_mask<'T', 'F', 'F'>{})) {
-                    face_full_contain_relations.emplace_back(cw_faces[itr->second].second, face_id);
+    // Step 1: Find the DC at v whose left face contains the -x ray direction.
+    // The -x ray lies in the sector between prev and next in CCW order.
+    // The sector = left(prev), so prev is the DC we want.
+    // We find prev: the DC whose direction is the closest CW from the -x ray
+    // (i.e., the maximum direction strictly less than -x in CCW order).
+    // If no DC direction is less than -x, the ray is before the first DC,
+    // so prev = the last DC (wrapping).
+    point v_pt = hot_pixels[v];
+    point ray_pt{bg::get<0>(v_pt) - 1, bg::get<1>(v_pt)};
+    auto prev_it = end - 1; // default: last DC (for wrapping case)
+    bool any_less = false;
+    for (auto it = beg; it < end; it++) {
+        auto dc = sorted_dcs[it];
+        auto dc_pt = hot_pixels[dc.next_along_source(chains)];
+        if (less_by_direction(v_pt, dc_pt, ray_pt)) {
+            // dc_dir < ray_dir (CCW)
+            if (!any_less) {
+                prev_it = it;
+                any_less = true;
+            } else {
+                auto best_pt = hot_pixels[sorted_dcs[prev_it].next_along_source(chains)];
+                if (less_by_direction(v_pt, best_pt, dc_pt)) {
+                    // best_dir < dc_dir → dc is closer to ray from below
+                    prev_it = it;
                 }
             }
         }
     }
-    std::vector<std::size_t> out_faces_times(face_num);
-    for (auto [out_face, in_face] : face_full_contain_relations) {
-        out_faces_times[out_face]++;
-    }
+    dup_chain_view dc_vertex = sorted_dcs[prev_it];
 
-    auto [begin_location, end_location, out_faces] = bucket_sort(
-        std::move(face_full_contain_relations),
-        face_num,
-        [](auto pair) { return std::get<1>(pair); },
-        [](auto pair) { return std::get<0>(pair); }
-    );
+    // Step 2: Cast ray in -x direction, find the nearest intersected DC.
+    int64_t ray_y = bg::get<1>(v_pt);
+    int min_x = bg::get<0>(v_pt);
+    int64_t best_x = std::numeric_limits<int64_t>::min();
+    std::size_t hit_id = ~0ULL;
+    int64_t hit_dy = 0;
 
-    std::vector<std::pair<std::size_t, std::size_t> > face_contain_relations;
+    for (auto dc : sorted_dcs) {
+        auto& idx = chains.indices;
+        auto& off = chains.offsets;
+        std::size_t cid = dc.chain_id();
+        auto cb = off[cid], ce = off[cid + 1];
 
-    for (std::size_t in_face = 0; in_face < face_num; in_face++) {
-        if (end_location[in_face] - begin_location[in_face]  == 0) continue;
-        auto out_face = out_faces[begin_location[in_face] ];
-        for (std::size_t j = begin_location[in_face]; j < end_location[in_face]; j++) {
-            if (out_faces_times[out_faces[j] ] < out_faces_times[out_face]) {
-                out_face = out_faces[j];
+        if (dc.is_forward()) {
+            for (std::size_t k = cb; k + 1 < ce; k++) {
+                int64_t y1 = bg::get<1>(hot_pixels[idx[k]]);
+                int64_t y2 = bg::get<1>(hot_pixels[idx[k + 1]]);
+                if ((y1 <= ray_y && ray_y < y2) || (y2 <= ray_y && ray_y < y1)) {
+                    int64_t x1 = bg::get<0>(hot_pixels[idx[k]]);
+                    int64_t x2 = bg::get<0>(hot_pixels[idx[k + 1]]);
+                    long double t = (long double)(ray_y - y1) / (y2 - y1);
+                    int64_t ix = (int64_t)(x1 + t * (x2 - x1));
+                    if (ix < min_x && ix > best_x) { best_x = ix; hit_id = dc.id; hit_dy = y2 - y1; }
+                }
             }
-        }
-        face_contain_relations.emplace_back(out_face, in_face);
-    }
-
-    log_done_time("build face contains relations");
-    
-    return face_contain_relations;
-}
-
-auto group_face_relations(auto face_contain_relations, auto face_nearby_relations, auto face_num, const std::vector<edge_with_power_t>& edges_with_power) {
-    std::vector<std::tuple<std::size_t, std::size_t, int> > face_relations(face_contain_relations.size() + face_nearby_relations.size());
-    for (std::size_t i = 0; i < face_contain_relations.size(); i++) {
-        auto t = std::tuple<std::size_t, std::size_t, int>{std::get<0>(face_contain_relations[i]), std::get<1>(face_contain_relations[i]), 0};
-        face_relations[i] = t;
-    }
-    for (std::size_t i = 0; i < face_nearby_relations.size(); i++) {
-        face_relations[i + face_contain_relations.size()] = std::tuple{
-            std::get<0>(face_nearby_relations[i]),
-            std::get<1>(face_nearby_relations[i]),
-            std::get<2>(face_nearby_relations[i]).power(edges_with_power)
-        };
-    }
-    return bucket_sort(
-        face_relations,
-        face_num,
-        [](auto val) { return std::get<0>(val); },
-        [](auto val) { return std::pair{ std::get<1>(val), std::get<2>(val) }; }
-    );
-    log_done_time("group face relations");
-    
-}
-
-// construct a graph with edge property (power) by segs
-// segs should can create rings
-auto construct_rings(auto segs, auto filter) {
-    auto [hot_pixels, edges_with_power] = construct_edges_with_power(std::move(segs));
-    log_done_time("calculate edge power");
-
-    auto [next_duplicated_edges, pre_duplicated_edges] = connect_duplicated_edges(edges_with_power, hot_pixels);
-    log_done_time("connect direct edges");
-
-    auto [duplicated_edges_face_id, face_num] = log_duplicated_edges_face_id(next_duplicated_edges);
-    log_done_time("build faces");
-
-    std::vector<bool> faces_exist(face_num);
-    {
-        auto [begin_location, end_location, face_relations] = group_face_relations(
-            build_face_contains_relations(next_duplicated_edges, edges_with_power, hot_pixels),
-            build_face_nearby_relations(next_duplicated_edges, duplicated_edges_face_id),
-            face_num,
-            edges_with_power
-        );
-
-        std::vector<int > faces_cw_power(face_num);
-        std::vector<bool> faces_visited(face_num);
-        std::stack<std::size_t > stk;
-        faces_visited[0] = true;
-        faces_cw_power[0] = 0;
-        stk.push(0);
-        while (!stk.empty()) {
-            auto cur_face_id = stk.top();
-            stk.pop();
-
-            if (filter(faces_cw_power[cur_face_id]) ) faces_exist[cur_face_id] = true;
-
-            for (auto i = begin_location[cur_face_id]; i < end_location[cur_face_id]; i++) {
-                auto [next_face_id, power] = face_relations[i];
-                if (!faces_visited[next_face_id]) {
-                    faces_visited[next_face_id] = true;
-                    faces_cw_power[next_face_id] = faces_cw_power[cur_face_id] + power;
-                    stk.push({ next_face_id });
+        } else {
+            for (std::size_t k = ce - 1; k > cb; k--) {
+                int64_t y1 = bg::get<1>(hot_pixels[idx[k]]);
+                int64_t y2 = bg::get<1>(hot_pixels[idx[k - 1]]);
+                if ((y1 <= ray_y && ray_y < y2) || (y2 <= ray_y && ray_y < y1)) {
+                    int64_t x1 = bg::get<0>(hot_pixels[idx[k]]);
+                    int64_t x2 = bg::get<0>(hot_pixels[idx[k - 1]]);
+                    long double t = (long double)(ray_y - y1) / (y2 - y1);
+                    int64_t ix = (int64_t)(x1 + t * (x2 - x1));
+                    if (ix < min_x && ix > best_x) { best_x = ix; hit_id = dc.id; hit_dy = y2 - y1; }
                 }
             }
         }
     }
-    log_done_time("traversal faces");
 
-    std::vector<bool> direct_edges_exist(edges_with_power.size() * 2);
-    for (std::size_t i = 0; i < edges_with_power.size() * 2; i++) {
-        direct_edges_exist[i] = faces_exist[duplicated_edges_face_id[i]];
+    // Step 3: Build the coplanar pair.
+    // If hit: dc_vertex and the hit side are coplanar (both bound the same face).
+    // If no hit: dc_vertex IS the exterior face.
+    std::vector<std::pair<std::size_t, std::size_t>> ray_pairs;
+    if (hit_id != ~0ULL) {
+        // hit_dy < 0 → ray approaches from LEFT of h → h.id's face
+        // hit_dy > 0 → ray approaches from RIGHT of h → h.dual().id's face
+        std::size_t hit_side = (hit_dy < 0) ? hit_id : (hit_id ^ 1);
+        ray_pairs.emplace_back(dc_vertex.id, hit_side);
+    } else {
+        ray_pairs.emplace_back(dc_vertex.id, dc_vertex.id);
     }
-    for (std::size_t i = 0; i < edges_with_power.size(); i++) {
-        auto de1 = duplicated_edge_t{ 2 * i };
-        auto de2 = duplicated_edge_t{ 2 * i + 1 };
-        if (direct_edges_exist[de1] == true && direct_edges_exist[de2] == true) {
-            direct_edges_exist[de1] = false;
-            direct_edges_exist[de2] = false;
-            auto pre1 = pre_duplicated_edges[de1];
-            auto pre2 = pre_duplicated_edges[de2];
-            auto next1 = next_duplicated_edges[de1];
-            auto next2 = next_duplicated_edges[de2];
-            pre_duplicated_edges[next1] = pre2;
-            pre_duplicated_edges[next2] = pre1;
-            next_duplicated_edges[pre1] = next2;
-            next_duplicated_edges[pre2] = next1;
-            // no use in fact
-            pre_duplicated_edges[de1] = de2;
-            pre_duplicated_edges[de2] = de1;
-            next_duplicated_edges[de1] = de2;
-            next_duplicated_edges[de2] = de1;
+    return ray_pairs;
+}
+
+// Find exterior face info per connected component.
+// Returns: the DC id in the exterior face (per component),
+//   and all ray-coplanar pairs.
+inline auto find_exterior(const chain_build_result& chains,
+                          const std::vector<point>& hot_pixels,
+                          const std::vector<dup_chain_view>& sorted_dcs,
+                          const std::vector<std::size_t>& dc_begin,
+                          const std::vector<std::size_t>& dc_end) {
+    std::size_t nv = hot_pixels.size();
+
+    // Vertex components: union DC endpoints AND consecutive chain vertices
+    auto dsu_v = make_dsu(nv);
+    for (auto dc : sorted_dcs)
+        dsu_v.unite(dc.source_node(chains), dc.target_node(chains));
+    for (std::size_t c = 0; c + 1 < chains.offsets.size(); c++) {
+        auto cb = chains.offsets[c], ce = chains.offsets[c + 1];
+        for (std::size_t k = cb; k + 1 < ce; k++)
+            dsu_v.unite(chains.indices[k], chains.indices[k + 1]);
+    }
+    dsu_v.compress();
+
+    std::vector<std::vector<std::size_t>> comps(nv);
+    for (std::size_t v = 0; v < nv; v++) comps[dsu_v.p[v]].push_back(v);
+
+    std::vector<std::size_t> ext_dcs;
+    std::vector<std::pair<std::size_t, std::size_t>> ray_pairs;
+
+    for (std::size_t c = 0; c < nv; c++) {
+        if (comps[c].empty()) continue;
+
+        // Leftmost vertex
+        std::size_t lmv = comps[c][0];
+        int min_x = bg::get<0>(hot_pixels[lmv]);
+        for (auto vv : comps[c]) {
+            int x = bg::get<0>(hot_pixels[vv]);
+            if (x < min_x) { min_x = x; lmv = vv; }
+        }
+
+        auto rp = cast_ray_minus_x(lmv, hot_pixels, chains, sorted_dcs, dc_begin, dc_end);
+        for (auto& p : rp) {
+            if (p.first == p.second) {
+                // Self-pair: ray hit nothing → truly exterior (w=0)
+                ext_dcs.push_back(p.first);
+            }
+            ray_pairs.push_back(std::move(p));
         }
     }
 
-    std::vector<ring> ret_rings;
+    return std::tuple{std::move(ext_dcs), std::move(ray_pairs)};
+}
+
+// ---------------------------------------------------------------------------
+// Step 8: compute winding numbers.
+// Coplanarity sources: sector adjacency + ray.
+// Propagation: for consecutive a,b at vertex CCW:
+//   W(face(b)) = W(face(a)) + power(b)
+// Returns: dc_winding and dc_root (face id for each DC).
+// ---------------------------------------------------------------------------
+
+inline auto compute_dc_winding(
+    const chain_build_result& chains,
+    const std::vector<dup_chain_view>& sorted_dcs,
+    const std::vector<std::size_t>& dc_begin,
+    const std::vector<std::size_t>& dc_end,
+    const std::vector<std::pair<std::size_t, std::size_t>>& coplanar_pairs,
+    const std::vector<std::pair<std::size_t, std::size_t>>& ray_pairs,
+    const std::vector<std::size_t>& exterior_dcs) {
+
+    std::size_t num_dcs = (chains.offsets.size() - 1) * 2;
+    std::size_t nv = dc_begin.size();
+
+    // DSU: all coplanar sources
+    auto dsu = make_dsu(num_dcs);
+    for (auto [a, b] : coplanar_pairs) dsu.unite(a, b);
+    for (auto [a, b] : ray_pairs) dsu.unite(a, b);
+    dsu.compress();
+    auto& root = dsu.p;
+
+    // Face adjacency: each DC connects its left face to its right face.
+    // W(right_face) = W(left_face) + power(dc)
+    std::vector<std::vector<std::pair<std::size_t, int>>> adj(num_dcs);
+    for (std::size_t i = 0; i < num_dcs; i++) {
+        auto dc = dup_chain_view{i};
+        std::size_t lf = root[i], rf = root[i ^ 1];
+        if (lf != rf) {
+            int p = dc.power(chains);
+            adj[lf].emplace_back(rf, p);
+            adj[rf].emplace_back(lf, -p);
+        }
+    }
+
+    constexpr int UNK = std::numeric_limits<int>::max() / 2;
+    std::vector<int> rwind(num_dcs, UNK);
+
+    for (auto ext : exterior_dcs) rwind[root[ext]] = 0;
+
+    std::queue<std::size_t> q;
+    std::vector<bool> vis(num_dcs);
+    for (std::size_t i = 0; i < num_dcs; i++) {
+        if (root[i] == i && rwind[i] != UNK) { q.push(i); vis[i] = true; }
+    }
+    if (q.empty()) { rwind[root[0]] = 0; q.push(root[0]); vis[root[0]] = true; }
+
+    while (!q.empty()) {
+        auto r = q.front(); q.pop();
+        for (auto [nr, diff] : adj[r]) {
+            if (!vis[nr]) { vis[nr] = true; rwind[nr] = rwind[r] + diff; q.push(nr); }
+        }
+    }
+
+    std::vector<int> dw(num_dcs);
+    for (std::size_t i = 0; i < num_dcs; i++) dw[i] = rwind[root[i]];
+    return std::tuple{std::move(dw), std::move(root)};
+}
+
+// ---------------------------------------------------------------------------
+// Step 9-10: build polygons face-by-face
+// ---------------------------------------------------------------------------
+
+inline multi_polygon build_output(const chain_build_result& chains,
+                                   const std::vector<point>& hot_pixels,
+                                   const std::vector<dup_chain_view>& sorted_dcs,
+                                   const std::vector<std::size_t>& dc_begin,
+                                   const std::vector<std::size_t>& dc_end,
+                                   std::vector<dup_chain_view> next_dc,
+                                   std::vector<dup_chain_view> prev_dc,
+                                   const std::vector<int>& dc_winding,
+                                   std::vector<std::size_t> face_root,
+                                   auto filter_fn) {
+    std::size_t num_dcs = (chains.offsets.size() - 1) * 2;
+    std::size_t num_chains = chains.offsets.size() - 1;
+
+    // 1. Which DCs survive
+    std::vector<bool> survive(num_dcs);
+    for (std::size_t i = 0; i < num_dcs; i++)
+        survive[i] = filter_fn(dc_winding[i]);
+
+    // 2. Dual cancellation (3rd coplanarity source):
+    //    Both fwd and rev survive → dead + merge faces + splice
+    std::vector<bool> dead(num_dcs, false);
+
+    for (std::size_t cid = 0; cid < num_chains; cid++) {
+        std::size_t fwd = 2 * cid, rev = 2 * cid + 1;
+        if (!survive[fwd] || !survive[rev]) continue;
+
+        dead[fwd] = dead[rev] = true;
+        // Merge the two faces
+        auto d = make_dsu(num_dcs);
+        d.p = face_root;
+        d.unite(fwd, rev);
+        face_root = std::move(d.p);
+
+        // Splice next/prev around dead DCs
+        auto pf = prev_dc[fwd], pr = prev_dc[rev];
+        auto nf = next_dc[fwd], nr = next_dc[rev];
+        next_dc[pf.id] = nr; prev_dc[nr.id] = pf;
+        next_dc[pr.id] = nf; prev_dc[nf.id] = pr;
+    }
+
+    // Re-compress face roots after dual cancellation merges
     {
+        auto d = make_dsu(num_dcs);
+        d.p = std::move(face_root);
+        d.compress();
+        face_root = std::move(d.p);
+    }
 
-        for (std::size_t i = 0; i < direct_edges_exist.size(); i++) {
+    // Rebuild next/prev to respect face boundaries after dual cancellation.
+    {
+        std::size_t nv = dc_begin.size();
+        std::fill(next_dc.begin(), next_dc.end(), dup_chain_view{~0ULL});
+        std::fill(prev_dc.begin(), prev_dc.end(), dup_chain_view{~0ULL});
+        for (std::size_t v = 0; v < nv; v++) {
+            std::size_t beg = dc_begin[v], end = dc_end[v];
+            // For each starting DC s at v, s.dual() arrives at v.
+            // Find the next departing DC in CCW order that is alive and in the same face.
+            for (auto it = beg; it < end; it++) {
+                auto s = sorted_dcs[it];
+                auto arr = s.dual();
+                if (!survive[arr.id] || dead[arr.id]) continue;
+                auto arr_face = face_root[arr.id];
+                auto found = dup_chain_view{~0ULL};
+                for (auto jt = it + 1; jt != it; jt++) {
+                    if (jt == end) { jt = beg; if (jt == it) break; }
+                    auto t = sorted_dcs[jt];
+                    if (survive[t.id] && !dead[t.id] && face_root[t.id] == arr_face) {
+                        found = t; break;
+                    }
+                }
+                if (found.id != ~0ULL) {
+                    next_dc[arr.id] = found;
+                    prev_dc[found.id] = arr;
+                }
+            }
+        }
+    }
 
-            if (direct_edges_exist[i] == false) continue;
+    // 3. Group surviving non-dead DCs by face
+    std::vector<std::vector<std::size_t>> face_dcs(num_dcs);
+    for (std::size_t i = 0; i < num_dcs; i++) {
+        if (!dead[i] && survive[i])
+            face_dcs[face_root[i]].push_back(i);
+    }
 
-            std::size_t cur_first_id = i;
+    // 4. For each face, trace its DCs into a polygon
+    multi_polygon result;
+
+    for (std::size_t f = 0; f < num_dcs; f++) {
+        auto& dcs = face_dcs[f];
+        if (dcs.empty()) continue;
+
+        // Map dc_id → position in dcs
+        boost::container::flat_map<std::size_t, std::size_t> pos;
+        for (std::size_t j = 0; j < dcs.size(); j++) pos[dcs[j]] = j;
+
+        std::vector<bool> done(dcs.size(), false);
+        std::vector<ring> rings;
+
+        for (std::size_t j = 0; j < dcs.size(); j++) {
+            if (done[j]) continue;
+
             ring r;
-            // ring is closed, need to push one duplicated point
-            r.push_back(hot_pixels[duplicated_edge_t{ i }.target(edges_with_power)]);
-            direct_edges_exist[i] = false;
+            std::size_t cur_id = dcs[j];
             do {
-                i = next_duplicated_edges[i];
-                r.push_back(hot_pixels[duplicated_edge_t{ i }.target(edges_with_power)]);
-                direct_edges_exist[i] = false;
-            } while (cur_first_id != i);
-            ret_rings.push_back(std::move(r));
-            cur_first_id = i;
+                auto dc = dup_chain_view{cur_id};
+                auto cid = dc.chain_id();
+                auto cb = chains.offsets[cid], ce = chains.offsets[cid + 1];
+                if (dc.is_forward()) {
+                    for (std::size_t k = cb; k < ce - 1; k++)
+                        r.push_back(hot_pixels[chains.indices[k]]);
+                } else {
+                    for (std::size_t k = ce - 1; k > cb; k--)
+                        r.push_back(hot_pixels[chains.indices[k]]);
+                }
+                auto it = pos.find(cur_id);
+                if (it != pos.end()) done[it->second] = true;
+                cur_id = next_dc[cur_id].id;
+            } while (cur_id != dcs[j]);
+
+            // Close ring (boost::geometry requires closed rings)
+            if (!r.empty()) r.push_back(r.front());
+
+            rings.push_back(std::move(r));
         }
+
+        if (rings.empty()) continue;
+
+        // Find outer ring (max absolute area)
+        std::size_t outer_i = 0;
+        long double max_abs_area = std::abs(bg::area(rings[0]));
+        for (std::size_t r = 1; r < rings.size(); r++) {
+            long double a = std::abs(bg::area(rings[r]));
+            if (a > max_abs_area) { max_abs_area = a; outer_i = r; }
+        }
+
+        polygon poly;
+        poly.outer() = std::move(rings[outer_i]);
+        for (std::size_t r = 0; r < rings.size(); r++)
+            if (r != outer_i && !rings[r].empty())
+                poly.inners().push_back(std::move(rings[r]));
+
+        bg::correct(poly);
+        result.push_back(std::move(poly));
     }
-    for (auto&& ring : ret_rings) {
-        //std::cout << bg::wkt(ring) << std::endl;
-        //std::cout << "is valid: " << bg::is_valid(ring) << std::endl;
-    }
 
-    return ret_rings; // graph
+    return result;
 }
 
-auto add(const auto& ps1, const auto& ps2) {
-    std::vector<segment > segs;
+// ---------------------------------------------------------------------------
+// Main pipeline
+// ---------------------------------------------------------------------------
+
+inline auto run_pipeline(auto segs, auto filter) {
+    // Phase 1: edges → chains → DC graph
+    auto [hot_pixels, ewp] = construct_edges_with_power(std::move(segs));
+
+    auto sorted_edges = ewp;
+    std::sort(sorted_edges.begin(), sorted_edges.end(),
+              [](const edge_with_power_t& a, const edge_with_power_t& b) {
+                  auto ts = [](const edge_with_power_t& e) { return e.power > 0 ? e.start : e.end; };
+                  auto sa = ts(a), sb = ts(b);
+                  if (sa != sb) return sa < sb;
+                  auto ta = a.power > 0 ? a.end : a.start;
+                  auto tb = b.power > 0 ? b.end : b.start;
+                  return ta < tb;
+              });
+
+    std::vector<std::size_t> edge_offsets(hot_pixels.size() + 1, 0);
+    { std::vector<std::size_t> cnt(hot_pixels.size(), 0);
+      for (auto& e : sorted_edges) cnt[e.power > 0 ? e.start : e.end]++;
+      std::size_t cur = 0;
+      for (std::size_t v = 0; v < hot_pixels.size(); v++) { edge_offsets[v] = cur; cur += cnt[v]; }
+      edge_offsets.back() = cur; }
+
+    auto chains = build_chains(sorted_edges, edge_offsets, hot_pixels.size());
+
+    auto [sorted_dcs, dc_begin, dc_end, next_dc, prev_dc, coplanar] =
+        build_dc_graph(chains, hot_pixels);
+
+    // Phase 2: ray casting → ray coplanar pairs
+    auto [ext_dcs, ray_pairs] =
+        find_exterior(chains, hot_pixels, sorted_dcs, dc_begin, dc_end);
+
+    // Phase 3: winding numbers (sector + ray coplanarity → DSU → BFS)
+    auto [dc_winding, face_root] = compute_dc_winding(
+        chains, sorted_dcs, dc_begin, dc_end, coplanar, ray_pairs, ext_dcs);
+
+    // Phase 4: build polygons face by face
+    return build_output(chains, hot_pixels, sorted_dcs, dc_begin, dc_end,
+                        std::move(next_dc), std::move(prev_dc),
+                        dc_winding, std::move(face_root), filter);
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+inline auto collect_segments(const auto& ps1, const auto& ps2) {
+    std::vector<segment> segs;
     segs.reserve(bg::num_segments(ps1) + bg::num_segments(ps2));
-    bg::for_each_segment(ps1,
-        [&](const auto& seg) {
+    auto cp = [&](const auto& ps) {
+        bg::for_each_segment(ps, [&](const auto& seg) {
             segment s;
-            boost::geometry::set<0, 0>(s, boost::geometry::get<0, 0>(seg));
-            boost::geometry::set<0, 1>(s, boost::geometry::get<0, 1>(seg));
-            boost::geometry::set<1, 0>(s, boost::geometry::get<1, 0>(seg));
-            boost::geometry::set<1, 1>(s, boost::geometry::get<1, 1>(seg));
+            bg::set<0, 0>(s, bg::get<0, 0>(seg)); bg::set<0, 1>(s, bg::get<0, 1>(seg));
+            bg::set<1, 0>(s, bg::get<1, 0>(seg)); bg::set<1, 1>(s, bg::get<1, 1>(seg));
             segs.emplace_back(s);
-        }
-    );
-    bg::for_each_segment(ps2,
-        [&](const auto& seg) {
-            segment s;
-            boost::geometry::set<0, 0>(s, boost::geometry::get<0, 0>(seg));
-            boost::geometry::set<0, 1>(s, boost::geometry::get<0, 1>(seg));
-            boost::geometry::set<1, 0>(s, boost::geometry::get<1, 0>(seg));
-            boost::geometry::set<1, 1>(s, boost::geometry::get<1, 1>(seg));
-            segs.emplace_back(s);
-        }
-    );
-
-    constexpr auto filter = [](auto cw_power) { return cw_power > 0; };
-    return construct_multi_polygons(construct_rings(std::move(segs), filter));
+        });
+    };
+    cp(ps1); cp(ps2);
+    return segs;
 }
 
-auto intersection(const auto& ps1, const auto& ps2) {
-    std::vector<segment > segs;
-    segs.reserve(bg::num_segments(ps1) + bg::num_segments(ps2));
-    bg::for_each_segment(ps1,
-        [&](const auto& seg) {
-            segment s;
-            boost::geometry::set<0, 0>(s, boost::geometry::get<0, 0>(seg));
-            boost::geometry::set<0, 1>(s, boost::geometry::get<0, 1>(seg));
-            boost::geometry::set<1, 0>(s, boost::geometry::get<1, 0>(seg));
-            boost::geometry::set<1, 1>(s, boost::geometry::get<1, 1>(seg));
-            segs.emplace_back(s);
-        }
-    );
-    bg::for_each_segment(ps2,
-        [&](const auto& seg) {
-            segment s;
-            boost::geometry::set<0, 0>(s, boost::geometry::get<0, 0>(seg));
-            boost::geometry::set<0, 1>(s, boost::geometry::get<0, 1>(seg));
-            boost::geometry::set<1, 0>(s, boost::geometry::get<1, 0>(seg));
-            boost::geometry::set<1, 1>(s, boost::geometry::get<1, 1>(seg));
-            segs.emplace_back(s);
-        }
-    );
-
-    constexpr auto filter = [](auto cw_power) { return cw_power > 1; };
-    return construct_multi_polygons(construct_rings(std::move(segs), filter));
+inline auto add(const auto& ps1, const auto& ps2) {
+    return run_pipeline(collect_segments(ps1, ps2), [](int w) { return w > 0; });
 }
 
-auto self_or(auto r) {
-    std::vector<segment > segs;
-    bg::for_each_segment(r,
-        [&](const auto& seg) {
-            segment s;
-            boost::geometry::set<0, 0>(s, boost::geometry::get<0, 0>(seg));
-            boost::geometry::set<0, 1>(s, boost::geometry::get<0, 1>(seg));
-            boost::geometry::set<1, 0>(s, boost::geometry::get<1, 0>(seg));
-            boost::geometry::set<1, 1>(s, boost::geometry::get<1, 1>(seg));
-            segs.emplace_back(s);
-        }
-    );
-    auto rings = construct_rings(std::move(segs), [](auto cw_power) { return cw_power > 0; });
-    auto ret = construct_multi_polygons(std::move(rings));
-    return ret;
+inline auto intersection(const auto& ps1, const auto& ps2) {
+    return run_pipeline(collect_segments(ps1, ps2), [](int w) { return w > 1; });
+}
+
+inline auto self_or(auto r) {
+    std::vector<segment> segs;
+    bg::for_each_segment(r, [&](const auto& seg) {
+        segment s;
+        bg::set<0, 0>(s, bg::get<0, 0>(seg)); bg::set<0, 1>(s, bg::get<0, 1>(seg));
+        bg::set<1, 0>(s, bg::get<1, 0>(seg)); bg::set<1, 1>(s, bg::get<1, 1>(seg));
+        segs.emplace_back(s);
+    });
+    return run_pipeline(std::move(segs), [](int w) { return w > 0; });
 }
