@@ -746,15 +746,11 @@ inline multi_polygon build_output(const chain_build_result& chains,
                 auto arr = s.dual();
                 if (!survive[arr.id] || dead[arr.id]) continue;
                 auto arr_face = face_root[arr.id];
-                dup_chain_view found{~0ULL};
-                for (auto jt = it + 1; jt != it; jt++) {
-                    if (jt == end) { jt = beg; if (jt == it) break; }
-                    auto t = sorted_dcs[jt];
-                    if (survive[t.id] && !dead[t.id] && face_root[t.id] == arr_face) {
-                        found = t; break;
-                    }
-                }
-                if (found.id != ~0ULL) new_next[arr.id] = found;
+                auto cur = next_dc[arr.id];
+                while (cur.id != arr.id &&
+                       (!survive[cur.id] || dead[cur.id] || face_root[cur.id] != arr_face))
+                    cur = next_dc[cur.dual().id];
+                if (cur.id != arr.id) new_next[arr.id] = cur;
             }
         }
     }
