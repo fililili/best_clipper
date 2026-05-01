@@ -189,7 +189,8 @@ inline std::tuple<std::vector<edge_t>, std::vector<point>> construct_graph(auto 
                                 [](auto p1, auto p2) { return bg::equals(p1, p2); });
         hot_pixels.erase(last, hot_pixels.end());
         bg::index::rtree<point, bg::index::quadratic<128>> hp_rtree{hot_pixels};
-        hot_pixels = std::vector<point>{std::begin(hp_rtree), std::end(hp_rtree)};
+        // Keep hot_pixels in xy order — edges_to_power relies on indices being xy-ordered
+        // so that start > end means "against natural direction" consistently.
     }
 
     std::vector<std::pair<std::size_t, std::size_t>> seg_pixel_pairs;
@@ -566,8 +567,6 @@ inline std::vector<std::pair<std::size_t, std::size_t>> cast_ray_minus_x(
     // If no hit: dc_vertex IS the exterior face.
     std::vector<std::pair<std::size_t, std::size_t>> ray_pairs;
     if (hit_id != ~0ULL) {
-        // hit_dy < 0 → ray approaches from LEFT of h → h.id's face
-        // hit_dy > 0 → ray approaches from RIGHT of h → h.dual().id's face
         std::size_t hit_side = (hit_dy < 0) ? hit_id : (hit_id ^ 1);
         ray_pairs.emplace_back(dc_vertex.id, hit_side);
     } else {
@@ -606,8 +605,6 @@ inline auto find_exterior(const chain_build_result& chains,
     for (std::size_t c = 0; c < nv; c++) {
         if (comps[c].empty()) continue;
 
-        // Leftmost vertex THAT HAS DCs. An internal chain vertex may have
-        // no incident DCs (chain building merges consecutive degree-2 edges).
         std::size_t lmv = ~0ULL;
         int min_x = std::numeric_limits<int>::max();
         for (auto vv : comps[c]) {
@@ -620,7 +617,6 @@ inline auto find_exterior(const chain_build_result& chains,
         auto rp = cast_ray_minus_x(lmv, hot_pixels, chains, sorted_dcs, dc_begin, dc_end);
         for (auto& p : rp) {
             if (p.first == p.second) {
-                // Self-pair: ray hit nothing → truly exterior (w=0)
                 ext_dcs.push_back(p.first);
             }
             ray_pairs.push_back(std::move(p));
@@ -895,19 +891,14 @@ inline auto run_pipeline(auto segs, auto filter) {
 // Public API
 // ---------------------------------------------------------------------------
 
-inline auto collect_segments(auto ps1, auto ps2) {
-    bg::correct(ps1); bg::correct(ps2);
+inline auto collect_segments(auto... ps) {
     std::vector<segment> segs;
-    segs.reserve(bg::num_segments(ps1) + bg::num_segments(ps2));
-    auto cp = [&](const auto& ps) {
-        bg::for_each_segment(ps, [&](const auto& seg) {
-            segment s;
-            bg::set<0, 0>(s, bg::get<0, 0>(seg)); bg::set<0, 1>(s, bg::get<0, 1>(seg));
-            bg::set<1, 0>(s, bg::get<1, 0>(seg)); bg::set<1, 1>(s, bg::get<1, 1>(seg));
-            segs.emplace_back(s);
-        });
-    };
-    cp(ps1); cp(ps2);
+    ((bg::for_each_segment(ps, [&](const auto& seg) {
+        segment s;
+        bg::set<0, 0>(s, bg::get<0, 0>(seg)); bg::set<0, 1>(s, bg::get<0, 1>(seg));
+        bg::set<1, 0>(s, bg::get<1, 0>(seg)); bg::set<1, 1>(s, bg::get<1, 1>(seg));
+        segs.emplace_back(s);
+    })), ...);
     return segs;
 }
 
@@ -920,13 +911,5 @@ inline auto intersection(const auto& ps1, const auto& ps2) {
 }
 
 inline auto self_or(auto r) {
-    bg::correct(r);
-    std::vector<segment> segs;
-    bg::for_each_segment(r, [&](const auto& seg) {
-        segment s;
-        bg::set<0, 0>(s, bg::get<0, 0>(seg)); bg::set<0, 1>(s, bg::get<0, 1>(seg));
-        bg::set<1, 0>(s, bg::get<1, 0>(seg)); bg::set<1, 1>(s, bg::get<1, 1>(seg));
-        segs.emplace_back(s);
-    });
-    return run_pipeline(std::move(segs), [](int w) { return w > 0; });
+    return run_pipeline(collect_segments(r), [](int w) { return w > 0; });
 }
