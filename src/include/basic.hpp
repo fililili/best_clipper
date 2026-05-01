@@ -470,11 +470,51 @@ inline std::vector<std::pair<std::size_t, std::size_t>> cast_ray_minus_x(
     dup_chain_view dc_vertex = sorted_dcs[prev_it];
 
     // Step 2: Cast ray in -x direction, find the nearest intersected DC.
+    // Simulation of simplicity: the ray is at y + ε (infinitesimal +dy).
+    // This ensures the ray doesn't pass through vertices, so only one DC
+    // can be hit at any intersection point.
     int64_t ray_y = bg::get<1>(v_pt);
     int min_x = bg::get<0>(v_pt);
     int64_t best_x = std::numeric_limits<int64_t>::min();
     std::size_t hit_id = ~0ULL;
     int64_t hit_dy = 0;
+    int64_t best_dx = 0;
+    int64_t hit_y_low = 0;
+
+    auto try_edge = [&](int64_t ix, int64_t dx, int64_t dy, int64_t y_low, std::size_t dc_id) {
+        if (ix >= min_x) return;
+        bool better = false;
+        if (ix > best_x) {
+            better = true;
+        } else if (ix == best_x) {
+            // Compare dx/dy ratio. Edge with larger dx/dy is hit first by
+            // the perturbed ray (ix shifts by ε·dx/dy).
+            long double slope_a = (long double)dx / dy;
+            long double slope_b = (long double)best_dx / hit_dy;
+            if (slope_a > slope_b) {
+                better = true;
+            } else if (slope_a == slope_b) {
+                // Equal slopes: use higher-order SoS.
+                // Compare parametric position along edge: (ray_y - y_low) / |dy|.
+                // Edge hit closer to its bottom endpoint wins.
+                int64_t da = ray_y - y_low;         // ≥ 0 since y_low ≤ ray_y
+                int64_t db = ray_y - hit_y_low;
+                int64_t abs_dy = dy > 0 ? dy : -dy;
+                int64_t abs_hdy = hit_dy > 0 ? hit_dy : -hit_dy;
+                if (da * abs_hdy < db * abs_dy) {
+                    better = true;
+                } else if (da * abs_hdy == db * abs_dy && abs_dy > abs_hdy) {
+                    // Both hit at same parametric position (e.g. both start at ray_y).
+                    // Steeper edge wins (smaller ε/dy for the perturbed ray).
+                    better = true;
+                }
+            }
+        }
+        if (better) {
+            best_x = ix; best_dx = dx; hit_dy = dy; hit_id = dc_id;
+            hit_y_low = y_low;
+        }
+    };
 
     for (auto dc : sorted_dcs) {
         auto& idx = chains.indices;
@@ -486,24 +526,36 @@ inline std::vector<std::pair<std::size_t, std::size_t>> cast_ray_minus_x(
             for (std::size_t k = cb; k + 1 < ce; k++) {
                 int64_t y1 = bg::get<1>(hot_pixels[idx[k]]);
                 int64_t y2 = bg::get<1>(hot_pixels[idx[k + 1]]);
-                if ((y1 <= ray_y && ray_y < y2) || (y2 <= ray_y && ray_y < y1)) {
+                if (y1 <= ray_y && ray_y < y2) {
                     int64_t x1 = bg::get<0>(hot_pixels[idx[k]]);
                     int64_t x2 = bg::get<0>(hot_pixels[idx[k + 1]]);
                     long double t = (long double)(ray_y - y1) / (y2 - y1);
                     int64_t ix = (int64_t)(x1 + t * (x2 - x1));
-                    if (ix < min_x && ix > best_x) { best_x = ix; hit_id = dc.id; hit_dy = y2 - y1; }
+                    try_edge(ix, x2 - x1, y2 - y1, y1, dc.id);
+                } else if (y2 <= ray_y && ray_y < y1) {
+                    int64_t x1 = bg::get<0>(hot_pixels[idx[k]]);
+                    int64_t x2 = bg::get<0>(hot_pixels[idx[k + 1]]);
+                    long double t = (long double)(ray_y - y1) / (y2 - y1);
+                    int64_t ix = (int64_t)(x1 + t * (x2 - x1));
+                    try_edge(ix, x2 - x1, y2 - y1, y2, dc.id);
                 }
             }
         } else {
             for (std::size_t k = ce - 1; k > cb; k--) {
                 int64_t y1 = bg::get<1>(hot_pixels[idx[k]]);
                 int64_t y2 = bg::get<1>(hot_pixels[idx[k - 1]]);
-                if ((y1 <= ray_y && ray_y < y2) || (y2 <= ray_y && ray_y < y1)) {
+                if (y1 <= ray_y && ray_y < y2) {
                     int64_t x1 = bg::get<0>(hot_pixels[idx[k]]);
                     int64_t x2 = bg::get<0>(hot_pixels[idx[k - 1]]);
                     long double t = (long double)(ray_y - y1) / (y2 - y1);
                     int64_t ix = (int64_t)(x1 + t * (x2 - x1));
-                    if (ix < min_x && ix > best_x) { best_x = ix; hit_id = dc.id; hit_dy = y2 - y1; }
+                    try_edge(ix, x2 - x1, y2 - y1, y1, dc.id);
+                } else if (y2 <= ray_y && ray_y < y1) {
+                    int64_t x1 = bg::get<0>(hot_pixels[idx[k]]);
+                    int64_t x2 = bg::get<0>(hot_pixels[idx[k - 1]]);
+                    long double t = (long double)(ray_y - y1) / (y2 - y1);
+                    int64_t ix = (int64_t)(x1 + t * (x2 - x1));
+                    try_edge(ix, x2 - x1, y2 - y1, y2, dc.id);
                 }
             }
         }
@@ -554,13 +606,16 @@ inline auto find_exterior(const chain_build_result& chains,
     for (std::size_t c = 0; c < nv; c++) {
         if (comps[c].empty()) continue;
 
-        // Leftmost vertex
-        std::size_t lmv = comps[c][0];
-        int min_x = bg::get<0>(hot_pixels[lmv]);
+        // Leftmost vertex THAT HAS DCs. An internal chain vertex may have
+        // no incident DCs (chain building merges consecutive degree-2 edges).
+        std::size_t lmv = ~0ULL;
+        int min_x = std::numeric_limits<int>::max();
         for (auto vv : comps[c]) {
+            if (dc_begin[vv] == dc_end[vv]) continue;
             int x = bg::get<0>(hot_pixels[vv]);
             if (x < min_x) { min_x = x; lmv = vv; }
         }
+        if (lmv == ~0ULL) continue;
 
         auto rp = cast_ray_minus_x(lmv, hot_pixels, chains, sorted_dcs, dc_begin, dc_end);
         for (auto& p : rp) {
@@ -632,6 +687,11 @@ inline auto compute_dc_winding(
         for (auto [nr, diff] : adj[r]) {
             if (!vis[nr]) { vis[nr] = true; rwind[nr] = rwind[r] + diff; q.push(nr); }
         }
+    }
+
+    // Faces unreachable from exterior get winding 0.
+    for (std::size_t i = 0; i < num_dcs; i++) {
+        if (root[i] == i && rwind[i] == UNK) rwind[i] = 0;
     }
 
     std::vector<int> dw(num_dcs);
@@ -841,7 +901,8 @@ inline auto run_pipeline(auto segs, auto filter) {
 // Public API
 // ---------------------------------------------------------------------------
 
-inline auto collect_segments(const auto& ps1, const auto& ps2) {
+inline auto collect_segments(auto ps1, auto ps2) {
+    bg::correct(ps1); bg::correct(ps2);
     std::vector<segment> segs;
     segs.reserve(bg::num_segments(ps1) + bg::num_segments(ps2));
     auto cp = [&](const auto& ps) {
@@ -865,6 +926,7 @@ inline auto intersection(const auto& ps1, const auto& ps2) {
 }
 
 inline auto self_or(auto r) {
+    bg::correct(r);
     std::vector<segment> segs;
     bg::for_each_segment(r, [&](const auto& seg) {
         segment s;
