@@ -913,3 +913,18 @@ inline auto intersection(const auto& ps1, const auto& ps2) {
 inline auto self_or(auto r) {
     return run_pipeline(collect_segments(r), [](int w) { return w > 0; });
 }
+
+inline auto xor_(const auto& ps1, const auto& ps2) {
+    return run_pipeline(collect_segments(ps1, ps2), [](int w) { return w == 1; });
+}
+
+inline auto difference(const auto& ps1, const auto& ps2) {
+    auto segs = collect_segments(ps1);
+    bg::for_each_segment(ps2, [&](const auto& seg) {
+        segment s;
+        bg::set<0, 0>(s, bg::get<1, 0>(seg)); bg::set<0, 1>(s, bg::get<1, 1>(seg));
+        bg::set<1, 0>(s, bg::get<0, 0>(seg)); bg::set<1, 1>(s, bg::get<0, 1>(seg));
+        segs.emplace_back(s);
+    });
+    return run_pipeline(std::move(segs), [](int w) { return w > 0; });
+}

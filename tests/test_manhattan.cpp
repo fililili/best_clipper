@@ -1,8 +1,14 @@
 #include <gtest/gtest.h>
 #include "basic.hpp"
 
-// All polygons below are Manhattan (axis-aligned edges), so all intersection
-// points fall on integer coordinates and no snap-rounding is needed.
+// All polygons below are OGC valid: no self-intersections, no overlapping
+// components, correct ring orientation. All edges are axis-aligned with integer
+// coordinates, so every intersection already falls on an integer grid point —
+// snap rounding is a no-op for these inputs.
+//
+// Because the input is OGC valid, Boost.Geometry is reliable ground truth.
+// Boost is only unreliable when the input is invalid (e.g. self-overlapping
+// multi_polygon components). For valid input, Boost produces correct results.
 
 // Use Boost.Geometry's union_ and intersection as ground truth.
 multi_polygon bg_self_union(const multi_polygon& p) {
@@ -32,6 +38,26 @@ multi_polygon bg_intersection(const multi_polygon& a, const multi_polygon& b) {
     auto bu = bg_self_union(b);
     multi_polygon out;
     bg::intersection(au, bu, out);
+    bg::correct(out);
+    return out;
+}
+
+multi_polygon bg_xor(const multi_polygon& a, const multi_polygon& b) {
+    auto au = bg_self_union(a);
+    auto bu = bg_self_union(b);
+    multi_polygon un, inter, out;
+    bg::union_(au, bu, un);
+    bg::intersection(au, bu, inter);
+    bg::difference(un, inter, out);
+    bg::correct(out);
+    return out;
+}
+
+multi_polygon bg_difference(const multi_polygon& a, const multi_polygon& b) {
+    auto au = bg_self_union(a);
+    auto bu = bg_self_union(b);
+    multi_polygon out;
+    bg::difference(au, bu, out);
     bg::correct(out);
     return out;
 }
@@ -850,4 +876,195 @@ TEST(ManhattanLarge, RectWithSixColumnsPlusColumn8And9) {
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::is_valid(expected));
     EXPECT_DOUBLE_EQ(bg::area(result), bg::area(expected));
+}
+
+// ============================================================================
+// Manhattan XOR Tests
+// ============================================================================
+
+TEST(ManhattanXor, TwoSeparateRects) {
+    multi_polygon a; a.push_back(make_rect_poly(0, 0, 2, 2));
+    multi_polygon b; b.push_back(make_rect_poly(5, 5, 7, 7));
+    ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
+    ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
+
+    auto result = xor_(a, b);
+    auto expected = bg_xor(a, b);
+
+    EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
+    EXPECT_TRUE(bg::equals(result, expected))
+        << "result: " << bg::wkt(result) << "\nexpected: " << bg::wkt(expected);
+    EXPECT_DOUBLE_EQ(bg::area(result), 8.0);
+}
+
+TEST(ManhattanXor, OverlappingRects) {
+    multi_polygon a; a.push_back(make_rect_poly(0, 0, 3, 3));
+    multi_polygon b; b.push_back(make_rect_poly(2, 2, 5, 5));
+    ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
+    ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
+
+    auto result = xor_(a, b);
+    auto expected = bg_xor(a, b);
+
+    EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
+    EXPECT_TRUE(bg::equals(result, expected))
+        << "result: " << bg::wkt(result) << "\nexpected: " << bg::wkt(expected);
+    EXPECT_DOUBLE_EQ(bg::area(result), 16.0);
+}
+
+TEST(ManhattanXor, AdjacentRects) {
+    multi_polygon a; a.push_back(make_rect_poly(0, 0, 2, 2));
+    multi_polygon b; b.push_back(make_rect_poly(2, 0, 4, 2));
+    ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
+    ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
+
+    auto result = xor_(a, b);
+    auto expected = bg_xor(a, b);
+
+    EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
+    EXPECT_TRUE(bg::equals(result, expected))
+        << "result: " << bg::wkt(result) << "\nexpected: " << bg::wkt(expected);
+}
+
+TEST(ManhattanXor, OneContainsOther) {
+    multi_polygon a; a.push_back(make_rect_poly(0, 0, 10, 10));
+    multi_polygon b; b.push_back(make_rect_poly(2, 2, 5, 5));
+    ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
+    ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
+
+    auto result = xor_(a, b);
+    auto expected = bg_xor(a, b);
+
+    EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
+    EXPECT_TRUE(bg::equals(result, expected))
+        << "result: " << bg::wkt(result) << "\nexpected: " << bg::wkt(expected);
+    EXPECT_DOUBLE_EQ(bg::area(result), 91.0);
+}
+
+TEST(ManhattanXor, RectWithHole) {
+    polygon p1; p1.outer() = make_rect(0, 0, 6, 6);
+    p1.inners().push_back(make_hole(2, 2, 4, 4));
+    multi_polygon a; a.push_back(p1);
+    multi_polygon b; b.push_back(make_rect_poly(3, 3, 8, 8));
+    ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
+    ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
+
+    auto result = xor_(a, b);
+    auto expected = bg_xor(a, b);
+
+    EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
+    EXPECT_TRUE(bg::equals(result, expected))
+        << "result: " << bg::wkt(result) << "\nexpected: " << bg::wkt(expected);
+}
+
+// ============================================================================
+// Manhattan Difference Tests
+// ============================================================================
+
+TEST(ManhattanDifference, TwoSeparateRects) {
+    multi_polygon a; a.push_back(make_rect_poly(0, 0, 2, 2));
+    multi_polygon b; b.push_back(make_rect_poly(5, 5, 7, 7));
+    ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
+    ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
+
+    auto result = difference(a, b);
+    auto expected = bg_difference(a, b);
+
+    EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
+    EXPECT_TRUE(bg::equals(result, expected))
+        << "result: " << bg::wkt(result) << "\nexpected: " << bg::wkt(expected);
+    EXPECT_DOUBLE_EQ(bg::area(result), 4.0);
+}
+
+TEST(ManhattanDifference, OverlappingRects) {
+    multi_polygon a; a.push_back(make_rect_poly(0, 0, 3, 3));
+    multi_polygon b; b.push_back(make_rect_poly(2, 2, 5, 5));
+    ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
+    ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
+
+    auto result = difference(a, b);
+    auto expected = bg_difference(a, b);
+
+    EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
+    EXPECT_TRUE(bg::equals(result, expected))
+        << "result: " << bg::wkt(result) << "\nexpected: " << bg::wkt(expected);
+    EXPECT_DOUBLE_EQ(bg::area(result), 8.0);
+}
+
+TEST(ManhattanDifference, AdjacentRects) {
+    multi_polygon a; a.push_back(make_rect_poly(0, 0, 2, 2));
+    multi_polygon b; b.push_back(make_rect_poly(2, 0, 4, 2));
+    ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
+    ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
+
+    auto result = difference(a, b);
+    auto expected = bg_difference(a, b);
+
+    EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
+    EXPECT_TRUE(bg::equals(result, expected))
+        << "result: " << bg::wkt(result) << "\nexpected: " << bg::wkt(expected);
+    EXPECT_DOUBLE_EQ(bg::area(result), 4.0);
+}
+
+TEST(ManhattanDifference, OneContainsOther) {
+    multi_polygon a; a.push_back(make_rect_poly(0, 0, 10, 10));
+    multi_polygon b; b.push_back(make_rect_poly(2, 2, 5, 5));
+    ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
+    ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
+
+    auto result = difference(a, b);
+    auto expected = bg_difference(a, b);
+
+    EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
+    EXPECT_TRUE(bg::equals(result, expected))
+        << "result: " << bg::wkt(result) << "\nexpected: " << bg::wkt(expected);
+    EXPECT_DOUBLE_EQ(bg::area(result), 91.0);
+}
+
+TEST(ManhattanDifference, BcontainsA) {
+    multi_polygon a; a.push_back(make_rect_poly(2, 2, 5, 5));
+    multi_polygon b; b.push_back(make_rect_poly(0, 0, 10, 10));
+    ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
+    ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
+
+    auto result = difference(a, b);
+    auto expected = bg_difference(a, b);
+
+    EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
+    EXPECT_TRUE(bg::equals(result, expected))
+        << "result: " << bg::wkt(result) << "\nexpected: " << bg::wkt(expected);
+    EXPECT_TRUE(result.empty());
+}
+
+TEST(ManhattanDifference, RectWithHole) {
+    polygon p1; p1.outer() = make_rect(0, 0, 6, 6);
+    p1.inners().push_back(make_hole(2, 2, 4, 4));
+    multi_polygon a; a.push_back(p1);
+    multi_polygon b; b.push_back(make_rect_poly(3, 3, 8, 8));
+    ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
+    ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
+
+    auto result = difference(a, b);
+    auto expected = bg_difference(a, b);
+
+    EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
+    EXPECT_TRUE(bg::equals(result, expected))
+        << "result: " << bg::wkt(result) << "\nexpected: " << bg::wkt(expected);
+}
+
+TEST(ManhattanDifference, RectMinusHoleFiller) {
+    polygon p1; p1.outer() = make_rect(0, 0, 10, 10);
+    p1.inners().push_back(make_hole(2, 2, 6, 6));
+    multi_polygon a; a.push_back(p1);
+    multi_polygon b; b.push_back(make_rect_poly(2, 2, 6, 6));
+    ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
+    ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
+
+    auto result = difference(a, b);
+    auto expected = bg_difference(a, b);
+
+    EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
+    EXPECT_TRUE(bg::equals(result, expected))
+        << "result: " << bg::wkt(result) << "\nexpected: " << bg::wkt(expected);
+    EXPECT_DOUBLE_EQ(bg::area(result), 84.0);
 }
