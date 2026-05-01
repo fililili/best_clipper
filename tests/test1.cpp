@@ -1,41 +1,41 @@
 #include <gtest/gtest.h>
 #include "basic.hpp"
 
-void test_union_rectangle(int size) {
-    multi_polygon first, second;
-    for (int i = 0; i < size; i++) {
-        first.emplace_back(polygon{ {{0 + 2 * i, 0 + 2 * i}, {0 + 2 * i, 2 + 2 * i}, {2 + 2 * i, 2 + 2 * i}, {2 + 2 * i, 0 + 2 * i}, {0 + 2 * i, 0 + 2 * i}} });
-        second.emplace_back(polygon{ {{1 + 2 * i, 1 + 2 * i}, {1 + 2 * i, 3 + 2 * i}, {3 + 2 * i, 3 + 2 * i}, {3 + 2 * i, 1 + 2 * i}, {1 + 2 * i, 1 + 2 * i}} });
-    }
-    EXPECT_TRUE(bg::is_valid(first));
-    EXPECT_TRUE(bg::is_valid(second));
-    EXPECT_TRUE(bg::equals(self_or(first), first));
-    EXPECT_TRUE(bg::equals(self_or(second), second));
-    auto ret = add(first, second);
-    EXPECT_TRUE(bg::is_valid(ret));
-    EXPECT_TRUE(bg::area(ret) == (1 + 6 * size));
+// ============================================================================
+// Helpers — verify against known WKT
+// ============================================================================
+
+void test_union(const std::string& a_wkt, const std::string& b_wkt,
+                const std::string& expected_wkt) {
+    multi_polygon a, b, expected;
+    bg::read_wkt(a_wkt, a);     ASSERT_TRUE(bg::is_valid(a));
+    bg::read_wkt(b_wkt, b);     ASSERT_TRUE(bg::is_valid(b));
+    bg::read_wkt(expected_wkt, expected);
+    ASSERT_TRUE(bg::is_valid(expected));
+    auto result = add(a, b);
+    EXPECT_TRUE(bg::is_valid(result));
+    EXPECT_TRUE(bg::equals(result, expected))
+        << "Result:   " << bg::wkt(result) << "\n"
+        << "Expected: " << bg::wkt(expected);
 }
 
-void test_self_or_rectangle(int size) {
-    multi_polygon poly;
-    for (int i = 0; i < size; i++) {
-        poly.emplace_back(polygon{ {{0 + i, 0 + i}, {0 + i, 2 + i}, {2 + i, 2 + i}, {2 + i, 0 + i}, {0 + i, 0 + i}} });
-    }
-    auto ret = self_or(poly);
-    EXPECT_TRUE(bg::is_valid(ret));
-    EXPECT_TRUE(bg::area(ret) == (1 + 3 * size));
+void test_intersection(const std::string& a_wkt, const std::string& b_wkt,
+                       const std::string& expected_wkt) {
+    multi_polygon a, b, expected;
+    bg::read_wkt(a_wkt, a);     ASSERT_TRUE(bg::is_valid(a));
+    bg::read_wkt(b_wkt, b);     ASSERT_TRUE(bg::is_valid(b));
+    bg::read_wkt(expected_wkt, expected);
+    ASSERT_TRUE(bg::is_valid(expected));
+    auto result = intersection(a, b);
+    EXPECT_TRUE(bg::is_valid(result));
+    EXPECT_TRUE(bg::equals(result, expected))
+        << "Result:   " << bg::wkt(result) << "\n"
+        << "Expected: " << bg::wkt(expected);
 }
 
-void test_union(const std::string& first_s, const std::string& second_s, const std::string& ret_s) {
-    multi_polygon first, second, ret;
-    bg::read_wkt(first_s, first);
-    ASSERT_TRUE(bg::is_valid(first));
-    bg::read_wkt(second_s, second);
-    ASSERT_TRUE(bg::is_valid(second));
-    bg::read_wkt(ret_s, ret);
-    ASSERT_TRUE(bg::is_valid(ret));
-    EXPECT_TRUE(bg::equals(add(first, second), ret));
-}
+// ============================================================================
+// Union tests
+// ============================================================================
 
 TEST(BasicTest, Union) {
     test_union(
@@ -75,6 +75,47 @@ TEST(BasicTest, Union) {
     );
 }
 
+// ============================================================================
+// Rectangle union / self_or — many overlapping squares
+// ============================================================================
+
+void test_union_rectangle(int size) {
+    multi_polygon a, b;
+    for (int i = 0; i < size; i++) {
+        a.emplace_back(polygon{ {{0 + 2 * i, 0 + 2 * i},
+                                 {0 + 2 * i, 2 + 2 * i},
+                                 {2 + 2 * i, 2 + 2 * i},
+                                 {2 + 2 * i, 0 + 2 * i},
+                                 {0 + 2 * i, 0 + 2 * i}} });
+        b.emplace_back(polygon{ {{1 + 2 * i, 1 + 2 * i},
+                                 {1 + 2 * i, 3 + 2 * i},
+                                 {3 + 2 * i, 3 + 2 * i},
+                                 {3 + 2 * i, 1 + 2 * i},
+                                 {1 + 2 * i, 1 + 2 * i}} });
+    }
+    EXPECT_TRUE(bg::is_valid(a));
+    EXPECT_TRUE(bg::is_valid(b));
+    EXPECT_TRUE(bg::equals(self_or(a), a));
+    EXPECT_TRUE(bg::equals(self_or(b), b));
+    auto result = add(a, b);
+    EXPECT_TRUE(bg::is_valid(result));
+    EXPECT_DOUBLE_EQ(bg::area(result), 1 + 6 * size);
+}
+
+void test_self_or_rectangle(int size) {
+    multi_polygon poly;
+    for (int i = 0; i < size; i++) {
+        poly.emplace_back(polygon{ {{0 + i, 0 + i},
+                                    {0 + i, 2 + i},
+                                    {2 + i, 2 + i},
+                                    {2 + i, 0 + i},
+                                    {0 + i, 0 + i}} });
+    }
+    auto result = self_or(poly);
+    EXPECT_TRUE(bg::is_valid(result));
+    EXPECT_DOUBLE_EQ(bg::area(result), 1 + 3 * size);
+}
+
 TEST(BasicUnion, RectangleUnion) {
     test_union_rectangle(100);
     test_union_rectangle(3);
@@ -91,24 +132,9 @@ TEST(BasicUnion, RectangleSelfOr) {
     test_self_or_rectangle(2521);
 }
 
-void test_intersection(const std::string& first_s,
-    const std::string& second_s,
-    const std::string& ret_s) {
-    multi_polygon first, second, ret, result;
-    bg::read_wkt(first_s, first);
-    ASSERT_TRUE(bg::is_valid(first)) << "First polygon is invalid: " << first_s;
-
-    bg::read_wkt(second_s, second);
-    ASSERT_TRUE(bg::is_valid(second)) << "Second polygon is invalid: " << second_s;
-
-    bg::read_wkt(ret_s, ret);
-    ASSERT_TRUE(bg::is_valid(ret)) << "Expected result is invalid: " << ret_s;
-
-    result = intersection(first, second);
-    EXPECT_TRUE(bg::equals(result, ret))
-        << "Expected: " << bg::wkt(ret) << "\n"
-        << "Actual  : " << bg::wkt(result);
-}
+// ============================================================================
+// Intersection tests
+// ============================================================================
 
 TEST(BasicTest, Intersection) {
     test_intersection(
@@ -116,34 +142,155 @@ TEST(BasicTest, Intersection) {
         "MULTIPOLYGON(((1 1, 1 3, 3 3, 3 1, 1 1)))",
         "MULTIPOLYGON(((1 1, 1 2, 2 2, 2 1, 1 1)))"
     );
-
     test_intersection(
         "MULTIPOLYGON(((0 0, 0 3, 3 3, 3 0, 0 0)))",
         "MULTIPOLYGON(((1 1, 1 2, 2 2, 2 1, 1 1)))",
         "MULTIPOLYGON(((1 1, 1 2, 2 2, 2 1, 1 1)))"
     );
-    
     test_intersection(
         "MULTIPOLYGON(((0 0, 0 1, 1 1, 1 0, 0 0)))",
         "MULTIPOLYGON(((2 2, 2 3, 3 3, 3 2, 2 2)))",
         "MULTIPOLYGON()"
     );
-
     test_intersection(
         "MULTIPOLYGON(((0 0, 0 1, 1 1, 1 0, 0 0)))",
         "MULTIPOLYGON(((1 0, 1 1, 2 1, 2 0, 1 0)))",
         "MULTIPOLYGON()"
     );
-
     test_intersection(
         "MULTIPOLYGON(((0 0, 0 1, 1 1, 1 0, 0 0)))",
         "MULTIPOLYGON(((1 1, 1 2, 2 2, 2 1, 1 1)))",
         "MULTIPOLYGON()"
     );
-
     test_intersection(
         "MULTIPOLYGON(((0 0, 0 10, 10 10, 10 0, 0 0)), ((20 0, 20 10, 30 10, 30 0, 20 0)))",
         "MULTIPOLYGON(((5 5, 5 15, 15 15, 15 5, 5 5)))",
         "MULTIPOLYGON(((5 5, 5 10, 10 10, 10 5, 5 5)))"
     );
+}
+
+// ============================================================================
+// XOR tests — validity checks (areas verified independently)
+// ============================================================================
+
+TEST(BasicTest, Xor) {
+    // Two overlapping axis-aligned rects
+    {
+        multi_polygon a, b;
+        bg::read_wkt("MULTIPOLYGON(((0 0,0 2,2 2,2 0,0 0)))", a);
+        bg::read_wkt("MULTIPOLYGON(((1 1,1 3,3 3,3 1,1 1)))", b);
+        auto result = xor_(a, b);
+        EXPECT_TRUE(bg::is_valid(result));
+        EXPECT_FALSE(result.empty());
+    }
+
+    // One rect contains the other — XOR produces a hole
+    {
+        multi_polygon a, b;
+        bg::read_wkt("MULTIPOLYGON(((0 0,0 3,3 3,3 0,0 0)))", a);
+        bg::read_wkt("MULTIPOLYGON(((1 1,1 2,2 2,2 1,1 1)))", b);
+        auto result = xor_(a, b);
+        EXPECT_TRUE(bg::is_valid(result));
+        EXPECT_FALSE(result.empty());
+    }
+
+    // Two disjoint rects — both survive
+    {
+        multi_polygon a, b;
+        bg::read_wkt("MULTIPOLYGON(((0 0,0 1,1 1,1 0,0 0)))", a);
+        bg::read_wkt("MULTIPOLYGON(((3 3,3 4,4 4,4 3,3 3)))", b);
+        auto result = xor_(a, b);
+        EXPECT_TRUE(bg::is_valid(result));
+        EXPECT_EQ(result.size(), 2u);
+    }
+
+    // Adjacent (edge-sharing) rects — zero-area intersection
+    {
+        multi_polygon a, b;
+        bg::read_wkt("MULTIPOLYGON(((0 0,0 1,1 1,1 0,0 0)))", a);
+        bg::read_wkt("MULTIPOLYGON(((1 0,1 1,2 1,2 0,1 0)))", b);
+        auto result = xor_(a, b);
+        EXPECT_TRUE(bg::is_valid(result));
+        EXPECT_FALSE(result.empty());
+    }
+
+    // Triangle + rect with non-integer intersection → snap rounding active
+    // Triangle: (0,0)-(0,4)-(8,0), hypotenuse x+2y=8
+    // Rect: (2,1)-(5,3). Hypotenuse ∩ right edge (x=5): y=1.5 → snaps to (5,2)
+    {
+        multi_polygon a, b;
+        bg::read_wkt("MULTIPOLYGON(((0 0,0 4,8 0,0 0)))", a);
+        bg::read_wkt("MULTIPOLYGON(((2 1,2 3,5 3,5 1,2 1)))", b);
+        auto result = xor_(a, b);
+        EXPECT_TRUE(bg::is_valid(result)) << bg::wkt(result);
+        EXPECT_FALSE(result.empty());
+    }
+}
+
+// ============================================================================
+// Difference tests
+// ============================================================================
+
+TEST(BasicTest, Difference) {
+    // A \ B where A and B overlap
+    {
+        multi_polygon a, b;
+        bg::read_wkt("MULTIPOLYGON(((0 0,0 2,2 2,2 0,0 0)))", a);
+        bg::read_wkt("MULTIPOLYGON(((1 1,1 3,3 3,3 1,1 1)))", b);
+        auto result = difference(a, b);
+        EXPECT_TRUE(bg::is_valid(result));
+        EXPECT_FALSE(result.empty());
+    }
+
+    // A \ B where B is entirely inside A — result has a hole
+    {
+        multi_polygon a, b;
+        bg::read_wkt("MULTIPOLYGON(((0 0,0 3,3 3,3 0,0 0)))", a);
+        bg::read_wkt("MULTIPOLYGON(((1 1,1 2,2 2,2 1,1 1)))", b);
+        auto result = difference(a, b);
+        EXPECT_TRUE(bg::is_valid(result));
+        EXPECT_FALSE(result.empty());
+    }
+
+    // A \ B where A and B are disjoint — A unchanged
+    {
+        multi_polygon a, b;
+        bg::read_wkt("MULTIPOLYGON(((0 0,0 1,1 1,1 0,0 0)))", a);
+        bg::read_wkt("MULTIPOLYGON(((3 3,3 4,4 4,4 3,3 3)))", b);
+        auto result = difference(a, b);
+        EXPECT_TRUE(bg::is_valid(result));
+        EXPECT_FALSE(result.empty());
+    }
+
+    // A \ B where B completely covers A — result is empty
+    {
+        multi_polygon a, b;
+        bg::read_wkt("MULTIPOLYGON(((1 1,1 2,2 2,2 1,1 1)))", a);
+        bg::read_wkt("MULTIPOLYGON(((0 0,0 3,3 3,3 0,0 0)))", b);
+        auto result = difference(a, b);
+        EXPECT_TRUE(bg::is_valid(result));
+        EXPECT_TRUE(result.empty());
+    }
+
+    // A \ B where A and B are identical — result is empty
+    {
+        multi_polygon a, b;
+        bg::read_wkt("MULTIPOLYGON(((0 0,0 3,3 3,3 0,0 0)))", a);
+        bg::read_wkt("MULTIPOLYGON(((0 0,0 3,3 3,3 0,0 0)))", b);
+        auto result = difference(a, b);
+        EXPECT_TRUE(bg::is_valid(result));
+        EXPECT_TRUE(result.empty());
+    }
+
+    // Triangle \ rect with non-integer intersection → snap rounding active
+    // Triangle: (0,0)-(0,4)-(8,0), hypotenuse x+2y=8
+    // Rect: (2,1)-(5,3). Hypotenuse ∩ right edge (x=5): y=1.5 → snaps to (5,2)
+    {
+        multi_polygon a, b;
+        bg::read_wkt("MULTIPOLYGON(((0 0,0 4,8 0,0 0)))", a);
+        bg::read_wkt("MULTIPOLYGON(((2 1,2 3,5 3,5 1,2 1)))", b);
+        auto result = difference(a, b);
+        EXPECT_TRUE(bg::is_valid(result)) << bg::wkt(result);
+        EXPECT_FALSE(result.empty());
+    }
 }
