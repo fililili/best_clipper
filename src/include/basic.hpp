@@ -275,8 +275,16 @@ inline std::size_t edge_dest(const edge_with_power_t& e) { return e.power > 0 ? 
 inline std::size_t edge_ts(const edge_with_power_t& e) { return e.power > 0 ? e.start : e.end; }
 
 inline chain_build_result build_chains(const std::vector<edge_with_power_t>& sorted_edges,
-                                       const std::vector<std::size_t>& edge_offsets,
                                        std::size_t node_num) {
+    std::vector<std::size_t> edge_offsets(node_num + 1, 0);
+    {
+        std::vector<std::size_t> cnt(node_num, 0);
+        for (auto& e : sorted_edges) cnt[edge_ts(e)]++;
+        std::size_t cur = 0;
+        for (std::size_t v = 0; v < node_num; v++) { edge_offsets[v] = cur; cur += cnt[v]; }
+        edge_offsets.back() = cur;
+    }
+
     std::vector<std::uint32_t> out_deg(node_num), in_deg(node_num);
     std::vector<int> out_pow(node_num), in_pow(node_num);
     for (const auto& e : sorted_edges) {
@@ -861,14 +869,7 @@ inline auto run_pipeline(auto segs, auto filter) {
                   return ta < tb;
               });
 
-    std::vector<std::size_t> edge_offsets(hot_pixels.size() + 1, 0);
-    { std::vector<std::size_t> cnt(hot_pixels.size(), 0);
-      for (auto& e : sorted_edges) cnt[e.power > 0 ? e.start : e.end]++;
-      std::size_t cur = 0;
-      for (std::size_t v = 0; v < hot_pixels.size(); v++) { edge_offsets[v] = cur; cur += cnt[v]; }
-      edge_offsets.back() = cur; }
-
-    auto chains = build_chains(sorted_edges, edge_offsets, hot_pixels.size());
+    auto chains = build_chains(sorted_edges, hot_pixels.size());
 
     auto [sorted_dcs, dc_begin, dc_end, next_dc, prev_dc, coplanar] =
         build_dc_graph(chains, hot_pixels);
