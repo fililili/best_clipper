@@ -814,13 +814,17 @@ inline multi_polygon build_output(const chain_build_result& chains,
             if (a > max_abs_area) { max_abs_area = a; outer_i = r; }
         }
 
+        // Ensure correct orientation: outer CCW (area>0), inner CW (area<0)
+        if (bg::area(rings[outer_i]) < 0) std::reverse(rings[outer_i].begin(), rings[outer_i].end());
+
         polygon poly;
         poly.outer() = std::move(rings[outer_i]);
-        for (std::size_t r = 0; r < rings.size(); r++)
-            if (r != outer_i && !rings[r].empty())
-                poly.inners().push_back(std::move(rings[r]));
+        for (std::size_t r = 0; r < rings.size(); r++) {
+            if (r == outer_i || rings[r].empty()) continue;
+            if (bg::area(rings[r]) > 0) std::reverse(rings[r].begin(), rings[r].end());
+            poly.inners().push_back(std::move(rings[r]));
+        }
 
-        bg::correct(poly);
         result.push_back(std::move(poly));
     }
 
