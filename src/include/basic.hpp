@@ -401,7 +401,7 @@ inline auto build_dc_graph(const chain_build_result& chains,
                   });
     }
 
-    std::vector<dup_chain_view> next_dc(num_dcs, {~0ULL}), prev_dc(num_dcs, {~0ULL});
+    std::vector<dup_chain_view> next_dc(num_dcs, {~0ULL});
     std::vector<std::pair<std::size_t, std::size_t>> coplanar;
 
     for (std::size_t v = 0; v < nv; v++) {
@@ -410,15 +410,11 @@ inline auto build_dc_graph(const chain_build_result& chains,
         assert(cb + 1 != ce);
         for (auto it = cb + 1; it < ce; ++it) {
             auto prev = sorted_dcs[it - 1], cur = sorted_dcs[it];
-            // Face boundary: prev.dual() arrives at v, cur departs from v
             next_dc[prev.dual().id] = cur;
-            prev_dc[cur.id] = prev.dual();
-            // Coplanarity: left(prev) = right(cur)  →  prev ~ cur.dual()
             coplanar.emplace_back(prev.id, cur.dual().id);
         }
         auto first = sorted_dcs[cb], last = sorted_dcs[ce - 1];
         next_dc[last.dual().id] = first;
-        prev_dc[first.id] = last.dual();
         coplanar.emplace_back(last.id, first.dual().id);
     }
 
@@ -426,7 +422,7 @@ inline auto build_dc_graph(const chain_build_result& chains,
         std::move(sorted_dcs),
         std::vector<std::size_t>(begin_loc.begin(), begin_loc.end()),
         std::vector<std::size_t>(end_loc.begin(), end_loc.end()),
-        std::move(next_dc), std::move(prev_dc), std::move(coplanar)};
+        std::move(next_dc), std::move(coplanar)};
 }
 
 // ---------------------------------------------------------------------------
@@ -707,7 +703,6 @@ inline multi_polygon build_output(const chain_build_result& chains,
                                    const std::vector<std::size_t>& dc_begin,
                                    const std::vector<std::size_t>& dc_end,
                                    std::vector<dup_chain_view> next_dc,
-                                   std::vector<dup_chain_view> prev_dc,
                                    const std::vector<int>& dc_winding,
                                    std::vector<std::size_t> face_root,
                                    auto filter_fn) {
@@ -719,8 +714,7 @@ inline multi_polygon build_output(const chain_build_result& chains,
     for (std::size_t i = 0; i < num_dcs; i++)
         survive[i] = filter_fn(dc_winding[i]);
 
-    // 2. Dual cancellation (3rd coplanarity source):
-    //    Both fwd and rev survive → dead + merge faces + splice
+    // 2. Dual cancellation: both fwd and rev survive → dead + merge faces
     std::vector<bool> dead(num_dcs, false);
 
     for (std::size_t cid = 0; cid < num_chains; cid++) {
@@ -728,20 +722,12 @@ inline multi_polygon build_output(const chain_build_result& chains,
         if (!survive[fwd] || !survive[rev]) continue;
 
         dead[fwd] = dead[rev] = true;
-        // Merge the two faces
         auto d = make_dsu(num_dcs);
         d.p = face_root;
         d.unite(fwd, rev);
         face_root = std::move(d.p);
-
-        // Splice next/prev around dead DCs
-        auto pf = prev_dc[fwd], pr = prev_dc[rev];
-        auto nf = next_dc[fwd], nr = next_dc[rev];
-        next_dc[pf.id] = nr; prev_dc[nr.id] = pf;
-        next_dc[pr.id] = nf; prev_dc[nf.id] = pr;
     }
 
-    // Re-compress face roots after dual cancellation merges
     {
         auto d = make_dsu(num_dcs);
         d.p = std::move(face_root);
@@ -749,21 +735,18 @@ inline multi_polygon build_output(const chain_build_result& chains,
         face_root = std::move(d.p);
     }
 
-    // Rebuild next/prev to respect face boundaries after dual cancellation.
+    // Rebuild next from scratch, respecting face boundaries
+    std::vector<dup_chain_view> new_next(num_dcs, {~0ULL});
     {
         std::size_t nv = dc_begin.size();
-        std::fill(next_dc.begin(), next_dc.end(), dup_chain_view{~0ULL});
-        std::fill(prev_dc.begin(), prev_dc.end(), dup_chain_view{~0ULL});
         for (std::size_t v = 0; v < nv; v++) {
             std::size_t beg = dc_begin[v], end = dc_end[v];
-            // For each starting DC s at v, s.dual() arrives at v.
-            // Find the next departing DC in CCW order that is alive and in the same face.
             for (auto it = beg; it < end; it++) {
                 auto s = sorted_dcs[it];
                 auto arr = s.dual();
                 if (!survive[arr.id] || dead[arr.id]) continue;
                 auto arr_face = face_root[arr.id];
-                auto found = dup_chain_view{~0ULL};
+                dup_chain_view found{~0ULL};
                 for (auto jt = it + 1; jt != it; jt++) {
                     if (jt == end) { jt = beg; if (jt == it) break; }
                     auto t = sorted_dcs[jt];
@@ -771,13 +754,11 @@ inline multi_polygon build_output(const chain_build_result& chains,
                         found = t; break;
                     }
                 }
-                if (found.id != ~0ULL) {
-                    next_dc[arr.id] = found;
-                    prev_dc[found.id] = arr;
-                }
+                if (found.id != ~0ULL) new_next[arr.id] = found;
             }
         }
     }
+    next_dc = std::move(new_next);
 
     // 3. Group surviving non-dead DCs by face
     std::vector<std::vector<std::size_t>> face_dcs(num_dcs);
@@ -871,7 +852,7 @@ inline auto run_pipeline(auto segs, auto filter) {
 
     auto chains = build_chains(sorted_edges, hot_pixels.size());
 
-    auto [sorted_dcs, dc_begin, dc_end, next_dc, prev_dc, coplanar] =
+    auto [sorted_dcs, dc_begin, dc_end, next_dc, coplanar] =
         build_dc_graph(chains, hot_pixels);
 
     // Phase 2: ray casting → ray coplanar pairs
@@ -884,7 +865,7 @@ inline auto run_pipeline(auto segs, auto filter) {
 
     // Phase 4: build polygons face by face
     return build_output(chains, hot_pixels, sorted_dcs, dc_begin, dc_end,
-                        std::move(next_dc), std::move(prev_dc),
+                        std::move(next_dc),
                         dc_winding, std::move(face_root), filter);
 }
 
