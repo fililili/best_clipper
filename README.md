@@ -189,7 +189,7 @@ Any bugs that exist are **implementation errors** — code that does not faithfu
 
 ### Implementation Issues (Not Theoretical Bugs)
 
-- [ ] **Zero-power edges should be removed**: `std::erase_if` for zero-power edges is commented out (line 268). Coincident boundaries cancel via power summation (winding number semantics), so zero-power edges carry no net winding contribution and should be deleted. They should not be kept.
+- [x] ~~**Zero-power edges should be removed**~~ ✓ Fixed
 - [ ] **Unreachable-face fallback should not exist** (line 686-687): `if (q.empty()) { rwind[root[0]] = 0; ... }` — all faces should be reachable from exterior faces via BFS propagation. If the queue is empty, there is a bug in coplanarity propagation, and silently defaulting to winding 0 masks the real problem. This fallback should be removed or replaced with an assertion/error.
 
 ### Architecture

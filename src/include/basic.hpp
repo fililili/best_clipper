@@ -680,18 +680,12 @@ inline auto compute_dc_winding(
     for (std::size_t i = 0; i < num_dcs; i++) {
         if (root[i] == i && rwind[i] != UNK) { q.push(i); vis[i] = true; }
     }
-    if (q.empty()) { rwind[root[0]] = 0; q.push(root[0]); vis[root[0]] = true; }
 
     while (!q.empty()) {
         auto r = q.front(); q.pop();
         for (auto [nr, diff] : adj[r]) {
             if (!vis[nr]) { vis[nr] = true; rwind[nr] = rwind[r] + diff; q.push(nr); }
         }
-    }
-
-    // Faces unreachable from exterior get winding 0.
-    for (std::size_t i = 0; i < num_dcs; i++) {
-        if (root[i] == i && rwind[i] == UNK) rwind[i] = 0;
     }
 
     std::vector<int> dw(num_dcs);
