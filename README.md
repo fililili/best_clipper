@@ -192,9 +192,18 @@ Any bugs that exist are **implementation errors** — code that does not faithfu
 - [ ] **Zero-power edges should be removed**: `std::erase_if` for zero-power edges is commented out (line 268). Coincident boundaries cancel via power summation (winding number semantics), so zero-power edges carry no net winding contribution and should be deleted. They should not be kept.
 - [ ] **Unreachable-face fallback should not exist** (line 686-687): `if (q.empty()) { rwind[root[0]] = 0; ... }` — all faces should be reachable from exterior faces via BFS propagation. If the queue is empty, there is a bug in coplanarity propagation, and silently defaulting to winding 0 masks the real problem. This fallback should be removed or replaced with an assertion/error.
 
-### Performance Optimization
+### Architecture
 
-- [ ] **Benchmark comparison**: compare against Clipper2 and Boost.Polygon for performance
+- [ ] **Graph-theoretic algorithms for planar graph operations**: All planar graph algorithms (connected components, face traversal, BFS propagation) should use standard graph theory algorithms, similar to Boost Graph Library style. All are O(n). Single-thread only — no multi-threading for now.
+
+### Spatial Index
+
+- [ ] **Replace Boost.Geometry rtree with custom uniform grid**: The spatial index for segment intersection and point-on-segment queries is the performance bottleneck. Implement a custom uniform grid spatial index instead of relying on Boost.Geometry rtree. This gives better cache locality and avoids Boost dependency for this part. Must include dedicated unit tests for the uniform grid.
+
+### Performance Comparison
+
+- [ ] **Add Clipper2 to CMake and benchmark head-to-head**: Integrate Clipper2 as a CMake dependency alongside the existing dependencies. Write benchmarks that run the same boolean operation test cases through both best_clipper and Clipper2, measuring and comparing runtime. The goal is to demonstrate that this algorithm outperforms Clipper2.
+- [ ] **Benchmark comparison**: also compare against Boost.Polygon for performance
 - [ ] **GPU acceleration**: use cuSpatial for spatial join (finding intersection points and segments on hot pixels), which is the most time-consuming step. Also explore migrating face traversal to GPU.
 - [ ] **Multi-precision integer support**: use GMP or similar for exact arithmetic in snap rounding (currently using `int` with overflow potential for large coordinates)
 - [ ] **Bounding box grouping**: group segments by bounding box first, compute connected components before the full pipeline
@@ -202,6 +211,7 @@ Any bugs that exist are **implementation errors** — code that does not faithfu
 
 ### Testing
 
+- [ ] **Uniform grid spatial index unit tests**
 - [ ] More comprehensive unit tests, especially for edge cases:
   - Coincident boundaries (holes exactly matching outer edges)
   - Self-intersecting input
