@@ -54,7 +54,7 @@ Rather than computing explicit face IDs for each half-edge, the algorithm propag
 
 1. **Angular (sector) coplanarity**: At each vertex, all DCs starting from that vertex are sorted by CCW polar angle. Adjacent DCs in this sorted order share a face — the right face of one is the left face of the next. This gives: `dc_a.dual()` and `dc_b` are coplanar.
 
-2. **Ray-casting coplanarity**: For each connected component, find the leftmost vertex. Cast a ray downward (using Simulation of Simplicity, effectively ray shifted by -dy). Find the nearest DC intersected by this ray. The leftmost DC and the intersected DC are coplanar (same face). If the ray hits nothing, the leftmost DC's left face has winding number 0 (exterior).
+2. **Ray-casting coplanarity**: For each connected component, find the leftmost vertex. Cast a ray in the -x direction (leftward). At this vertex, the ray sits in the sector between two DCs in CCW order; the DC on the CW side of the ray is identified. Then find the nearest DC that this ray intersects. These two DCs are coplanar (same face). If the ray hits nothing, the leftmost DC's left face is the exterior (winding number = 0).
 
 3. **Dual cancellation coplanarity**: When both dual DCs of a chain survive the winding number filter, they cancel each other and are removed. Their adjacent faces are then merged (the left face of one and the right face of the other become coplanar).
 
@@ -123,18 +123,10 @@ ctest --test-dir build
 
 - [ ] The current implementation rebuilds next/prev pointers from scratch by re-scanning sorted_dcs at each vertex after dual cancellation. This is incorrect. The correct approach: when a DC `d` is deleted (dead), for each DC `p` whose `next[p] == d`, update `next[p] = next[dual(d)]`. If that next is also dead, continue following `next[dual(dead_dc)]` iteratively until a surviving DC is found. This chain of indirection is guaranteed to terminate because at least one surviving DC exists in the cycle. The same logic applies to prev pointers.
 
-### Coplanarity from Dual Cancellation
+### Known Issues in Current Implementation
 
-- [ ] When both dual DCs are cancelled, the faces on the left of one and the right of the other merge (become coplanar). The current implementation does merge the DSU face roots, but the next/prev splice logic (lines 743-746) may not correctly wire the cyclic order. Need to verify that after splicing `prev[fwd] → next[rev]` and `prev[rev] → next[fwd]`, the angular ordering invariant is preserved.
-
-### Known Bugs
-
-- [ ] **Zero-power edges are kept** (line 268: `std::erase_if` for zero-power edges is commented out). This is intentional to maintain topological connectivity when overlapping boundaries cancel, but it may introduce degenerate zero-length edges that cause issues in chain building or face traversal.
-- [ ] **Unreachable faces default to winding 0** (line 696): if BFS cannot reach a face from any exterior face, its winding is silently set to 0. This may mask bugs where coplanarity propagation is incomplete.
-- [ ] **Edge case with coincident boundaries**: when hole boundaries exactly coincide with outer boundaries of another polygon, the winding number computation may be incorrect due to ambiguous power summation and cancellation
-- [ ] **Ray casting with Simulation of Simplicity**: the ray cast in `cast_ray_minus_x` shifts the ray by -dy (Simulation of Simplicity), but the handling of degenerate cases (ray passing exactly through vertices) may not be fully robust
-- [ ] **Chain building for pure cycles**: chains that form closed loops with no branching endpoints need special handling. The current approach handles them separately but may miss some edge cases
-- [ ] **Self-intersecting input polygons**: input polygons with self-intersections may produce incorrect results because the winding number semantics assume non-self-intersecting boundaries. Input should be pre-processed with `bg::correct()` but this does not remove self-intersections.
+- [ ] **Zero-power edges should be removed**: `std::erase_if` for zero-power edges is commented out (line 268). Coincident boundaries cancel via power summation (winding number semantics), so zero-power edges carry no net winding contribution and should be deleted. They should not be kept.
+- [ ] **Unreachable-face fallback should not exist** (line 686-687): `if (q.empty()) { rwind[root[0]] = 0; ... }` — all faces should be reachable from exterior faces via BFS propagation. If the queue is empty, there is a bug in coplanarity propagation, and silently defaulting to winding 0 masks the real problem. This fallback should be removed or replaced with an assertion/error.
 
 ### Performance Optimization
 
