@@ -264,61 +264,57 @@ inline std::tuple<std::vector<edge_t>, std::vector<point>> construct_graph(auto 
 inline std::vector<edge_with_power_t> edges_to_power(std::vector<edge_t> edges) {
     std::vector<edge_with_power_t> r(edges.size());
     for (std::size_t i = 0; i < r.size(); i++) {
-        r[i] = {edges[i].start, edges[i].end, 1};
-        if (r[i].start > r[i].end) { std::swap(r[i].start, r[i].end); r[i].power = -1; }
+        auto s = edges[i].start, e = edges[i].end;
+        if (s < e) r[i] = {s, e, 1};
+        else      r[i] = {e, s, -1};
     }
     return r;
 }
 
-inline std::vector<edge_with_power_t> sort_edges_by_start(std::vector<edge_with_power_t> edges,
-                                                           std::size_t nv) {
+inline std::vector<edge_with_power_t> unique_edges(std::vector<edge_with_power_t> edges,
+                                                     std::size_t nv) {
     auto [bl, el, ordered] = bucket_sort(
-        std::move(edges), nv, [](edge_with_power_t e) { return e.start; },
-        [](edge_with_power_t e) { return e; });
+        std::move(edges), nv,
+        [](const edge_with_power_t& e) { return e.start; },
+        [](const edge_with_power_t& e) { return e; });
+    std::vector<edge_with_power_t> result;
     for (std::size_t i = 0; i < nv; i++) {
         auto cb = std::begin(ordered) + bl[i], ce = std::begin(ordered) + el[i];
-        std::sort(cb, ce, [](auto a, auto b) { return a.end < b.end; });
+        if (cb == ce) continue;
+        std::sort(cb, ce, [](const edge_with_power_t& a, const edge_with_power_t& b) {
+            return a.end < b.end;
+        });
+        for (auto cur = cb; cur != ce; ) {
+            int sum = 0;
+            auto nxt = cur;
+            while (nxt != ce && nxt->end == cur->end) {
+                sum += nxt->power;
+                ++nxt;
+            }
+            if (sum != 0)
+                result.push_back({cur->start, cur->end, sum});
+            cur = nxt;
+        }
     }
-    return ordered;
-}
-
-inline std::vector<edge_with_power_t> unique_edges(std::vector<edge_with_power_t> edges) {
-    constexpr auto eq = [](edge_with_power_t a, edge_with_power_t b) {
-        return a.start == b.start && a.end == b.end;
-    };
-    constexpr auto mg = [](edge_with_power_t a, edge_with_power_t b) {
-        return edge_with_power_t{a.start, a.end, a.power + b.power};
-    };
-    auto cur = std::begin(edges), out = cur;
-    while (cur != std::end(edges)) {
-        auto nxt = not_adjacent_find(cur, std::end(edges), eq);
-        *out++ = std::reduce(std::next(cur), nxt, *cur, mg);
-        cur = nxt;
-    }
-    edges.erase(out, std::end(edges));
-    return edges;
+    return result;
 }
 
 inline auto construct_edges_with_power(auto segs) {
     auto [edges, hp] = construct_graph(std::move(segs));
-    auto ewp = unique_edges(sort_edges_by_start(edges_to_power(std::move(edges)), hp.size()));
-    std::erase_if(ewp, [](auto e) { return e.power == 0; });
-    return std::tuple{std::move(hp), std::move(ewp)};
+    return std::tuple{std::move(hp),
+                      unique_edges(edges_to_power(std::move(edges)), hp.size())};
 }
 
 // ---------------------------------------------------------------------------
 // Step 4: chains
 // ---------------------------------------------------------------------------
 
-inline std::size_t edge_dest(const edge_with_power_t& e) { return e.power > 0 ? e.end : e.start; }
-inline std::size_t edge_ts(const edge_with_power_t& e) { return e.power > 0 ? e.start : e.end; }
-
 inline chain_build_result build_chains(const std::vector<edge_with_power_t>& sorted_edges,
                                        std::size_t node_num) {
     std::vector<std::size_t> edge_offsets(node_num + 1, 0);
     {
         std::vector<std::size_t> cnt(node_num, 0);
-        for (auto& e : sorted_edges) cnt[edge_ts(e)]++;
+        for (auto& e : sorted_edges) cnt[e.start]++;
         std::size_t cur = 0;
         for (std::size_t v = 0; v < node_num; v++) { edge_offsets[v] = cur; cur += cnt[v]; }
         edge_offsets.back() = cur;
@@ -327,8 +323,7 @@ inline chain_build_result build_chains(const std::vector<edge_with_power_t>& sor
     std::vector<std::uint32_t> out_deg(node_num), in_deg(node_num);
     std::vector<int> out_pow(node_num), in_pow(node_num);
     for (const auto& e : sorted_edges) {
-        auto s = edge_ts(e), d = edge_dest(e);
-        out_deg[s]++; in_deg[d]++; out_pow[s] = e.power; in_pow[d] = e.power;
+        out_deg[e.start]++; in_deg[e.end]++; out_pow[e.start] = e.power; in_pow[e.end] = e.power;
     }
 
     std::vector<bool> is_end(node_num);
@@ -344,18 +339,18 @@ inline chain_build_result build_chains(const std::vector<edge_with_power_t>& sor
         if (!is_end[i]) continue;
         visited[i] = true;
         for (std::size_t j = edge_offsets[i]; j < edge_offsets[i + 1]; j++) {
-            if (edge_used[j] || edge_ts(sorted_edges[j]) != i) continue;
+            if (edge_used[j] || sorted_edges[j].start != i) continue;
             edge_used[j] = true; idx.push_back(i);
-            pows.push_back(std::abs(sorted_edges[j].power)); e2c[j] = off.size() - 1;
-            auto cur = edge_dest(sorted_edges[j]);
+            pows.push_back(sorted_edges[j].power); e2c[j] = off.size() - 1;
+            auto cur = sorted_edges[j].end;
             while (!is_end[cur]) {
                 visited[cur] = true; idx.push_back(cur);
                 std::size_t nj = ~0ULL;
                 for (std::size_t k = edge_offsets[cur]; k < edge_offsets[cur + 1]; k++)
-                    if (!edge_used[k] && edge_ts(sorted_edges[k]) == cur) { nj = k; break; }
+                    if (!edge_used[k] && sorted_edges[k].start == cur) { nj = k; break; }
                 assert(nj != ~0ULL);
                 edge_used[nj] = true; e2c[nj] = off.size() - 1;
-                cur = edge_dest(sorted_edges[nj]);
+                cur = sorted_edges[nj].end;
             }
             idx.push_back(cur); off.push_back(idx.size());
         }
@@ -365,19 +360,19 @@ inline chain_build_result build_chains(const std::vector<edge_with_power_t>& sor
         if (visited[i]) continue;
         std::size_t sj = ~0ULL;
         for (std::size_t j = edge_offsets[i]; j < edge_offsets[i + 1]; j++)
-            if (!edge_used[j] && edge_ts(sorted_edges[j]) == i) { sj = j; break; }
+            if (!edge_used[j] && sorted_edges[j].start == i) { sj = j; break; }
         if (sj == ~0ULL) continue;
         visited[i] = true; edge_used[sj] = true;
-        idx.push_back(i); pows.push_back(std::abs(sorted_edges[sj].power)); e2c[sj] = off.size() - 1;
-        auto cur = edge_dest(sorted_edges[sj]);
+        idx.push_back(i); pows.push_back(sorted_edges[sj].power); e2c[sj] = off.size() - 1;
+        auto cur = sorted_edges[sj].end;
         while (i != cur) {
             visited[cur] = true; idx.push_back(cur);
             std::size_t nj = ~0ULL;
             for (std::size_t k = edge_offsets[cur]; k < edge_offsets[cur + 1]; k++)
-                if (!edge_used[k] && edge_ts(sorted_edges[k]) == cur) { nj = k; break; }
+                if (!edge_used[k] && sorted_edges[k].start == cur) { nj = k; break; }
             assert(nj != ~0ULL);
             edge_used[nj] = true; e2c[nj] = off.size() - 1;
-            cur = edge_dest(sorted_edges[nj]);
+            cur = sorted_edges[nj].end;
         }
         idx.push_back(cur); off.push_back(idx.size());
     }
@@ -822,18 +817,7 @@ inline multi_polygon build_output(const chain_build_result& chains,
 
 inline auto run_pipeline(auto segs, auto filter) {
     // Phase 1: edges → chains → HC graph
-    auto [hot_pixels, ewp] = construct_edges_with_power(std::move(segs));
-
-    auto sorted_edges = ewp;
-    std::sort(sorted_edges.begin(), sorted_edges.end(),
-              [](const edge_with_power_t& a, const edge_with_power_t& b) {
-                  auto ts = [](const edge_with_power_t& e) { return e.power > 0 ? e.start : e.end; };
-                  auto sa = ts(a), sb = ts(b);
-                  if (sa != sb) return sa < sb;
-                  auto ta = a.power > 0 ? a.end : a.start;
-                  auto tb = b.power > 0 ? b.end : b.start;
-                  return ta < tb;
-              });
+    auto [hot_pixels, sorted_edges] = construct_edges_with_power(std::move(segs));
 
     auto chains = build_chains(sorted_edges, hot_pixels.size());
 
