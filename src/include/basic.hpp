@@ -639,43 +639,38 @@ inline auto compute_hc_winding(
 
     std::size_t num_hcs = (chains.offsets.size() - 1) * 2;
 
-    auto dsu = make_dsu(num_hcs);
-    for (auto [a, b] : coplanar_pairs) dsu.unite(a, b);
-    for (auto [a, b] : ray_pairs) dsu.unite(a, b);
-    dsu.compress();
-    auto& root = dsu.p;
+    // Collect edges: coplanar (weight 0), ray (weight 0), dual (weight -power)
+    std::vector<std::tuple<std::size_t, std::size_t, int>> edges;
+    auto add = [&](std::size_t a, std::size_t b, int w) {
+        edges.emplace_back(a, b, w);
+        edges.emplace_back(b, a, -w);
+    };
+    for (auto [a, b] : coplanar_pairs) add(a, b, 0);
+    for (auto [a, b] : ray_pairs) add(a, b, 0);
+    for (std::size_t i = 0; i < num_hcs; i++)
+        add(i, i ^ 1, -half_chain{i}.power(chains));
 
-    std::vector<std::vector<std::pair<std::size_t, int>>> adj(num_hcs);
-    for (std::size_t i = 0; i < num_hcs; i++) {
-        auto hc = half_chain{i};
-        std::size_t lf = root[i], rf = root[i ^ 1];
-        if (lf != rf) {
-            int p = hc.power(chains);
-            adj[lf].emplace_back(rf, -p);
-            adj[rf].emplace_back(lf, p);
-        }
-    }
+    auto [adj_begin, adj_end, adj] = bucket_sort(
+        edges, num_hcs,
+        [](auto& e) { return std::get<0>(e); },
+        [](auto& e) { return std::pair{std::get<1>(e), std::get<2>(e)}; });
 
+    // DFS propagation from exterior seeds
     constexpr int UNK = std::numeric_limits<int>::max() / 2;
-    std::vector<int> rwind(num_hcs, UNK);
-    for (auto ext : exterior_hcs) rwind[root[ext]] = 0;
+    std::vector<int> winding(num_hcs, UNK);
+    for (auto ext : exterior_hcs) winding[ext] = 0;
 
-    std::vector<std::size_t> stack;
-    for (std::size_t i = 0; i < num_hcs; i++) {
-        if (root[i] == i && rwind[i] != UNK) stack.push_back(i);
-    }
+    std::vector<std::size_t> stack(exterior_hcs.begin(), exterior_hcs.end());
     while (!stack.empty()) {
-        auto r = stack.back(); stack.pop_back();
-        for (auto [nr, diff] : adj[r]) {
-            if (rwind[nr] == UNK) {
-                rwind[nr] = rwind[r] + diff;
-                stack.push_back(nr);
+        auto u = stack.back(); stack.pop_back();
+        for (auto i = adj_begin[u]; i < adj_end[u]; i++) {
+            auto [v, diff] = adj[i];
+            if (winding[v] == UNK) {
+                winding[v] = winding[u] + diff;
+                stack.push_back(v);
             }
         }
     }
-
-    std::vector<int> winding(num_hcs);
-    for (std::size_t i = 0; i < num_hcs; i++) winding[i] = rwind[root[i]];
     return winding;
 }
 
