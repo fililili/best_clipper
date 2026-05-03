@@ -789,12 +789,16 @@ inline multi_polygon build_output(const chain_build_result& chains,
 
         if (rings.empty()) continue;
 
-        // Find outer ring (max absolute area)
+        // Find outer ring: the one containing the leftmost point
         std::size_t outer_i = 0;
-        long double max_abs_area = std::abs(bg::area(rings[0]));
-        for (std::size_t r = 1; r < rings.size(); r++) {
-            long double a = std::abs(bg::area(rings[r]));
-            if (a > max_abs_area) { max_abs_area = a; outer_i = r; }
+        {
+            int min_x = std::numeric_limits<int>::max();
+            for (std::size_t r = 0; r < rings.size(); r++) {
+                for (const auto& pt : rings[r]) {
+                    int x = bg::get<0>(pt);
+                    if (x < min_x) { min_x = x; outer_i = r; }
+                }
+            }
         }
 
         polygon poly;
