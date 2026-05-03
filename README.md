@@ -214,7 +214,7 @@ Any bugs that exist are **implementation errors** — code that does not faithfu
 
 ### "Next" Pointer Update After Dual Cancellation
 
-- [ ] The current implementation rebuilds next/prev pointers from scratch by re-scanning sorted_hcs at each vertex after dual cancellation. This is incorrect. The correct approach: when a HC `d` is deleted (dead), for each HC `p` whose `next[p] == d`, update `next[p] = next[dual(d)]`. If that next is also dead, continue following `next[dual(dead_dc)]` iteratively until a surviving HC is found. This chain of indirection is guaranteed to terminate because at least one surviving HC exists in the cycle. The same logic applies to prev pointers.
+- [x] ~~The current implementation rebuilds next/prev pointers from scratch by re-scanning sorted_hcs at each vertex after dual cancellation.~~ Fixed: now uses indirection chain — for each surviving HC `p` whose `next[p]` is dead, follow `next[dual(dead)]` iteratively until a live HC is found.
 
 ### Implementation Issues (Not Theoretical Bugs)
 

@@ -693,9 +693,6 @@ inline auto compute_hc_winding(
 
 inline multi_polygon build_output(const chain_build_result& chains,
                                    const std::vector<point>& hot_pixels,
-                                   const std::vector<half_chain>& sorted_hcs,
-                                   const std::vector<std::size_t>& hc_begin,
-                                   const std::vector<std::size_t>& hc_end,
                                    std::vector<half_chain> next_hc,
                                    const std::vector<int>& hc_winding,
                                    std::vector<std::size_t> face_root,
@@ -708,58 +705,39 @@ inline multi_polygon build_output(const chain_build_result& chains,
     for (std::size_t i = 0; i < num_hcs; i++)
         survive[i] = filter_fn(hc_winding[i]);
 
-    // 2. Dual cancellation: both fwd and rev survive → dead + merge faces
+    // 2. Dual cancellation: both fwd and rev survive → both dead
     std::vector<bool> dead(num_hcs, false);
-
     for (std::size_t cid = 0; cid < num_chains; cid++) {
         std::size_t fwd = 2 * cid, rev = 2 * cid + 1;
-        if (!survive[fwd] || !survive[rev]) continue;
+        if (survive[fwd] && survive[rev])
+            dead[fwd] = dead[rev] = true;
+    }
 
-        dead[fwd] = dead[rev] = true;
+    // 3. Update next_hc via indirection: for each surviving HC whose next
+    //    points to a dead HC, follow next_hc[dead.dual()] until a live HC
+    //    is found. This terminates because at least one HC per vertex cycle
+    //    survives (not all faces can be cancelled).
+    for (std::size_t i = 0; i < num_hcs; i++) {
+        if (!survive[i] || dead[i]) continue;
+        while (dead[next_hc[i].id])
+            next_hc[i] = next_hc[next_hc[i].dual().id];
+    }
+
+    // 4. Merge faces for cancelled chains
+    for (std::size_t cid = 0; cid < num_chains; cid++) {
+        std::size_t fwd = 2 * cid, rev = 2 * cid + 1;
+        if (!dead[fwd]) continue;
         auto d = make_dsu(num_hcs);
         d.p = face_root;
         d.unite(fwd, rev);
         face_root = std::move(d.p);
     }
-
     {
         auto d = make_dsu(num_hcs);
         d.p = std::move(face_root);
         d.compress();
         face_root = std::move(d.p);
     }
-
-    // Rebuild next from scratch, respecting face boundaries.
-    // For each surviving arrival at a vertex, find the next CCW departure
-    // in the same face by scanning sorted_hcs.
-    std::vector<half_chain> new_next(num_hcs, {~0ULL});
-    {
-        std::size_t nv = hc_begin.size();
-        for (std::size_t v = 0; v < nv; v++) {
-            std::size_t beg = hc_begin[v], end = hc_end[v];
-            std::size_t n = end - beg;
-            if (n == 0) continue;
-
-            for (auto it = beg; it < end; it++) {
-                auto d = sorted_hcs[it];   // departure from v
-                auto arr = d.dual();       // arrival at v
-                if (!survive[arr.id] || dead[arr.id]) continue;
-                auto arr_face = face_root[arr.id];
-
-                // Scan CCW from d to find next departure in arr_face
-                std::size_t found = ~0ULL;
-                for (std::size_t step = 1; step <= n; step++) {
-                    auto cand_it = beg + (it - beg + step) % n;
-                    auto cand = sorted_hcs[cand_it];
-                    if (survive[cand.id] && !dead[cand.id] && face_root[cand.id] == arr_face) {
-                        found = cand.id; break;
-                    }
-                }
-                if (found != ~0ULL) new_next[arr.id] = half_chain{found};
-            }
-        }
-    }
-    next_hc = std::move(new_next);
 
     // 3. Group surviving non-dead HCs by face
     std::vector<std::vector<std::size_t>> face_hcs(num_hcs);
@@ -865,8 +843,7 @@ inline auto run_pipeline(auto segs, auto filter) {
         chains, sorted_hcs, hc_begin, hc_end, coplanar, ray_pairs, ext_hcs);
 
     // Phase 4: build polygons face by face
-    return build_output(chains, hot_pixels, sorted_hcs, hc_begin, hc_end,
-                        std::move(next_hc),
+    return build_output(chains, hot_pixels, std::move(next_hc),
                         hc_winding, std::move(face_root), filter);
 }
 
