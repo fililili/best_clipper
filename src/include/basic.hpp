@@ -411,11 +411,11 @@ inline auto build_hc_graph(const chain_build_result& chains,
         for (auto it = cb + 1; it < ce; ++it) {
             auto prev = sorted_hcs[it - 1], cur = sorted_hcs[it];
             next_hc[prev.dual().id] = cur;
-            coplanar.emplace_back(prev.id, cur.dual().id);
+            coplanar.emplace_back(cur.id, prev.dual().id);
         }
         auto first = sorted_hcs[cb], last = sorted_hcs[ce - 1];
         next_hc[last.dual().id] = first;
-        coplanar.emplace_back(last.id, first.dual().id);
+        coplanar.emplace_back(first.id, last.dual().id);
     }
 
     return std::tuple{
@@ -430,7 +430,7 @@ inline auto build_hc_graph(const chain_build_result& chains,
 // ---------------------------------------------------------------------------
 
 // Cast ray in -x direction from leftmost vertex v.
-// Finds the HC at v whose left face contains the -x ray, then finds the nearest
+// Finds the HC at v whose right face contains the -x ray, then finds the nearest
 // HC hit by the ray. These two HCs are coplanar (share the exterior face).
 // If the ray hits nothing, the HC at v is the exterior face itself (w=0).
 inline std::vector<std::pair<std::size_t, std::size_t>> cast_ray_minus_x(
@@ -444,35 +444,27 @@ inline std::vector<std::pair<std::size_t, std::size_t>> cast_ray_minus_x(
     auto beg = hc_begin[v], end = hc_end[v];
     if (beg == end) return {};
 
-    // Step 1: Find the HC at v whose left face contains the -x ray direction.
-    // The -x ray lies in the sector between prev and next in CCW order.
-    // The sector = left(prev), so prev is the HC we want.
-    // We find prev: the HC whose direction is the closest CW from the -x ray
-    // (i.e., the maximum direction strictly less than -x in CCW order).
-    // If no HC direction is less than -x, the ray is before the first HC,
-    // so prev = the last HC (wrapping).
+    // Step 1: Find the HC at v whose right face contains the -x ray direction.
+    // The -x ray lies in the sector between prev and cur in CCW order.
+    // The sector = right(cur), so cur is the HC we want.
+    // cur is the first HC whose direction is strictly greater than -x in CCW order.
+    // If no HC direction is greater than -x, the ray wraps around,
+    // so cur = the first HC (wrapping).
     point v_pt = hot_pixels[v];
     point ray_pt{bg::get<0>(v_pt) - 1, bg::get<1>(v_pt)};
-    auto prev_it = end - 1; // default: last HC (for wrapping case)
-    bool any_less = false;
+    half_chain hc_vertex;
+    bool found = false;
     for (auto it = beg; it < end; it++) {
         auto hc = sorted_hcs[it];
         auto hc_pt = hot_pixels[hc.next_along_source(chains)];
-        if (less_by_direction(v_pt, hc_pt, ray_pt)) {
-            // hc_dir < ray_dir (CCW)
-            if (!any_less) {
-                prev_it = it;
-                any_less = true;
-            } else {
-                auto best_pt = hot_pixels[sorted_hcs[prev_it].next_along_source(chains)];
-                if (less_by_direction(v_pt, best_pt, hc_pt)) {
-                    // best_dir < hc_dir → hc is closer to ray from below
-                    prev_it = it;
-                }
-            }
+        if (less_by_direction(v_pt, ray_pt, hc_pt)) {
+            // ray_dir < hc_dir (CCW) — first departure after the ray
+            hc_vertex = hc;
+            found = true;
+            break;
         }
     }
-    half_chain hc_vertex = sorted_hcs[prev_it];
+    if (!found) hc_vertex = sorted_hcs[beg];
 
     // Step 2: Cast ray in -x direction, find the nearest intersected HC.
     // Simulation of simplicity: the ray is at y + ε (infinitesimal +dy).
@@ -566,12 +558,14 @@ inline std::vector<std::pair<std::size_t, std::size_t>> cast_ray_minus_x(
         }
     }
 
-    // Step 3: Build the coplanar pair.
-    // If hit: hc_vertex and the hit side are coplanar (both bound the same face).
+    // Step 3: Build the coplanar pair (RIGHT-face convention).
+    // hit_side is the HC whose right face is the approach face of the ray.
+    // dy > 0 (edge going up): right face = east, ray approaches from east → hit_id
+    // dy < 0 (edge going down): right face = west, ray approaches from east → dual
     // If no hit: hc_vertex IS the exterior face.
     std::vector<std::pair<std::size_t, std::size_t>> ray_pairs;
     if (hit_id != ~0ULL) {
-        std::size_t hit_side = (hit_dy < 0) ? hit_id : (hit_id ^ 1);
+        std::size_t hit_side = (hit_dy > 0) ? hit_id : (hit_id ^ 1);
         ray_pairs.emplace_back(hc_vertex.id, hit_side);
     } else {
         ray_pairs.emplace_back(hc_vertex.id, hc_vertex.id);
@@ -665,8 +659,8 @@ inline auto compute_hc_winding(
         std::size_t lf = root[i], rf = root[i ^ 1];
         if (lf != rf) {
             int p = hc.power(chains);
-            adj[lf].emplace_back(rf, p);
-            adj[rf].emplace_back(lf, -p);
+            adj[lf].emplace_back(rf, -p);
+            adj[rf].emplace_back(lf, p);
         }
     }
 
@@ -735,22 +729,33 @@ inline multi_polygon build_output(const chain_build_result& chains,
         face_root = std::move(d.p);
     }
 
-    // Rebuild next from scratch, respecting face boundaries
+    // Rebuild next from scratch, respecting face boundaries.
+    // For each surviving arrival at a vertex, find the next CCW departure
+    // in the same face by scanning sorted_hcs.
     std::vector<half_chain> new_next(num_hcs, {~0ULL});
     {
         std::size_t nv = hc_begin.size();
         for (std::size_t v = 0; v < nv; v++) {
             std::size_t beg = hc_begin[v], end = hc_end[v];
+            std::size_t n = end - beg;
+            if (n == 0) continue;
+
             for (auto it = beg; it < end; it++) {
-                auto s = sorted_hcs[it];
-                auto arr = s.dual();
+                auto d = sorted_hcs[it];   // departure from v
+                auto arr = d.dual();       // arrival at v
                 if (!survive[arr.id] || dead[arr.id]) continue;
                 auto arr_face = face_root[arr.id];
-                auto cur = next_hc[arr.id];
-                while (cur.id != arr.id &&
-                       (!survive[cur.id] || dead[cur.id] || face_root[cur.id] != arr_face))
-                    cur = next_hc[cur.dual().id];
-                if (cur.id != arr.id) new_next[arr.id] = cur;
+
+                // Scan CCW from d to find next departure in arr_face
+                std::size_t found = ~0ULL;
+                for (std::size_t step = 1; step <= n; step++) {
+                    auto cand_it = beg + (it - beg + step) % n;
+                    auto cand = sorted_hcs[cand_it];
+                    if (survive[cand.id] && !dead[cand.id] && face_root[cand.id] == arr_face) {
+                        found = cand.id; break;
+                    }
+                }
+                if (found != ~0ULL) new_next[arr.id] = half_chain{found};
             }
         }
     }
@@ -814,14 +819,10 @@ inline multi_polygon build_output(const chain_build_result& chains,
             if (a > max_abs_area) { max_abs_area = a; outer_i = r; }
         }
 
-        // Ensure correct orientation: outer CCW (area>0), inner CW (area<0)
-        if (bg::area(rings[outer_i]) < 0) std::reverse(rings[outer_i].begin(), rings[outer_i].end());
-
         polygon poly;
         poly.outer() = std::move(rings[outer_i]);
         for (std::size_t r = 0; r < rings.size(); r++) {
             if (r == outer_i || rings[r].empty()) continue;
-            if (bg::area(rings[r]) > 0) std::reverse(rings[r].begin(), rings[r].end());
             poly.inners().push_back(std::move(rings[r]));
         }
 
