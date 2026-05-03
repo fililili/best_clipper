@@ -57,23 +57,23 @@ inline std::vector<std::size_t> connected_components(
         all_edges.emplace_back(b, a);
     }
 
-    auto [adj_begin, adj_end, adj] = bucket_sort(
+    auto [adj_begin, adj_end, adjacency] = bucket_sort(
         all_edges, n,
         [](const std::pair<std::size_t, std::size_t>& e) { return e.first; },
         [](const std::pair<std::size_t, std::size_t>& e) { return e.second; });
 
     std::vector<std::size_t> comp(n, ~0ULL);
     std::vector<std::size_t> stack;
-    std::size_t num_comps = 0;
+    std::size_t num_components = 0;
 
     for (std::size_t v = 0; v < n; v++) {
         if (comp[v] != ~0ULL) continue;
-        comp[v] = num_comps++;
+        comp[v] = num_components++;
         stack.push_back(v);
         while (!stack.empty()) {
             auto u = stack.back(); stack.pop_back();
             for (auto j = adj_begin[u]; j < adj_end[u]; j++) {
-                auto w = adj[j];
+                auto w = adjacency[j];
                 if (comp[w] == ~0ULL) {
                     comp[w] = comp[v];
                     stack.push_back(w);
@@ -197,65 +197,60 @@ struct half_chain {
 // Step 1-3: edges with power
 // ---------------------------------------------------------------------------
 
-inline std::tuple<std::vector<edge_t>, std::vector<point>> construct_graph(auto segs) {
-    std::vector<std::pair<box, std::size_t>> boxes(segs.size());
-    for (std::size_t i = 0; i < segs.size(); i++)
-        boxes[i] = {bg::return_envelope<box>(segs[i]), i};
-    bg::index::rtree<std::pair<box, std::size_t>, bg::index::quadratic<128>> segs_box_rtree(
+inline std::tuple<std::vector<edge_t>, std::vector<point>> construct_graph(auto segments) {
+    std::vector<std::pair<box, std::size_t>> boxes(segments.size());
+    for (std::size_t i = 0; i < segments.size(); i++)
+        boxes[i] = {bg::return_envelope<box>(segments[i]), i};
+    bg::index::rtree<std::pair<box, std::size_t>, bg::index::quadratic<128>> segments_box_rtree(
         std::move(boxes));
 
     std::vector<point> hot_pixels;
-    hot_pixels.reserve(segs.size() * 2);
-    for (const auto& seg : segs) {
-        hot_pixels.emplace_back(bg::get<0, 0>(seg), bg::get<0, 1>(seg));
-        hot_pixels.emplace_back(bg::get<1, 0>(seg), bg::get<1, 1>(seg));
+    hot_pixels.reserve(segments.size() * 2);
+    for (const auto& segment : segments) {
+        hot_pixels.emplace_back(bg::get<0, 0>(segment), bg::get<0, 1>(segment));
+        hot_pixels.emplace_back(bg::get<1, 0>(segment), bg::get<1, 1>(segment));
     }
 
-    for (std::size_t i = 0; i < segs.size(); i++)
+    for (std::size_t i = 0; i < segments.size(); i++)
         std::for_each(
-            segs_box_rtree.qbegin(bg::index::intersects(boxes[i].first)), segs_box_rtree.qend(),
+            segments_box_rtree.qbegin(bg::index::intersects(boxes[i].first)), segments_box_rtree.qend(),
             [&](auto const& o) {
-                if (auto p = get_intersection(segs[i], segs[o.second]))
+                if (auto p = get_intersection(segments[i], segments[o.second]))
                     hot_pixels.push_back(p.value());
             });
 
-    {
-        std::sort(std::begin(hot_pixels), std::end(hot_pixels), [](auto p1, auto p2) {
-            return std::pair{bg::get<0>(p1), bg::get<1>(p1)} <
-                   std::pair{bg::get<0>(p2), bg::get<1>(p2)};
-        });
-        auto last = std::unique(std::begin(hot_pixels), std::end(hot_pixels),
-                                [](auto p1, auto p2) { return bg::equals(p1, p2); });
-        hot_pixels.erase(last, hot_pixels.end());
-        bg::index::rtree<point, bg::index::quadratic<128>> hp_rtree{hot_pixels};
-        // Keep hot_pixels in xy order — edges_to_power relies on indices being xy-ordered
-        // so that start > end means "against natural direction" consistently.
-    }
+    std::sort(std::begin(hot_pixels), std::end(hot_pixels), [](auto p1, auto p2) {
+        return std::pair{bg::get<0>(p1), bg::get<1>(p1)} <
+               std::pair{bg::get<0>(p2), bg::get<1>(p2)};
+    });
+    auto last = std::unique(std::begin(hot_pixels), std::end(hot_pixels),
+                            [](auto p1, auto p2) { return bg::equals(p1, p2); });
+    hot_pixels.erase(last, hot_pixels.end());
 
-    std::vector<std::pair<std::size_t, std::size_t>> seg_pixel_pairs;
+    std::vector<std::pair<std::size_t, std::size_t>> segment_pixel_pairs;
     for (std::size_t i = 0; i < hot_pixels.size(); i++) {
         constexpr auto expand = 1;
-        auto mc = point{bg::get<0>(hot_pixels[i]) - expand, bg::get<1>(hot_pixels[i]) - expand};
-        auto Mc = point{bg::get<0>(hot_pixels[i]) + expand, bg::get<1>(hot_pixels[i]) + expand};
+        auto min_corner = point{bg::get<0>(hot_pixels[i]) - expand, bg::get<1>(hot_pixels[i]) - expand};
+        auto max_corner = point{bg::get<0>(hot_pixels[i]) + expand, bg::get<1>(hot_pixels[i]) + expand};
         std::for_each(
-            segs_box_rtree.qbegin(bg::index::intersects(box{mc, Mc})), segs_box_rtree.qend(),
+            segments_box_rtree.qbegin(bg::index::intersects(box{min_corner, max_corner})), segments_box_rtree.qend(),
             [&](auto const& val) {
-                if (is_point_on_segment(hot_pixels[i], segs[val.second]))
-                    seg_pixel_pairs.emplace_back(val.second, i);
+                if (is_point_on_segment(hot_pixels[i], segments[val.second]))
+                    segment_pixel_pairs.emplace_back(val.second, i);
             });
     }
 
     std::vector<edge_t> edges;
     {
-        auto [segs_begin, segs_end, pixels] = bucket_sort(
-            seg_pixel_pairs, segs.size(), [](auto val) { return val.first; },
+        auto [segments_begin, segments_end, pixels] = bucket_sort(
+            segment_pixel_pairs, segments.size(), [](auto val) { return val.first; },
             [](auto val) { return val.second; });
-        for (std::size_t i = 0; i < segs.size(); i++) {
-            auto cb = std::begin(pixels) + segs_begin[i], ce = std::begin(pixels) + segs_end[i];
-            std::sort(cb, ce, [&](auto pi, auto pj) {
-                return less_by_segment{segs[i]}(hot_pixels[pi], hot_pixels[pj]);
+        for (std::size_t i = 0; i < segments.size(); i++) {
+            auto pixel_begin = std::begin(pixels) + segments_begin[i], pixel_end = std::begin(pixels) + segments_end[i];
+            std::sort(pixel_begin, pixel_end, [&](auto pi, auto pj) {
+                return less_by_segment{segments[i]}(hot_pixels[pi], hot_pixels[pj]);
             });
-            for (; cb != ce - 1; cb++) edges.emplace_back(*cb, *std::next(cb));
+            for (; pixel_begin != pixel_end - 1; pixel_begin++) edges.emplace_back(*pixel_begin, *std::next(pixel_begin));
         }
     }
     return {std::move(edges), std::move(hot_pixels)};
@@ -272,37 +267,37 @@ inline std::vector<edge_with_power_t> edges_to_power(std::vector<edge_t> edges) 
 }
 
 inline std::vector<edge_with_power_t> unique_edges(std::vector<edge_with_power_t> edges,
-                                                     std::size_t nv) {
-    auto [bl, el, ordered] = bucket_sort(
-        std::move(edges), nv,
+                                                     std::size_t num_vertices) {
+    auto [begin_loc, end_loc, ordered] = bucket_sort(
+        std::move(edges), num_vertices,
         [](const edge_with_power_t& e) { return e.start; },
         [](const edge_with_power_t& e) { return e; });
     std::vector<edge_with_power_t> result;
-    for (std::size_t i = 0; i < nv; i++) {
-        auto cb = std::begin(ordered) + bl[i], ce = std::begin(ordered) + el[i];
-        if (cb == ce) continue;
-        std::sort(cb, ce, [](const edge_with_power_t& a, const edge_with_power_t& b) {
+    for (std::size_t i = 0; i < num_vertices; i++) {
+        auto current_begin = std::begin(ordered) + begin_loc[i], current_end = std::begin(ordered) + end_loc[i];
+        if (current_begin == current_end) continue;
+        std::sort(current_begin, current_end, [](const edge_with_power_t& a, const edge_with_power_t& b) {
             return a.end < b.end;
         });
-        for (auto cur = cb; cur != ce; ) {
+        for (auto cur = current_begin; cur != current_end; ) {
             int sum = 0;
-            auto nxt = cur;
-            while (nxt != ce && nxt->end == cur->end) {
-                sum += nxt->power;
-                ++nxt;
+            auto next = cur;
+            while (next != current_end && next->end == cur->end) {
+                sum += next->power;
+                ++next;
             }
             if (sum != 0)
                 result.push_back({cur->start, cur->end, sum});
-            cur = nxt;
+            cur = next;
         }
     }
     return result;
 }
 
-inline auto construct_edges_with_power(auto segs) {
-    auto [edges, hp] = construct_graph(std::move(segs));
-    return std::tuple{std::move(hp),
-                      unique_edges(edges_to_power(std::move(edges)), hp.size())};
+inline auto construct_edges_with_power(auto segments) {
+    auto [edges, hot_pixels] = construct_graph(std::move(segments));
+    return std::tuple{std::move(hot_pixels),
+                      unique_edges(edges_to_power(std::move(edges)), hot_pixels.size())};
 }
 
 // ---------------------------------------------------------------------------
@@ -313,27 +308,27 @@ inline chain_build_result build_chains(const std::vector<edge_with_power_t>& sor
                                        std::size_t node_num) {
     std::vector<std::size_t> edge_offsets(node_num + 1, 0);
     {
-        std::vector<std::size_t> cnt(node_num, 0);
-        for (auto& e : sorted_edges) cnt[e.start]++;
+        std::vector<std::size_t> edge_count(node_num, 0);
+        for (auto& e : sorted_edges) edge_count[e.start]++;
         std::size_t cur = 0;
-        for (std::size_t v = 0; v < node_num; v++) { edge_offsets[v] = cur; cur += cnt[v]; }
+        for (std::size_t v = 0; v < node_num; v++) { edge_offsets[v] = cur; cur += edge_count[v]; }
         edge_offsets.back() = cur;
     }
 
     std::vector<std::uint32_t> out_deg(node_num), in_deg(node_num);
-    std::vector<int> out_pow(node_num), in_pow(node_num);
+    std::vector<int> out_power(node_num), in_power(node_num);
     for (const auto& e : sorted_edges) {
-        out_deg[e.start]++; in_deg[e.end]++; out_pow[e.start] = e.power; in_pow[e.end] = e.power;
+        out_deg[e.start]++; in_deg[e.end]++; out_power[e.start] = e.power; in_power[e.end] = e.power;
     }
 
     std::vector<bool> is_end(node_num);
     for (std::size_t i = 0; i < node_num; i++)
-        is_end[i] = !(out_deg[i] == 1 && in_deg[i] == 1 && out_pow[i] == in_pow[i]);
+        is_end[i] = !(out_deg[i] == 1 && in_deg[i] == 1 && out_power[i] == in_power[i]);
 
     std::vector<bool> visited(node_num), edge_used(sorted_edges.size());
     std::vector<std::size_t> idx, off{0};
-    std::vector<int> pows;
-    std::vector<std::size_t> e2c(sorted_edges.size(), ~0ULL);
+    std::vector<int> powers;
+    std::vector<std::size_t> edge_to_chain(sorted_edges.size(), ~0ULL);
 
     for (std::size_t i = 0; i < node_num; i++) {
         if (!is_end[i]) continue;
@@ -341,7 +336,7 @@ inline chain_build_result build_chains(const std::vector<edge_with_power_t>& sor
         for (std::size_t j = edge_offsets[i]; j < edge_offsets[i + 1]; j++) {
             if (edge_used[j] || sorted_edges[j].start != i) continue;
             edge_used[j] = true; idx.push_back(i);
-            pows.push_back(sorted_edges[j].power); e2c[j] = off.size() - 1;
+            powers.push_back(sorted_edges[j].power); edge_to_chain[j] = off.size() - 1;
             auto cur = sorted_edges[j].end;
             while (!is_end[cur]) {
                 visited[cur] = true; idx.push_back(cur);
@@ -349,7 +344,7 @@ inline chain_build_result build_chains(const std::vector<edge_with_power_t>& sor
                 for (std::size_t k = edge_offsets[cur]; k < edge_offsets[cur + 1]; k++)
                     if (!edge_used[k] && sorted_edges[k].start == cur) { nj = k; break; }
                 assert(nj != ~0ULL);
-                edge_used[nj] = true; e2c[nj] = off.size() - 1;
+                edge_used[nj] = true; edge_to_chain[nj] = off.size() - 1;
                 cur = sorted_edges[nj].end;
             }
             idx.push_back(cur); off.push_back(idx.size());
@@ -363,7 +358,7 @@ inline chain_build_result build_chains(const std::vector<edge_with_power_t>& sor
             if (!edge_used[j] && sorted_edges[j].start == i) { sj = j; break; }
         if (sj == ~0ULL) continue;
         visited[i] = true; edge_used[sj] = true;
-        idx.push_back(i); pows.push_back(sorted_edges[sj].power); e2c[sj] = off.size() - 1;
+        idx.push_back(i); powers.push_back(sorted_edges[sj].power); edge_to_chain[sj] = off.size() - 1;
         auto cur = sorted_edges[sj].end;
         while (i != cur) {
             visited[cur] = true; idx.push_back(cur);
@@ -371,36 +366,36 @@ inline chain_build_result build_chains(const std::vector<edge_with_power_t>& sor
             for (std::size_t k = edge_offsets[cur]; k < edge_offsets[cur + 1]; k++)
                 if (!edge_used[k] && sorted_edges[k].start == cur) { nj = k; break; }
             assert(nj != ~0ULL);
-            edge_used[nj] = true; e2c[nj] = off.size() - 1;
+            edge_used[nj] = true; edge_to_chain[nj] = off.size() - 1;
             cur = sorted_edges[nj].end;
         }
         idx.push_back(cur); off.push_back(idx.size());
     }
 
-    return {std::move(idx), std::move(off), std::move(pows), std::move(e2c)};
+    return {std::move(idx), std::move(off), std::move(powers), std::move(edge_to_chain)};
 }
 
 // ---------------------------------------------------------------------------
 // Step 5-6: angular sort, next/prev, coplanar pairs (sector adjacency)
 // ---------------------------------------------------------------------------
 
-inline auto build_hc_graph(const chain_build_result& chains,
+inline auto build_half_chain_graph(const chain_build_result& chains,
                            const std::vector<point>& hot_pixels) {
-    std::size_t num_hcs = (chains.offsets.size() - 1) * 2;
-    std::size_t nv = hot_pixels.size();
+    std::size_t num_half_chains = (chains.offsets.size() - 1) * 2;
+    std::size_t num_vertices = hot_pixels.size();
 
     std::vector<half_chain> all;
-    all.reserve(num_hcs);
-    for (std::size_t i = 0; i < num_hcs; i++) all.push_back({i});
+    all.reserve(num_half_chains);
+    for (std::size_t i = 0; i < num_half_chains; i++) all.push_back({i});
 
-    auto [begin_loc, end_loc, sorted_hcs] = bucket_sort(
-        all, nv, [&](half_chain hc) { return hc.source_node(chains); },
-        [](half_chain hc) { return hc; });
+    auto [begin_loc, end_loc, sorted_half_chains] = bucket_sort(
+        all, num_vertices, [&](half_chain h) { return h.source_node(chains); },
+        [](half_chain h) { return h; });
 
-    for (std::size_t v = 0; v < nv; v++) {
-        auto cb = begin_loc[v], ce = end_loc[v];
-        if (ce - cb < 2) continue;
-        std::sort(sorted_hcs.begin() + cb, sorted_hcs.begin() + ce,
+    for (std::size_t v = 0; v < num_vertices; v++) {
+        auto vertex_begin = begin_loc[v], vertex_end = end_loc[v];
+        if (vertex_end - vertex_begin < 2) continue;
+        std::sort(sorted_half_chains.begin() + vertex_begin, sorted_half_chains.begin() + vertex_end,
                   [&](half_chain a, half_chain b) {
                       return less_by_direction(hot_pixels[v],
                                                hot_pixels[a.next_along_source(chains)],
@@ -408,28 +403,28 @@ inline auto build_hc_graph(const chain_build_result& chains,
                   });
     }
 
-    std::vector<half_chain> next_hc(num_hcs, {~0ULL});
+    std::vector<half_chain> next_half_chain(num_half_chains, {~0ULL});
     std::vector<std::pair<std::size_t, std::size_t>> coplanar;
 
-    for (std::size_t v = 0; v < nv; v++) {
-        auto cb = begin_loc[v], ce = end_loc[v];
-        if (cb == ce) continue;
-        assert(cb + 1 != ce);
-        for (auto it = cb + 1; it < ce; ++it) {
-            auto prev = sorted_hcs[it - 1], cur = sorted_hcs[it];
-            next_hc[prev.dual().id] = cur;
+    for (std::size_t v = 0; v < num_vertices; v++) {
+        auto vertex_begin = begin_loc[v], vertex_end = end_loc[v];
+        if (vertex_begin == vertex_end) continue;
+        assert(vertex_begin + 1 != vertex_end);
+        for (auto it = vertex_begin + 1; it < vertex_end; ++it) {
+            auto prev = sorted_half_chains[it - 1], cur = sorted_half_chains[it];
+            next_half_chain[prev.dual().id] = cur;
             coplanar.emplace_back(cur.id, prev.dual().id);
         }
-        auto first = sorted_hcs[cb], last = sorted_hcs[ce - 1];
-        next_hc[last.dual().id] = first;
+        auto first = sorted_half_chains[vertex_begin], last = sorted_half_chains[vertex_end - 1];
+        next_half_chain[last.dual().id] = first;
         coplanar.emplace_back(first.id, last.dual().id);
     }
 
     return std::tuple{
-        std::move(sorted_hcs),
+        std::move(sorted_half_chains),
         std::vector<std::size_t>(begin_loc.begin(), begin_loc.end()),
         std::vector<std::size_t>(end_loc.begin(), end_loc.end()),
-        std::move(next_hc), std::move(coplanar)};
+        std::move(next_half_chain), std::move(coplanar)};
 }
 
 // ---------------------------------------------------------------------------
@@ -437,55 +432,55 @@ inline auto build_hc_graph(const chain_build_result& chains,
 // ---------------------------------------------------------------------------
 
 // Cast ray in -x direction from leftmost vertex v.
-// Finds the HC at v whose right face contains the -x ray, then finds the nearest
-// HC hit by the ray. These two HCs are coplanar (share the exterior face).
-// If the ray hits nothing, the HC at v is the exterior face itself (w=0).
+// Finds the half-chain at v whose right face contains the -x ray, then finds the nearest
+// half-chain hit by the ray. These two half-chains are coplanar (share the exterior face).
+// If the ray hits nothing, the half-chain at v is the exterior face itself (w=0).
 inline std::vector<std::pair<std::size_t, std::size_t>> cast_ray_minus_x(
     std::size_t v,
     const std::vector<point>& hot_pixels,
     const chain_build_result& chains,
-    const std::vector<half_chain>& sorted_hcs,
-    const std::vector<std::size_t>& hc_begin,
-    const std::vector<std::size_t>& hc_end) {
+    const std::vector<half_chain>& sorted_half_chains,
+    const std::vector<std::size_t>& half_chain_begin,
+    const std::vector<std::size_t>& half_chain_end) {
 
-    auto beg = hc_begin[v], end = hc_end[v];
-    if (beg == end) return {};
+    auto range_begin = half_chain_begin[v], range_end = half_chain_end[v];
+    if (range_begin == range_end) return {};
 
-    // Step 1: Find the HC at v whose right face contains the -x ray direction.
+    // Step 1: Find the half-chain at v whose right face contains the -x ray direction.
     // The -x ray lies in the sector between prev and cur in CCW order.
-    // The sector = right(cur), so cur is the HC we want.
-    // cur is the first HC whose direction is strictly greater than -x in CCW order.
-    // If no HC direction is greater than -x, the ray wraps around,
-    // so cur = the first HC (wrapping).
-    point v_pt = hot_pixels[v];
-    point ray_pt{bg::get<0>(v_pt) - 1, bg::get<1>(v_pt)};
-    half_chain hc_vertex;
+    // The sector = right(cur), so cur is the half-chain we want.
+    // cur is the first half-chain whose direction is strictly greater than -x in CCW order.
+    // If no half-chain direction is greater than -x, the ray wraps around,
+    // so cur = the first half-chain (wrapping).
+    point vertex_point = hot_pixels[v];
+    point ray_point{bg::get<0>(vertex_point) - 1, bg::get<1>(vertex_point)};
+    half_chain vertex_half_chain;
     bool found = false;
-    for (auto it = beg; it < end; it++) {
-        auto hc = sorted_hcs[it];
-        auto hc_pt = hot_pixels[hc.next_along_source(chains)];
-        if (less_by_direction(v_pt, ray_pt, hc_pt)) {
-            // ray_dir < hc_dir (CCW) — first departure after the ray
-            hc_vertex = hc;
+    for (auto it = range_begin; it < range_end; it++) {
+        auto h = sorted_half_chains[it];
+        auto half_chain_point = hot_pixels[h.next_along_source(chains)];
+        if (less_by_direction(vertex_point, ray_point, half_chain_point)) {
+            // ray_dir < half_chain_dir (CCW) — first departure after the ray
+            vertex_half_chain = h;
             found = true;
             break;
         }
     }
-    if (!found) hc_vertex = sorted_hcs[beg];
+    if (!found) vertex_half_chain = sorted_half_chains[range_begin];
 
-    // Step 2: Cast ray in -x direction, find the nearest intersected HC.
+    // Step 2: Cast ray in -x direction, find the nearest intersected half-chain.
     // Simulation of simplicity: the ray is at y + ε (infinitesimal +dy).
-    // This ensures the ray doesn't pass through vertices, so only one HC
+    // This ensures the ray doesn't pass through vertices, so only one half-chain
     // can be hit at any intersection point.
-    int64_t ray_y = bg::get<1>(v_pt);
-    int min_x = bg::get<0>(v_pt);
+    int64_t ray_y = bg::get<1>(vertex_point);
+    int min_x = bg::get<0>(vertex_point);
     int64_t best_x = std::numeric_limits<int64_t>::min();
     std::size_t hit_id = ~0ULL;
     int64_t hit_dy = 0;
     int64_t best_dx = 0;
     int64_t hit_y_low = 0;
 
-    auto try_edge = [&](int64_t ix, int64_t dx, int64_t dy, int64_t y_low, std::size_t dc_id) {
+    auto try_edge = [&](int64_t ix, int64_t dx, int64_t dy, int64_t y_low, std::size_t half_chain_id) {
         if (ix >= min_x) return;
         bool better = false;
         if (ix > best_x) {
@@ -515,19 +510,19 @@ inline std::vector<std::pair<std::size_t, std::size_t>> cast_ray_minus_x(
             }
         }
         if (better) {
-            best_x = ix; best_dx = dx; hit_dy = dy; hit_id = dc_id;
+            best_x = ix; best_dx = dx; hit_dy = dy; hit_id = half_chain_id;
             hit_y_low = y_low;
         }
     };
 
-    for (auto hc : sorted_hcs) {
+    for (auto h : sorted_half_chains) {
         auto& idx = chains.indices;
         auto& off = chains.offsets;
-        std::size_t cid = hc.chain_id();
-        auto cb = off[cid], ce = off[cid + 1];
+        std::size_t chain_idx = h.chain_id();
+        auto chain_begin_idx = off[chain_idx], chain_end_idx = off[chain_idx + 1];
 
-        if (hc.is_forward()) {
-            for (std::size_t k = cb; k + 1 < ce; k++) {
+        if (h.is_forward()) {
+            for (std::size_t k = chain_begin_idx; k + 1 < chain_end_idx; k++) {
                 int64_t y1 = bg::get<1>(hot_pixels[idx[k]]);
                 int64_t y2 = bg::get<1>(hot_pixels[idx[k + 1]]);
                 if (y1 <= ray_y && ray_y < y2) {
@@ -535,17 +530,17 @@ inline std::vector<std::pair<std::size_t, std::size_t>> cast_ray_minus_x(
                     int64_t x2 = bg::get<0>(hot_pixels[idx[k + 1]]);
                     long double t = (long double)(ray_y - y1) / (y2 - y1);
                     int64_t ix = (int64_t)(x1 + t * (x2 - x1));
-                    try_edge(ix, x2 - x1, y2 - y1, y1, hc.id);
+                    try_edge(ix, x2 - x1, y2 - y1, y1, h.id);
                 } else if (y2 <= ray_y && ray_y < y1) {
                     int64_t x1 = bg::get<0>(hot_pixels[idx[k]]);
                     int64_t x2 = bg::get<0>(hot_pixels[idx[k + 1]]);
                     long double t = (long double)(ray_y - y1) / (y2 - y1);
                     int64_t ix = (int64_t)(x1 + t * (x2 - x1));
-                    try_edge(ix, x2 - x1, y2 - y1, y2, hc.id);
+                    try_edge(ix, x2 - x1, y2 - y1, y2, h.id);
                 }
             }
         } else {
-            for (std::size_t k = ce - 1; k > cb; k--) {
+            for (std::size_t k = chain_end_idx - 1; k > chain_begin_idx; k--) {
                 int64_t y1 = bg::get<1>(hot_pixels[idx[k]]);
                 int64_t y2 = bg::get<1>(hot_pixels[idx[k - 1]]);
                 if (y1 <= ray_y && ray_y < y2) {
@@ -553,85 +548,85 @@ inline std::vector<std::pair<std::size_t, std::size_t>> cast_ray_minus_x(
                     int64_t x2 = bg::get<0>(hot_pixels[idx[k - 1]]);
                     long double t = (long double)(ray_y - y1) / (y2 - y1);
                     int64_t ix = (int64_t)(x1 + t * (x2 - x1));
-                    try_edge(ix, x2 - x1, y2 - y1, y1, hc.id);
+                    try_edge(ix, x2 - x1, y2 - y1, y1, h.id);
                 } else if (y2 <= ray_y && ray_y < y1) {
                     int64_t x1 = bg::get<0>(hot_pixels[idx[k]]);
                     int64_t x2 = bg::get<0>(hot_pixels[idx[k - 1]]);
                     long double t = (long double)(ray_y - y1) / (y2 - y1);
                     int64_t ix = (int64_t)(x1 + t * (x2 - x1));
-                    try_edge(ix, x2 - x1, y2 - y1, y2, hc.id);
+                    try_edge(ix, x2 - x1, y2 - y1, y2, h.id);
                 }
             }
         }
     }
 
     // Step 3: Build the coplanar pair (RIGHT-face convention).
-    // hit_side is the HC whose right face is the approach face of the ray.
+    // hit_side is the half-chain whose right face is the approach face of the ray.
     // dy > 0 (edge going up): right face = east, ray approaches from east → hit_id
     // dy < 0 (edge going down): right face = west, ray approaches from east → dual
-    // If no hit: hc_vertex IS the exterior face.
+    // If no hit: vertex_half_chain IS the exterior face.
     std::vector<std::pair<std::size_t, std::size_t>> ray_pairs;
     if (hit_id != ~0ULL) {
         std::size_t hit_side = (hit_dy > 0) ? hit_id : (hit_id ^ 1);
-        ray_pairs.emplace_back(hc_vertex.id, hit_side);
+        ray_pairs.emplace_back(vertex_half_chain.id, hit_side);
     } else {
-        ray_pairs.emplace_back(hc_vertex.id, hc_vertex.id);
+        ray_pairs.emplace_back(vertex_half_chain.id, vertex_half_chain.id);
     }
     return ray_pairs;
 }
 
 // Find exterior face info per connected component.
-// Returns: the HC id in the exterior face (per component),
+// Returns: the half-chain id in the exterior face (per component),
 //   and all ray-coplanar pairs.
 inline auto find_exterior(const chain_build_result& chains,
                           const std::vector<point>& hot_pixels,
-                          const std::vector<half_chain>& sorted_hcs,
-                          const std::vector<std::size_t>& hc_begin,
-                          const std::vector<std::size_t>& hc_end) {
-    std::size_t nv = hot_pixels.size();
+                          const std::vector<half_chain>& sorted_half_chains,
+                          const std::vector<std::size_t>& half_chain_begin,
+                          const std::vector<std::size_t>& half_chain_end) {
+    std::size_t num_vertices = hot_pixels.size();
 
     // Vertex connected components
-    std::vector<std::pair<std::size_t, std::size_t>> v_edges;
-    for (auto hc : sorted_hcs)
-        v_edges.emplace_back(hc.source_node(chains), hc.target_node(chains));
+    std::vector<std::pair<std::size_t, std::size_t>> vertex_edges;
+    for (auto h : sorted_half_chains)
+        vertex_edges.emplace_back(h.source_node(chains), h.target_node(chains));
     for (std::size_t c = 0; c + 1 < chains.offsets.size(); c++) {
-        auto cb = chains.offsets[c], ce = chains.offsets[c + 1];
-        for (std::size_t k = cb; k + 1 < ce; k++)
-            v_edges.emplace_back(chains.indices[k], chains.indices[k + 1]);
+        auto chain_begin_idx = chains.offsets[c], chain_end_idx = chains.offsets[c + 1];
+        for (std::size_t k = chain_begin_idx; k + 1 < chain_end_idx; k++)
+            vertex_edges.emplace_back(chains.indices[k], chains.indices[k + 1]);
     }
 
-    auto comp_id = connected_components(nv, v_edges);
+    auto component_id = connected_components(num_vertices, vertex_edges);
 
     // Group vertices by component
-    std::size_t num_comps = 0;
-    for (auto c : comp_id) num_comps = std::max(num_comps, c + 1);
-    std::vector<std::vector<std::size_t>> comps(num_comps);
-    for (std::size_t v = 0; v < nv; v++)
-        comps[comp_id[v]].push_back(v);
+    std::size_t num_components = 0;
+    for (auto c : component_id) num_components = std::max(num_components, c + 1);
+    std::vector<std::vector<std::size_t>> vertex_components(num_components);
+    for (std::size_t v = 0; v < num_vertices; v++)
+        vertex_components[component_id[v]].push_back(v);
 
-    std::vector<std::size_t> ext_hcs;
+    std::vector<std::size_t> exterior_half_chains;
     std::vector<std::pair<std::size_t, std::size_t>> ray_pairs;
 
-    for (auto& comp : comps) {
-        std::size_t lmv = ~0ULL;
+    for (auto& vertex_component : vertex_components) {
+        std::size_t leftmost_vertex = ~0ULL;
         int min_x = std::numeric_limits<int>::max();
-        for (auto vv : comp) {
-            if (hc_begin[vv] == hc_end[vv]) continue;
-            int x = bg::get<0>(hot_pixels[vv]);
-            if (x < min_x) { min_x = x; lmv = vv; }
+        for (auto vertex : vertex_component) {
+            if (half_chain_begin[vertex] == half_chain_end[vertex]) continue;
+            int x = bg::get<0>(hot_pixels[vertex]);
+            if (x < min_x) { min_x = x; leftmost_vertex = vertex; }
         }
-        if (lmv == ~0ULL) continue;
+        if (leftmost_vertex == ~0ULL) continue;
 
-        auto rp = cast_ray_minus_x(lmv, hot_pixels, chains, sorted_hcs, hc_begin, hc_end);
-        for (auto& p : rp) {
+        auto ray_pairs_result = cast_ray_minus_x(leftmost_vertex, hot_pixels, chains, sorted_half_chains, half_chain_begin, half_chain_end);
+        for (auto& p : ray_pairs_result) {
             if (p.first == p.second) {
-                ext_hcs.push_back(p.first);
+                exterior_half_chains.push_back(p.first);
             }
             ray_pairs.push_back(std::move(p));
         }
     }
 
-    return std::tuple{std::move(ext_hcs), std::move(ray_pairs)};
+    return std::tuple{std::move(exterior_half_chains), std::move(ray_pairs)};
 }
 
 // ---------------------------------------------------------------------------
@@ -639,16 +634,16 @@ inline auto find_exterior(const chain_build_result& chains,
 // Coplanarity sources: sector adjacency + ray.
 // Propagation: for consecutive a,b at vertex CCW:
 //   W(face(b)) = W(face(a)) + power(b)
-// Returns: hc_winding for each HC.
+// Returns: winding for each half-chain.
 // ---------------------------------------------------------------------------
 
-inline auto compute_hc_winding(
+inline auto compute_winding(
     const chain_build_result& chains,
     const std::vector<std::pair<std::size_t, std::size_t>>& coplanar_pairs,
     const std::vector<std::pair<std::size_t, std::size_t>>& ray_pairs,
-    const std::vector<std::size_t>& exterior_hcs) {
+    const std::vector<std::size_t>& exterior_half_chains) {
 
-    std::size_t num_hcs = (chains.offsets.size() - 1) * 2;
+    std::size_t num_half_chains = (chains.offsets.size() - 1) * 2;
 
     // Collect edges: coplanar (weight 0), ray (weight 0), dual (weight -power)
     std::vector<edge_with_power_t> edges;
@@ -658,25 +653,25 @@ inline auto compute_hc_winding(
     };
     for (auto [a, b] : coplanar_pairs) add(a, b, 0);
     for (auto [a, b] : ray_pairs) add(a, b, 0);
-    for (std::size_t i = 0; i < num_hcs; i++)
+    for (std::size_t i = 0; i < num_half_chains; i++)
         add(i, i ^ 1, -half_chain{i}.power(chains));
 
-    auto [adj_begin, adj_end, adj] = bucket_sort(
-        edges, num_hcs,
+    auto [adj_begin, adj_end, adjacency] = bucket_sort(
+        edges, num_half_chains,
         [](const edge_with_power_t& e) { return e.start; },
         [](const edge_with_power_t& e) { return std::pair{e.end, e.power}; });
 
     // DFS propagation from exterior seeds
-    constexpr int UNK = std::numeric_limits<int>::max() / 2;
-    std::vector<int> winding(num_hcs, UNK);
-    for (auto ext : exterior_hcs) winding[ext] = 0;
+    constexpr int UNKNOWN = std::numeric_limits<int>::max() / 2;
+    std::vector<int> winding(num_half_chains, UNKNOWN);
+    for (auto exterior : exterior_half_chains) winding[exterior] = 0;
 
-    std::vector<std::size_t> stack(exterior_hcs.begin(), exterior_hcs.end());
+    std::vector<std::size_t> stack(exterior_half_chains.begin(), exterior_half_chains.end());
     while (!stack.empty()) {
         auto u = stack.back(); stack.pop_back();
         for (auto i = adj_begin[u]; i < adj_end[u]; i++) {
-            auto [v, diff] = adj[i];
-            if (winding[v] == UNK) {
+            auto [v, diff] = adjacency[i];
+            if (winding[v] == UNKNOWN) {
                 winding[v] = winding[u] + diff;
                 stack.push_back(v);
             }
@@ -691,121 +686,121 @@ inline auto compute_hc_winding(
 
 inline multi_polygon build_output(const chain_build_result& chains,
                                    const std::vector<point>& hot_pixels,
-                                   std::vector<half_chain> next_hc,
-                                   const std::vector<int>& hc_winding,
+                                   std::vector<half_chain> next_half_chain,
+                                   const std::vector<int>& winding,
                                    const std::vector<std::pair<std::size_t, std::size_t>>& coplanar_pairs,
                                    const std::vector<std::pair<std::size_t, std::size_t>>& ray_pairs,
                                    auto filter_fn) {
-    std::size_t num_hcs = (chains.offsets.size() - 1) * 2;
+    std::size_t num_half_chains = (chains.offsets.size() - 1) * 2;
     std::size_t num_chains = chains.offsets.size() - 1;
 
-    // 1. Which HCs survive
-    std::vector<bool> survive(num_hcs);
-    for (std::size_t i = 0; i < num_hcs; i++)
-        survive[i] = filter_fn(hc_winding[i]);
+    // 1. Which half-chains survive
+    std::vector<bool> survive(num_half_chains);
+    for (std::size_t i = 0; i < num_half_chains; i++)
+        survive[i] = filter_fn(winding[i]);
 
     // 2. Dual cancellation: both fwd and rev survive → both dead
-    std::vector<bool> dead(num_hcs, false);
-    for (std::size_t cid = 0; cid < num_chains; cid++) {
-        std::size_t fwd = 2 * cid, rev = 2 * cid + 1;
-        if (survive[fwd] && survive[rev])
-            dead[fwd] = dead[rev] = true;
+    std::vector<bool> dead(num_half_chains, false);
+    for (std::size_t chain_idx = 0; chain_idx < num_chains; chain_idx++) {
+        std::size_t forward_id = 2 * chain_idx, reverse_id = 2 * chain_idx + 1;
+        if (survive[forward_id] && survive[reverse_id])
+            dead[forward_id] = dead[reverse_id] = true;
     }
 
-    // 3. Update next_hc via indirection: for each surviving HC whose next
-    //    points to a dead HC, follow next_hc[dead.dual()] until a live HC
-    //    is found. This terminates because at least one HC per vertex cycle
+    // 3. Update next_half_chain via indirection: for each surviving half-chain whose next
+    //    points to a dead half-chain, follow next_half_chain[dead.dual()] until a live half-chain
+    //    is found. This terminates because at least one half-chain per vertex cycle
     //    survives (not all faces can be cancelled).
-    for (std::size_t i = 0; i < num_hcs; i++) {
+    for (std::size_t i = 0; i < num_half_chains; i++) {
         if (!survive[i] || dead[i]) continue;
-        while (dead[next_hc[i].id])
-            next_hc[i] = next_hc[next_hc[i].dual().id];
+        while (dead[next_half_chain[i].id])
+            next_half_chain[i] = next_half_chain[next_half_chain[i].dual().id];
     }
 
     // 4. Build connected components: coplanar + ray + dual cancellation → same face
     std::vector<std::pair<std::size_t, std::size_t>> face_edges;
     face_edges.insert(face_edges.end(), coplanar_pairs.begin(), coplanar_pairs.end());
     face_edges.insert(face_edges.end(), ray_pairs.begin(), ray_pairs.end());
-    for (std::size_t cid = 0; cid < num_chains; cid++) {
-        std::size_t fwd = 2 * cid, rev = 2 * cid + 1;
-        if (dead[fwd]) face_edges.emplace_back(fwd, rev);
+    for (std::size_t chain_idx = 0; chain_idx < num_chains; chain_idx++) {
+        std::size_t forward_id = 2 * chain_idx, reverse_id = 2 * chain_idx + 1;
+        if (dead[forward_id]) face_edges.emplace_back(forward_id, reverse_id);
     }
-    auto comp_id = connected_components(num_hcs, face_edges);
+    auto component_id = connected_components(num_half_chains, face_edges);
 
-    // 5. Group surviving non-dead HCs by face via bucket_sort
-    std::vector<std::pair<std::size_t, std::size_t>> hc_to_face;
-    for (std::size_t i = 0; i < num_hcs; i++)
+    // 5. Group surviving non-dead half-chains by face via bucket_sort
+    std::vector<std::pair<std::size_t, std::size_t>> half_chain_to_face;
+    for (std::size_t i = 0; i < num_half_chains; i++)
         if (!dead[i] && survive[i])
-            hc_to_face.emplace_back(comp_id[i], i);
+            half_chain_to_face.emplace_back(component_id[i], i);
 
     std::size_t num_faces = 0;
-    for (auto c : comp_id) num_faces = std::max(num_faces, c + 1);
+    for (auto c : component_id) num_faces = std::max(num_faces, c + 1);
     auto [face_begin, face_end, face_data] = bucket_sort(
-        hc_to_face, num_faces,
+        half_chain_to_face, num_faces,
         [](const std::pair<std::size_t, std::size_t>& p) { return p.first; },
         [](const std::pair<std::size_t, std::size_t>& p) { return p.second; });
 
-    // 6. For each face, trace its HCs into a polygon
+    // 6. For each face, trace its half-chains into a polygon
     multi_polygon result;
 
     for (std::size_t f = 0; f < num_faces; f++) {
-        auto beg = face_begin[f], end = face_end[f];
-        if (beg == end) continue;
-        std::size_t sz = end - beg;
+        auto face_data_begin = face_begin[f], face_data_end = face_end[f];
+        if (face_data_begin == face_data_end) continue;
+        std::size_t half_chain_count = face_data_end - face_data_begin;
 
-        boost::container::flat_map<std::size_t, std::size_t> pos;
-        for (std::size_t j = 0; j < sz; j++)
-            pos[face_data[beg + j]] = j;
+        boost::container::flat_map<std::size_t, std::size_t> position_map;
+        for (std::size_t j = 0; j < half_chain_count; j++)
+            position_map[face_data[face_data_begin + j]] = j;
 
-        std::vector<bool> done(sz, false);
+        std::vector<bool> done(half_chain_count, false);
         std::vector<ring> rings;
 
-        for (std::size_t j = 0; j < sz; j++) {
+        for (std::size_t j = 0; j < half_chain_count; j++) {
             if (done[j]) continue;
 
-            ring r;
-            std::size_t cur_id = face_data[beg + j];
+            ring current_ring;
+            std::size_t current_id = face_data[face_data_begin + j];
             do {
-                auto hc = half_chain{cur_id};
-                auto cid = hc.chain_id();
-                auto cb = chains.offsets[cid], ce = chains.offsets[cid + 1];
-                if (hc.is_forward()) {
-                    for (std::size_t k = cb; k < ce - 1; k++)
-                        r.push_back(hot_pixels[chains.indices[k]]);
+                auto h = half_chain{current_id};
+                auto chain_idx = h.chain_id();
+                auto chain_begin = chains.offsets[chain_idx], chain_end = chains.offsets[chain_idx + 1];
+                if (h.is_forward()) {
+                    for (std::size_t k = chain_begin; k < chain_end - 1; k++)
+                        current_ring.push_back(hot_pixels[chains.indices[k]]);
                 } else {
-                    for (std::size_t k = ce - 1; k > cb; k--)
-                        r.push_back(hot_pixels[chains.indices[k]]);
+                    for (std::size_t k = chain_end - 1; k > chain_begin; k--)
+                        current_ring.push_back(hot_pixels[chains.indices[k]]);
                 }
-                auto it = pos.find(cur_id);
-                if (it != pos.end()) done[it->second] = true;
-                cur_id = next_hc[cur_id].id;
-            } while (cur_id != face_data[beg + j]);
+                auto it = position_map.find(current_id);
+                if (it != position_map.end()) done[it->second] = true;
+                current_id = next_half_chain[current_id].id;
+            } while (current_id != face_data[face_data_begin + j]);
 
-            if (!r.empty()) r.push_back(r.front());
-            rings.push_back(std::move(r));
+            if (!current_ring.empty()) current_ring.push_back(current_ring.front());
+            rings.push_back(std::move(current_ring));
         }
 
         if (rings.empty()) continue;
 
-        std::size_t outer_i = 0;
+        std::size_t outer_index = 0;
         {
             int min_x = std::numeric_limits<int>::max();
-            for (std::size_t r = 0; r < rings.size(); r++) {
-                for (const auto& pt : rings[r]) {
-                    int x = bg::get<0>(pt);
-                    if (x < min_x) { min_x = x; outer_i = r; }
+            for (std::size_t ring_index = 0; ring_index < rings.size(); ring_index++) {
+                for (const auto& point_value : rings[ring_index]) {
+                    int x = bg::get<0>(point_value);
+                    if (x < min_x) { min_x = x; outer_index = ring_index; }
                 }
             }
         }
 
-        polygon poly;
-        poly.outer() = std::move(rings[outer_i]);
-        for (std::size_t r = 0; r < rings.size(); r++) {
-            if (r == outer_i || rings[r].empty()) continue;
-            poly.inners().push_back(std::move(rings[r]));
+        polygon polygon_result;
+        polygon_result.outer() = std::move(rings[outer_index]);
+        for (std::size_t ring_index = 0; ring_index < rings.size(); ring_index++) {
+            if (ring_index == outer_index || rings[ring_index].empty()) continue;
+            polygon_result.inners().push_back(std::move(rings[ring_index]));
         }
 
-        result.push_back(std::move(poly));
+        result.push_back(std::move(polygon_result));
     }
 
     return result;
@@ -815,65 +810,65 @@ inline multi_polygon build_output(const chain_build_result& chains,
 // Main pipeline
 // ---------------------------------------------------------------------------
 
-inline auto run_pipeline(auto segs, auto filter) {
-    // Phase 1: edges → chains → HC graph
-    auto [hot_pixels, sorted_edges] = construct_edges_with_power(std::move(segs));
+inline auto run_pipeline(auto segments, auto filter) {
+    // Phase 1: edges → chains → half-chain graph
+    auto [hot_pixels, sorted_edges] = construct_edges_with_power(std::move(segments));
 
     auto chains = build_chains(sorted_edges, hot_pixels.size());
 
-    auto [sorted_hcs, hc_begin, hc_end, next_hc, coplanar] =
-        build_hc_graph(chains, hot_pixels);
+    auto [sorted_half_chains, half_chain_begin, half_chain_end, next_half_chain, coplanar] =
+        build_half_chain_graph(chains, hot_pixels);
 
     // Phase 2: ray casting → ray coplanar pairs
-    auto [ext_hcs, ray_pairs] =
-        find_exterior(chains, hot_pixels, sorted_hcs, hc_begin, hc_end);
+    auto [exterior_half_chains, ray_pairs] =
+        find_exterior(chains, hot_pixels, sorted_half_chains, half_chain_begin, half_chain_end);
 
     // Phase 3: winding numbers
-    auto hc_winding = compute_hc_winding(chains, coplanar, ray_pairs, ext_hcs);
+    auto winding = compute_winding(chains, coplanar, ray_pairs, exterior_half_chains);
 
     // Phase 4: build polygons face by face
-    return build_output(chains, hot_pixels, std::move(next_hc),
-                        hc_winding, coplanar, ray_pairs, filter);
+    return build_output(chains, hot_pixels, std::move(next_half_chain),
+                        winding, coplanar, ray_pairs, filter);
 }
 
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
-inline auto collect_segments(auto... ps) {
-    std::vector<segment> segs;
-    ((bg::for_each_segment(ps, [&](const auto& seg) {
+inline auto collect_segments(auto... polygons) {
+    std::vector<segment> segments;
+    ((bg::for_each_segment(polygons, [&](const auto& seg) {
         segment s;
         bg::set<0, 0>(s, bg::get<0, 0>(seg)); bg::set<0, 1>(s, bg::get<0, 1>(seg));
         bg::set<1, 0>(s, bg::get<1, 0>(seg)); bg::set<1, 1>(s, bg::get<1, 1>(seg));
-        segs.emplace_back(s);
+        segments.emplace_back(s);
     })), ...);
-    return segs;
+    return segments;
 }
 
-inline auto add(const auto& ps1, const auto& ps2) {
-    return run_pipeline(collect_segments(ps1, ps2), [](int w) { return w > 0; });
+inline auto add(const auto& polygons1, const auto& polygons2) {
+    return run_pipeline(collect_segments(polygons1, polygons2), [](int w) { return w > 0; });
 }
 
-inline auto intersection(const auto& ps1, const auto& ps2) {
-    return run_pipeline(collect_segments(ps1, ps2), [](int w) { return w > 1; });
+inline auto intersection(const auto& polygons1, const auto& polygons2) {
+    return run_pipeline(collect_segments(polygons1, polygons2), [](int w) { return w > 1; });
 }
 
 inline auto self_or(auto r) {
     return run_pipeline(collect_segments(r), [](int w) { return w > 0; });
 }
 
-inline auto xor_(const auto& ps1, const auto& ps2) {
-    return run_pipeline(collect_segments(ps1, ps2), [](int w) { return w == 1; });
+inline auto xor_(const auto& polygons1, const auto& polygons2) {
+    return run_pipeline(collect_segments(polygons1, polygons2), [](int w) { return w == 1; });
 }
 
-inline auto difference(const auto& ps1, const auto& ps2) {
-    auto segs = collect_segments(ps1);
-    bg::for_each_segment(ps2, [&](const auto& seg) {
+inline auto difference(const auto& polygons1, const auto& polygons2) {
+    auto segments = collect_segments(polygons1);
+    bg::for_each_segment(polygons2, [&](const auto& seg) {
         segment s;
         bg::set<0, 0>(s, bg::get<1, 0>(seg)); bg::set<0, 1>(s, bg::get<1, 1>(seg));
         bg::set<1, 0>(s, bg::get<0, 0>(seg)); bg::set<1, 1>(s, bg::get<0, 1>(seg));
-        segs.emplace_back(s);
+        segments.emplace_back(s);
     });
-    return run_pipeline(std::move(segs), [](int w) { return w > 0; });
+    return run_pipeline(std::move(segments), [](int w) { return w > 0; });
 }

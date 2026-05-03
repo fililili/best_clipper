@@ -43,55 +43,55 @@ Adjacent edges with the **same power** and **no branching** (each intermediate v
 
 #### Half Chains (Half-Edge Data Structure)
 
-Each chain is split into two **half chains** (HCs), which form a standard **half-edge data structure**:
+Each chain is split into two **half chains**, which form a standard **half-edge data structure**:
 
-- **Forward HC** (even index): traverses the chain in its original direction, belonging to the face on its **right** side
-- **Reverse HC** (odd index): traverses the chain in the opposite direction, belonging to the face on its **right** side (the other face of the chain)
+- **Forward half chain** (even index): traverses the chain in its original direction, belonging to the face on its **right** side
+- **Reverse half chain** (odd index): traverses the chain in the opposite direction, belonging to the face on its **right** side (the other face of the chain)
 
 This matches **Boost.Geometry's convention**: every half-edge belongs to the face on its right. (A valid Boost outer ring — math-CW — has the interior on the right of each edge.)
 
-**Why the HC convention must match the input/output convention.** The input polygon segments carry directional information: edge power is derived from the traversal direction, which for a Boost-valid ring already encodes which side is interior. If the HC convention differed (e.g. left-face), then following `next_hc` around a face would trace rings in the **opposite** direction from the input, producing output rings with reversed orientation — necessitating a `std::reverse` on every ring. By aligning the HC convention with Boost's convention:
-- Face traversal via `next_hc` produces rings with the **same orientation** as the input
+**Why the half chain convention must match the input/output convention.** The input polygon segments carry directional information: edge power is derived from the traversal direction, which for a Boost-valid ring already encodes which side is interior. If the half chain convention differed (e.g. left-face), then following `next_half_chain` around a face would trace rings in the **opposite** direction from the input, producing output rings with reversed orientation — necessitating a `std::reverse` on every ring. By aligning the half chain convention with Boost's convention:
+- Face traversal via `next_half_chain` produces rings with the **same orientation** as the input
 - Output rings are Boost-valid **without any post-processing**
-- Edge power, `next_hc` traversal, and ring orientation all share a consistent directional framework
+- Edge power, `next_half_chain` traversal, and ring orientation all share a consistent directional framework
 
 The key operations:
 
 | Half-Edge Concept | Implementation |
 |------------------|----------------|
-| twin / opposite | `hc.dual()` = `hc.id ^ 1` |
-| next (around face) | `next_hc[hc.id]` = next half-edge in the same face |
+| twin / opposite | `half_chain.dual()` = `half_chain.id ^ 1` |
+| next (around face) | `next_half_chain[half_chain.id]` = next half-edge in the same face |
 | power (winding delta) | forward: `+chain_power`, reverse: `-chain_power` |
 
 #### Coplanarity (Same Face)
 
-Two HCs are **coplanar** iff they belong to the same face (same winding number). Coplanarity comes from three sources:
+Two half chains are **coplanar** iff they belong to the same face (same winding number). Coplanarity comes from three sources:
 
-1. **Sector coplanarity**: At each vertex, departing HCs are sorted by CCW angle. The sector between adjacent HCs `prev` and `cur` (CCW) lies on the right of `cur`. Since a HC belongs to its right face, `cur` and `prev.dual()` belong to the same face: `coplanar(cur, prev.dual())`.
+1. **Sector coplanarity**: At each vertex, departing half chains are sorted by CCW angle. The sector between adjacent half chains `prev` and `cur` (CCW) lies on the right of `cur`. Since a half chain belongs to its right face, `cur` and `prev.dual()` belong to the same face: `coplanar(cur, prev.dual())`.
 
-2. **Ray-casting coplanarity**: From the leftmost vertex of each component, cast a ray in the -x direction (with an infinitesimal +dy perturbation to avoid passing through vertices). The ray is a continuous curve. Since it does not cross any boundary until it hits something, every point along the ray belongs to the **same face**. Therefore the HC whose right face contains the ray's origin and the HC on the hit side (the side the ray approaches from) are coplanar. If the ray hits nothing, that HC's right face is the exterior (winding = 0). This seeds winding number propagation.
+2. **Ray-casting coplanarity**: From the leftmost vertex of each component, cast a ray in the -x direction (with an infinitesimal +dy perturbation to avoid passing through vertices). The ray is a continuous curve. Since it does not cross any boundary until it hits something, every point along the ray belongs to the **same face**. Therefore the half chain whose right face contains the ray's origin and the half chain on the hit side (the side the ray approaches from) are coplanar. If the ray hits nothing, that half chain's right face is the exterior (winding = 0). This seeds winding number propagation.
 
-3. **Dual cancellation coplanarity**: When both forward and reverse HCs of a chain survive filtering, they cancel each other. Their adjacent faces merge: `coplanar(fwd, rev)`.
+3. **Dual cancellation coplanarity**: When both forward and reverse half chains of a chain survive filtering, they cancel each other. Their adjacent faces merge: `coplanar(forward, reverse)`.
 
 #### Winding Number Propagation (via Face Adjacency)
 
-HCs are first grouped into **faces** via a DSU from coplanar pairs. Each DSU group represents the face on the **right** side of its member HCs.
+Half chains are first grouped into **faces** via a DSU from coplanar pairs. Each DSU group represents the face on the **right** side of its member half chains.
 
-Face adjacency is derived from the dual relationship: for each HC `i`, its right face `root[i]` and left face `root[i^1]` are adjacent. The winding jump from right face to left face is `-power(i)`. A **BFS** seeded from the exterior face (winding = 0) propagates winding numbers to all faces:
+Face adjacency is derived from the dual relationship: for each half chain `i`, its right face `root[i]` and left face `root[i^1]` are adjacent. The winding jump from right face to left face is `-power(i)`. A **BFS** seeded from the exterior face (winding = 0) propagates winding numbers to all faces:
 
 | Adjacency | Weight | Meaning |
 |-----------|--------|---------|
-| `root[i^1]` via `root[i]` | `-power(i)` | `dw[left] = dw[right] - power(i)` |
-| `root[i]` via `root[i^1]` | `+power(i)` | `dw[right] = dw[left] + power(i)` |
+| `root[i^1]` via `root[i]` | `-power(i)` | `winding[left] = winding[right] - power(i)` |
+| `root[i]` via `root[i^1]` | `+power(i)` | `winding[right] = winding[left] + power(i)` |
 
-The exterior HC identified by ray casting seeds `dw = 0`. A single BFS on the face adjacency graph sets every face's winding number. Each HC inherits the winding of its right face. No explicit face IDs beyond the DSU root index.
+The exterior half chain identified by ray casting seeds `winding = 0`. A single BFS on the face adjacency graph sets every face's winding number. Each half chain inherits the winding of its right face. No explicit face IDs beyond the DSU root index.
 
 #### Output Construction
 
-1. Filter HCs: keep those whose `dw` satisfies the operation (e.g. `dw > 0` for union)
-2. Dual cancellation: if both forward and reverse HCs of a chain survive, kill both, merge faces via `coplanar(fwd, rev)`, recompute winding
-3. Rebuild `next_hc` respecting surviving HCs and face boundaries
-4. Trace surviving HCs along `next_hc` into closed rings
+1. Filter half chains: keep those whose `winding` satisfies the operation (e.g. `winding > 0` for union)
+2. Dual cancellation: if both forward and reverse half chains of a chain survive, kill both, merge faces via `coplanar(forward, reverse)`, recompute winding
+3. Rebuild `next_half_chain` respecting surviving half chains and face boundaries
+4. Trace surviving half chains along `next_half_chain` into closed rings
 5. Assemble rings into polygons (max-area ring = outer, rest = holes)
 
 ## Algorithm Pipeline Summary
@@ -105,8 +105,8 @@ Input polygons
   → Create half chains (forward/reverse half-edges)
   → Angular sort at vertices → sector coplanar pairs
   → Next pointers: connect half chains around each face
-  → Find connected components → ray casting → seed exterior HC (dw = 0)
-  → BFS/DFS on HC graph → winding number for every HC
+  → Find connected components → ray casting → seed exterior half chain (winding = 0)
+  → BFS/DFS on half chain graph → winding number for every half chain
   → Filter by winding number
   → Dual cancellation + rebuild next pointers
   → Trace faces into rings → orient → assemble multi-polygons
@@ -166,24 +166,24 @@ Collapsing a sequence of degree-2 non-branching edges with identical power into 
 
 Three types of coplanarity (共面) relations cover all face adjacencies:
 
-1. **Sector coplanarity**: At each vertex, departing HCs are sorted by CCW angle. The sector between adjacent HCs `prev` and `cur` (CCW) lies on the right of `cur`. Since a HC belongs to its right face, `cur` and `prev.dual()` belong to the same face: `coplanar(cur, prev.dual())`. This is a geometric fact.
+1. **Sector coplanarity**: At each vertex, departing half chains are sorted by CCW angle. The sector between adjacent half chains `prev` and `cur` (CCW) lies on the right of `cur`. Since a half chain belongs to its right face, `cur` and `prev.dual()` belong to the same face: `coplanar(cur, prev.dual())`. This is a geometric fact.
 
-2. **Ray-casting coplanarity**: From the leftmost vertex of each connected component, a -x ray identifies the exterior. The HC whose right face contains the ray and the nearest HC hit by the ray are coplanar. If no hit, that HC's right face is the exterior (w = 0). This seeds winding number propagation.
+2. **Ray-casting coplanarity**: From the leftmost vertex of each connected component, a -x ray identifies the exterior. The half chain whose right face contains the ray and the nearest half chain hit by the ray are coplanar. If no hit, that half chain's right face is the exterior (w = 0). This seeds winding number propagation.
 
-3. **Dual cancellation coplanarity**: When both forward and reverse HCs of a chain survive filtering, the chain separates two faces with the same winding number. Merging via `coplanar(fwd, rev)` is correct because power cancels (p + (-p) = 0).
+3. **Dual cancellation coplanarity**: When both forward and reverse half chains of a chain survive filtering, the chain separates two faces with the same winding number. Merging via `coplanar(forward, reverse)` is correct because power cancels (p + (-p) = 0).
 
-### Foundation 6: Winding Propagation on HC Graph Is Correct
+### Foundation 6: Winding Propagation on Half Chain Graph Is Correct
 
 Propagation uses face adjacency derived from the half-edge structure:
 
-- **DSU coplanarity** (weight 0): all HCs in a coplanar pair share the same DSU face root, so they inherit the same winding number.
-- **Face adjacency via dual**: for HC `i`, its right face `root[i]` and left face `root[i^1]` are adjacent. The winding jump is `dw[left] = dw[right] - power(i)`. A BFS from the exterior face seed (dw = 0) propagates to all faces.
+- **DSU coplanarity** (weight 0): all half chains in a coplanar pair share the same DSU face root, so they inherit the same winding number.
+- **Face adjacency via dual**: for half chain `i`, its right face `root[i]` and left face `root[i^1]` are adjacent. The winding jump is `winding[left] = winding[right] - power(i)`. A BFS from the exterior face seed (winding = 0) propagates to all faces.
 
-The propagation is O(n) in the number of HCs. Each HC inherits the winding of its right face (the DSU group it belongs to).
+The propagation is O(n) in the number of half chains. Each half chain inherits the winding of its right face (the DSU group it belongs to).
 
 ### Foundation 7: Dual Cancellation "Next" Update Terminates
 
-When both forward and reverse HCs of a chain are removed (dual cancellation), their `next_hc` pointers are bypassed. For each HC `p` whose `next_hc[p]` points to a dead HC `d`, the new next is `next_hc[d.dual()]`. If that is also dead, the chain of indirection is followed until a surviving HC is reached. This always terminates because the cycle around each vertex never becomes empty.
+When both forward and reverse half chains of a chain are removed (dual cancellation), their `next_half_chain` pointers are bypassed. For each half chain `p` whose `next_half_chain[p]` points to a dead half chain `d`, the new next is `next_half_chain[d.dual()]`. If that is also dead, the chain of indirection is followed until a surviving half chain is reached. This always terminates because the cycle around each vertex never becomes empty.
 
 ### Foundation 8: Self-Intersecting Input Is Handled
 
@@ -214,7 +214,7 @@ Any bugs that exist are **implementation errors** — code that does not faithfu
 
 ### "Next" Pointer Update After Dual Cancellation
 
-- [x] ~~The current implementation rebuilds next/prev pointers from scratch by re-scanning sorted_hcs at each vertex after dual cancellation.~~ Fixed: now uses indirection chain — for each surviving HC `p` whose `next[p]` is dead, follow `next[dual(dead)]` iteratively until a live HC is found.
+- [x] ~~The current implementation rebuilds next/prev pointers from scratch by re-scanning sorted_half_chains at each vertex after dual cancellation.~~ Fixed: now uses indirection chain — for each surviving half chain `p` whose `next[p]` is dead, follow `next[dual(dead)]` iteratively until a live half chain is found.
 
 ### Implementation Issues (Not Theoretical Bugs)
 
