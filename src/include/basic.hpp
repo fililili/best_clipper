@@ -8,7 +8,6 @@
 #include <limits>
 #include <numeric>
 #include <optional>
-#include <queue>
 #include <ranges>
 #include <vector>
 
@@ -666,19 +665,19 @@ inline auto compute_hc_winding(
 
     constexpr int UNK = std::numeric_limits<int>::max() / 2;
     std::vector<int> rwind(num_hcs, UNK);
-
     for (auto ext : exterior_hcs) rwind[root[ext]] = 0;
 
-    std::queue<std::size_t> q;
-    std::vector<bool> vis(num_hcs);
+    std::vector<std::size_t> stack;
     for (std::size_t i = 0; i < num_hcs; i++) {
-        if (root[i] == i && rwind[i] != UNK) { q.push(i); vis[i] = true; }
+        if (root[i] == i && rwind[i] != UNK) stack.push_back(i);
     }
-
-    while (!q.empty()) {
-        auto r = q.front(); q.pop();
+    while (!stack.empty()) {
+        auto r = stack.back(); stack.pop_back();
         for (auto [nr, diff] : adj[r]) {
-            if (!vis[nr]) { vis[nr] = true; rwind[nr] = rwind[r] + diff; q.push(nr); }
+            if (rwind[nr] == UNK) {
+                rwind[nr] = rwind[r] + diff;
+                stack.push_back(nr);
+            }
         }
     }
 
