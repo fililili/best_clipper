@@ -20,15 +20,18 @@ Pipeline for snap rounding:
 3. Split each segment into sub-segments between consecutive hot pixels
 4. Deduplicate edges (normalized so start < end)
 
-### 2. Winding Number Boolean Operations
+### 2. Winding Number
 
-Boolean operations are defined strictly via **winding numbers** (绕数). For any point in the plane, its winding number counts the net number of counterclockwise boundary traversals enclosing it.
+**Definition.** For a point P in the plane, its **winding number** w(P) is defined as: shoot a ray from P to infinity in any direction (avoiding vertices), count each crossing of an input polygon's directed boundary — **+1** when the boundary crosses left-to-right, **-1** when right-to-left. The sum is w(P).
+
+A face is a maximal connected region of constant winding number. Therefore:
 
 | Operation | Winding Number Condition |
 |-----------|-------------------------|
 | OR (union) | w > 0 |
 | AND (intersection) | w > 1 |
 | XOR | w = 1 |
+| A - B | w_A > 0 and w_B = 0 |
 
 #### Edge Power
 
@@ -53,26 +56,34 @@ This is the standard half-edge convention: every half-edge belongs to the face o
 | next (around face) | `next_hc[hc.id]` = next half-edge in the same face |
 | power (winding delta) | forward: `+chain_power`, reverse: `-chain_power` |
 
-#### Face Determination via Coplanarity
+#### Coplanarity (Same Face)
 
-Faces are not tracked explicitly. Instead, half chains are grouped into faces through three **coplanarity** (共面) relations:
+Two HCs are **coplanar** iff they belong to the same face (same winding number). Coplanarity comes from three sources:
 
-1. **Sector coplanarity**: At each vertex, departing HCs are sorted by CCW angle. Between adjacent HCs `prev` and `cur`, the sector lies on the left of `prev` and on the right of `cur`. Since a half-edge belongs to its left face, `prev` and `cur.dual()` belong to the same face. Hence `coplanar(prev, cur.dual())`.
+1. **Sector coplanarity**: At each vertex, departing HCs are sorted by CCW angle. Between adjacent HCs `prev` and `cur`, the sector lies on the left of `prev` and on the right of `cur`. Since a HC belongs to its left face, `prev` and `cur.dual()` belong to the same face: `coplanar(prev, cur.dual())`.
 
-2. **Ray-casting coplanarity**: From the leftmost vertex of each component, a -x ray determines the exterior face. The HC whose left face contains the ray and the nearest HC hit by the ray are coplanar. If the ray hits nothing, that HC's left face is the exterior (winding = 0).
+2. **Ray-casting coplanarity**: From the leftmost vertex of each component, a -x ray identifies the exterior face. The HC whose left face contains the ray and the nearest HC hit by the ray are coplanar. If the ray hits nothing, that HC's left face is the exterior (winding = 0).
 
 3. **Dual cancellation coplanarity**: When both forward and reverse HCs of a chain survive filtering, they cancel each other. Their adjacent faces merge: `coplanar(fwd, rev)`.
 
-Coplanar pairs feed a **Disjoint Set Union (DSU)**, grouping HCs by face. Next pointers link HCs around each face boundary. The face adjacency of the planar subdivision is then: crossing a HC with power p changes winding by p.
+#### Winding Number Propagation (Directly on HC Graph)
 
-#### Face Filtering and Output Construction
+The **nodes** are HCs. Propagation uses two types of edges:
 
-After computing winding numbers:
-1. Filter HCs by winding number (e.g., w > 0 for union) → surviving HCs
-2. Dual cancellation: if both forward and reverse HCs of a chain survive, both are removed and their adjacent faces are merged
-3. Rebuild `next_hc` pointers respecting new face boundaries
-4. Trace surviving HCs along `next_hc` to form closed rings
-5. Assemble rings into polygons (outer ring by max area, remaining become holes), orienting outer CCW and holes CW as required by Boost.Geometry
+| Edge | Weight | Meaning |
+|------|--------|---------|
+| `coplanar(a, b)` | 0 | a and b belong to the same face → `dw[a] = dw[b]` |
+| `a → dual(a)` | `-power(a)` | crossing boundary → `dw[dual(a)] = dw[a] - power(a)` |
+
+The exterior HC identified by ray casting gets `dw = 0` as seed. A single **BFS/DFS** on this graph sets every HC's winding number. No explicit face IDs, no DSU, no face adjacency graph. The coplanar edges (weight 0) ensure all HCs around one face share the same value; the dual edges carry the jump across boundaries.
+
+#### Output Construction
+
+1. Filter HCs: keep those whose `dw` satisfies the operation (e.g. `dw > 0` for union)
+2. Dual cancellation: if both forward and reverse HCs of a chain survive, kill both, merge faces via `coplanar(fwd, rev)`, recompute winding
+3. Rebuild `next_hc` respecting surviving HCs and face boundaries
+4. Trace surviving HCs along `next_hc` into closed rings
+5. Assemble rings into polygons (max-area ring = outer, rest = holes)
 
 ## Algorithm Pipeline Summary
 
@@ -85,8 +96,8 @@ Input polygons
   → Create half chains (forward/reverse half-edges)
   → Angular sort at vertices → sector coplanar pairs
   → Next pointers: connect half chains around each face
-  → Find connected components → ray casting → ray coplanar pairs
-  → DSU + BFS propagation → winding numbers
+  → Find connected components → ray casting → seed exterior HC (dw = 0)
+  → BFS/DFS on HC graph → winding number for every HC
   → Filter by winding number
   → Dual cancellation + rebuild next pointers
   → Trace faces into rings → orient → assemble multi-polygons
@@ -142,21 +153,24 @@ When edges from different input polygons overlap (coincident boundaries), their 
 
 Collapsing a sequence of degree-2 non-branching edges with identical power into a single chain is an information-preserving compression. Each vertex along the chain has exactly one incoming and one outgoing edge with the same power, so no topological ambiguity is introduced. The chain endpoints are exactly the branch points of the graph.
 
-### Foundation 5: Three Sources of Coplanarity Are Necessary and Sufficient
+### Foundation 5: Coplanarity Fully Determines Face Structure
 
-The face structure of the planar subdivision is fully determined by three types of coplanarity (共面) relations between half chains:
+Three types of coplanarity (共面) relations cover all face adjacencies:
 
-1. **Sector coplanarity**: At each vertex, departing HCs are sorted by CCW angle. The sector between adjacent HCs `prev` and `cur` lies on the left of `prev` and on the right of `cur`. Since a half-edge belongs to its left face, `prev` and `cur.dual()` belong to the same face. This is a geometric fact, not a heuristic.
+1. **Sector coplanarity**: At each vertex, departing HCs are sorted by CCW angle. The sector between adjacent HCs `prev` and `cur` lies on the left of `prev` and on the right of `cur`. Since a HC belongs to its left face, `prev` and `cur.dual()` belong to the same face. This is a geometric fact.
 
-2. **Ray-casting coplanarity**: From the leftmost vertex of each connected component, a -x ray identifies the face on the exterior side. The HC whose left face contains the ray and the nearest HC hit by the ray are coplanar. If no hit, that HC's left face is the exterior (w = 0). This establishes the **reference frame** for winding numbers.
+2. **Ray-casting coplanarity**: From the leftmost vertex of each connected component, a -x ray identifies the exterior. The HC whose left face contains the ray and the nearest HC hit by the ray are coplanar. If no hit, that HC's left face is the exterior (w = 0). This seeds winding number propagation.
 
-3. **Dual cancellation coplanarity**: When both forward and reverse HCs of a chain survive filtering, they form an interior boundary separating two faces with the same winding number. Merging these faces is correct because the chain's power cancels out (p + (-p) = 0).
+3. **Dual cancellation coplanarity**: When both forward and reverse HCs of a chain survive filtering, the chain separates two faces with the same winding number. Merging via `coplanar(fwd, rev)` is correct because power cancels (p + (-p) = 0).
 
-These three sources cover **all** coplanarity relations in the planar subdivision.
+### Foundation 6: Winding Propagation on HC Graph Is Correct
 
-### Foundation 6: Winding Number Propagation Is Complete
+Propagation on the HC graph uses edges of two kinds:
 
-Starting from the exterior face (w = 0, identified by ray casting), BFS along face-adjacency edges propagates winding numbers. The invariant: crossing a HC with power p changes the winding number by p. Since the face adjacency graph is connected (any face is reachable from the exterior through a finite sequence of boundary crossings), every face receives a correct winding number. There are no "unreachable" faces in a correct planar subdivision.
+- **coplanar edges** (weight 0): for every coplanar pair `(a, b)`, `dw[a] = dw[b]`. This ensures all HCs around a face share the same value.
+- **dual edges** (weight `-power(a)`): `dw[dual(a)] = dw[a] - power(a)`. This is the definition of power — it is the winding jump when crossing the boundary.
+
+Given a seed HC with `dw = 0` from ray casting, BFS/DFS on this graph reaches every HC because the coplanarity graph is connected across the planar subdivision. The propagation is purely local (neighbor-to-neighbor), O(n) in the number of HCs.
 
 ### Foundation 7: Dual Cancellation "Next" Update Terminates
 
