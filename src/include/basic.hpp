@@ -628,30 +628,23 @@ inline auto find_exterior(const chain_build_result& chains,
 // Coplanarity sources: sector adjacency + ray.
 // Propagation: for consecutive a,b at vertex CCW:
 //   W(face(b)) = W(face(a)) + power(b)
-// Returns: hc_winding and hc_root (face id for each HC).
+// Returns: hc_winding for each HC.
 // ---------------------------------------------------------------------------
 
 inline auto compute_hc_winding(
     const chain_build_result& chains,
-    const std::vector<half_chain>& sorted_hcs,
-    const std::vector<std::size_t>& hc_begin,
-    const std::vector<std::size_t>& hc_end,
     const std::vector<std::pair<std::size_t, std::size_t>>& coplanar_pairs,
     const std::vector<std::pair<std::size_t, std::size_t>>& ray_pairs,
     const std::vector<std::size_t>& exterior_hcs) {
 
     std::size_t num_hcs = (chains.offsets.size() - 1) * 2;
-    std::size_t nv = hc_begin.size();
 
-    // DSU: all coplanar sources
     auto dsu = make_dsu(num_hcs);
     for (auto [a, b] : coplanar_pairs) dsu.unite(a, b);
     for (auto [a, b] : ray_pairs) dsu.unite(a, b);
     dsu.compress();
     auto& root = dsu.p;
 
-    // Face adjacency: each HC connects its left face to its right face.
-    // W(right_face) = W(left_face) + power(hc)
     std::vector<std::vector<std::pair<std::size_t, int>>> adj(num_hcs);
     for (std::size_t i = 0; i < num_hcs; i++) {
         auto hc = half_chain{i};
@@ -683,7 +676,7 @@ inline auto compute_hc_winding(
 
     std::vector<int> winding(num_hcs);
     for (std::size_t i = 0; i < num_hcs; i++) winding[i] = rwind[root[i]];
-    return std::tuple{std::move(winding), std::move(root)};
+    return winding;
 }
 
 // ---------------------------------------------------------------------------
@@ -694,7 +687,8 @@ inline multi_polygon build_output(const chain_build_result& chains,
                                    const std::vector<point>& hot_pixels,
                                    std::vector<half_chain> next_hc,
                                    const std::vector<int>& hc_winding,
-                                   std::vector<std::size_t> face_root,
+                                   const std::vector<std::pair<std::size_t, std::size_t>>& coplanar_pairs,
+                                   const std::vector<std::pair<std::size_t, std::size_t>>& ray_pairs,
                                    auto filter_fn) {
     std::size_t num_hcs = (chains.offsets.size() - 1) * 2;
     std::size_t num_chains = chains.offsets.size() - 1;
@@ -722,27 +716,21 @@ inline multi_polygon build_output(const chain_build_result& chains,
             next_hc[i] = next_hc[next_hc[i].dual().id];
     }
 
-    // 4. Merge faces for cancelled chains
+    // 4. Build DSU: coplanar pairs + ray pairs + dual cancellation merges
+    auto dsu = make_dsu(num_hcs);
+    for (auto [a, b] : coplanar_pairs) dsu.unite(a, b);
+    for (auto [a, b] : ray_pairs) dsu.unite(a, b);
     for (std::size_t cid = 0; cid < num_chains; cid++) {
         std::size_t fwd = 2 * cid, rev = 2 * cid + 1;
-        if (!dead[fwd]) continue;
-        auto d = make_dsu(num_hcs);
-        d.p = face_root;
-        d.unite(fwd, rev);
-        face_root = std::move(d.p);
+        if (dead[fwd]) dsu.unite(fwd, rev);
     }
-    {
-        auto d = make_dsu(num_hcs);
-        d.p = std::move(face_root);
-        d.compress();
-        face_root = std::move(d.p);
-    }
+    dsu.compress();
 
-    // 3. Group surviving non-dead HCs by face
+    // 5. Group surviving non-dead HCs by face
     std::vector<std::vector<std::size_t>> face_hcs(num_hcs);
     for (std::size_t i = 0; i < num_hcs; i++) {
         if (!dead[i] && survive[i])
-            face_hcs[face_root[i]].push_back(i);
+            face_hcs[dsu.p[i]].push_back(i);
     }
 
     // 4. For each face, trace its HCs into a polygon
@@ -841,13 +829,12 @@ inline auto run_pipeline(auto segs, auto filter) {
     auto [ext_hcs, ray_pairs] =
         find_exterior(chains, hot_pixels, sorted_hcs, hc_begin, hc_end);
 
-    // Phase 3: winding numbers (sector + ray coplanarity → DSU → BFS)
-    auto [hc_winding, face_root] = compute_hc_winding(
-        chains, sorted_hcs, hc_begin, hc_end, coplanar, ray_pairs, ext_hcs);
+    // Phase 3: winding numbers
+    auto hc_winding = compute_hc_winding(chains, coplanar, ray_pairs, ext_hcs);
 
     // Phase 4: build polygons face by face
     return build_output(chains, hot_pixels, std::move(next_hc),
-                        hc_winding, std::move(face_root), filter);
+                        hc_winding, coplanar, ray_pairs, filter);
 }
 
 // ---------------------------------------------------------------------------
