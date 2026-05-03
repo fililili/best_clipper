@@ -38,35 +38,35 @@ Each edge has a **power**: the winding number of the face on its left side minus
 
 Adjacent edges with the **same power** and **no branching** (each intermediate vertex has exactly one incoming and one outgoing edge with the same power) are collapsed into a **chain**. This significantly reduces the graph size for subsequent steps.
 
-#### Duplicated Chains (Half-Chain Model)
+#### Half Chains (Half-Chain Model)
 
-Each chain is split into two **directed half-chains** (duplicated chains, DCs), analogous to the half-edge data structure:
-- **Forward DC** (even index): traverses the chain in its original direction; the face on the left of this DC is the "left face"
-- **Reverse DC** (odd index): traverses the chain in reverse; the dual of the forward DC
+Each chain is split into two **directed half-chains** (half chains, HCs), analogous to the half-edge data structure:
+- **Forward HC** (even index): traverses the chain in its original direction; the face on the left of this HC is the "left face"
+- **Reverse HC** (odd index): traverses the chain in reverse; the dual of the forward HC
 
-The relationship: `dc.dual() = dc.id ^ 1` (XOR with 1 flips between forward and reverse).
+The relationship: `hc.dual() = hc.id ^ 1` (XOR with 1 flips between forward and reverse).
 
-The power of a directed chain equals the winding number difference when crossing from its left face to its right face. For a forward chain with power p, the forward DC has power p and the reverse DC has power -p.
+The power of a directed chain equals the winding number difference when crossing from its left face to its right face. For a forward chain with power p, the forward HC has power p and the reverse HC has power -p.
 
 #### Face Relationships Without Explicit Face IDs
 
-Rather than computing explicit face IDs for each half-edge, the algorithm propagates winding numbers through three types of **coplanarity** (共面) relationships between DCs:
+Rather than computing explicit face IDs for each half-edge, the algorithm propagates winding numbers through three types of **coplanarity** (共面) relationships between HCs:
 
-1. **Angular (sector) coplanarity**: At each vertex, all DCs starting from that vertex are sorted by CCW polar angle. Adjacent DCs in this sorted order share a face — the right face of one is the left face of the next. This gives: `dc_a.dual()` and `dc_b` are coplanar.
+1. **Angular (sector) coplanarity**: At each vertex, all HCs starting from that vertex are sorted by CCW polar angle. Adjacent HCs in this sorted order share a face — the right face of one is the left face of the next. This gives: `dc_a.dual()` and `dc_b` are coplanar.
 
-2. **Ray-casting coplanarity**: For each connected component, find the leftmost vertex. Cast a ray in the -x direction (leftward). At this vertex, the ray sits in the sector between two DCs in CCW order; the DC on the CW side of the ray is identified. Then find the nearest DC that this ray intersects. These two DCs are coplanar (same face). If the ray hits nothing, the leftmost DC's left face is the exterior (winding number = 0).
+2. **Ray-casting coplanarity**: For each connected component, find the leftmost vertex. Cast a ray in the -x direction (leftward). At this vertex, the ray sits in the sector between two HCs in CCW order; the HC on the CW side of the ray is identified. Then find the nearest HC that this ray intersects. These two HCs are coplanar (same face). If the ray hits nothing, the leftmost HC's left face is the exterior (winding number = 0).
 
-3. **Dual cancellation coplanarity**: When both dual DCs of a chain survive the winding number filter, they cancel each other and are removed. Their adjacent faces are then merged (the left face of one and the right face of the other become coplanar).
+3. **Dual cancellation coplanarity**: When both dual HCs of a chain survive the winding number filter, they cancel each other and are removed. Their adjacent faces are then merged (the left face of one and the right face of the other become coplanar).
 
-These coplanar pairs are fed into a **Disjoint Set Union (DSU)** to group DCs by face. Winding numbers are then propagated via BFS from known exterior faces (winding = 0). The key invariant: crossing a DC with power p changes the winding number by p (right face winding = left face winding + power).
+These coplanar pairs are fed into a **Disjoint Set Union (DSU)** to group HCs by face. Winding numbers are then propagated via BFS from known exterior faces (winding = 0). The key invariant: crossing a HC with power p changes the winding number by p (right face winding = left face winding + power).
 
 #### Face Filtering and Output Construction
 
 After computing winding numbers:
-1. Filter DCs by winding number (e.g., w > 0 for union)
-2. Perform dual cancellation: if both forward and reverse DCs of a chain survive, both are removed
-3. Update "next" pointers: if a DC's next is deleted, follow `next[dual(deleted_dc)]` iteratively until a surviving DC is found (this guarantees termination because a surviving DC always exists in the cycle)
-4. Trace surviving DCs along "next" pointers to form closed rings (polygons)
+1. Filter HCs by winding number (e.g., w > 0 for union)
+2. Perform dual cancellation: if both forward and reverse HCs of a chain survive, both are removed
+3. Update "next" pointers: if a HC's next is deleted, follow `next[dual(deleted_dc)]` iteratively until a surviving HC is found (this guarantees termination because a surviving HC always exists in the cycle)
+4. Trace surviving HCs along "next" pointers to form closed rings (polygons)
 5. Classify rings as outer rings (CCW, positive area) or holes (CW, negative area) and assemble into multi-polygons
 
 ## Algorithm Pipeline Summary
@@ -77,7 +77,7 @@ Input polygons
   → Snap rounding (find intersections, split segments, deduplicate edges)
   → Assign edge powers (+1/-1)
   → Build chains (collapse non-branching degree-2 edges)
-  → Create duplicated chains (forward/reverse half-chains)
+  → Create half chains (forward/reverse half-chains)
   → Angular sort at vertices → sector coplanar pairs
   → Find connected components → ray casting → ray coplanar pairs
   → DSU + BFS propagation → winding numbers
@@ -138,23 +138,23 @@ Collapsing a sequence of degree-2 non-branching edges with identical power into 
 
 ### Foundation 5: Three Sources of Coplanarity Are Necessary and Sufficient
 
-The face structure of the planar subdivision is fully determined by three types of coplanarity (共面) relations between directed chains (DCs):
+The face structure of the planar subdivision is fully determined by three types of coplanarity (共面) relations between directed chains (HCs):
 
-1. **Angular (sector) coplanarity**: At each vertex, DCs are sorted by CCW polar angle. In a planar subdivision, the right face of one departing DC IS the left face of the next departing DC in CCW order. Therefore `dc_a.dual()` and `dc_b` (adjacent in sorted order) necessarily belong to the same face. This is a geometric fact, not a heuristic.
+1. **Angular (sector) coplanarity**: At each vertex, HCs are sorted by CCW polar angle. In a planar subdivision, the right face of one departing HC IS the left face of the next departing HC in CCW order. Therefore `dc_a.dual()` and `dc_b` (adjacent in sorted order) necessarily belong to the same face. This is a geometric fact, not a heuristic.
 
-2. **Ray-casting coplanarity**: From the leftmost vertex of each connected component, a -x ray identifies the face on the exterior side of the component. The DC on the CW side of the ray and the nearest DC intersected by the ray belong to the same face. If no intersection exists, the leftmost DC's left face is the exterior (w = 0). This determines the **reference frame** for winding numbers.
+2. **Ray-casting coplanarity**: From the leftmost vertex of each connected component, a -x ray identifies the face on the exterior side of the component. The HC on the CW side of the ray and the nearest HC intersected by the ray belong to the same face. If no intersection exists, the leftmost HC's left face is the exterior (w = 0). This determines the **reference frame** for winding numbers.
 
-3. **Dual cancellation coplanarity**: When both forward and reverse DCs of a chain survive filtering, they form an interior boundary that separates two faces with the same winding number. Removing both and merging their adjacent faces is correct because the chain's own power cancels out (p + (-p) = 0).
+3. **Dual cancellation coplanarity**: When both forward and reverse HCs of a chain survive filtering, they form an interior boundary that separates two faces with the same winding number. Removing both and merging their adjacent faces is correct because the chain's own power cancels out (p + (-p) = 0).
 
 These three sources cover **all** coplanarity relations. Together with the fact that every edge connects exactly two faces, the face connectivity graph is fully determined.
 
 ### Foundation 6: Winding Number Propagation Is Complete
 
-Starting from the exterior face (w = 0, identified by ray casting), BFS along face-adjacency edges propagates winding numbers. The invariant: crossing a DC with power p changes the winding number by p. Since the face adjacency graph is connected (any face is reachable from the exterior through a finite sequence of boundary crossings), every face receives a correct winding number. There are no "unreachable" faces in a correct planar subdivision.
+Starting from the exterior face (w = 0, identified by ray casting), BFS along face-adjacency edges propagates winding numbers. The invariant: crossing a HC with power p changes the winding number by p. Since the face adjacency graph is connected (any face is reachable from the exterior through a finite sequence of boundary crossings), every face receives a correct winding number. There are no "unreachable" faces in a correct planar subdivision.
 
 ### Foundation 7: Dual Cancellation "Next" Update Terminates
 
-When a DC is deleted (dual cancellation), its "next" pointer must be updated. For each DC `p` with `next[p] == dead_dc`, the new next is `next[dual(dead_dc)]`. If that next is also dead, continue following `next[dual(dead_next)]` iteratively. This chain of indirection always terminates at a surviving DC because: (a) the graph is finite, (b) the cycle of DCs around each vertex never becomes empty (otherwise the vertex would be isolated and should not have survived).
+When a HC is deleted (dual cancellation), its "next" pointer must be updated. For each HC `p` with `next[p] == dead_dc`, the new next is `next[dual(dead_dc)]`. If that next is also dead, continue following `next[dual(dead_next)]` iteratively. This chain of indirection always terminates at a surviving HC because: (a) the graph is finite, (b) the cycle of HCs around each vertex never becomes empty (otherwise the vertex would be isolated and should not have survived).
 
 ### Foundation 8: Self-Intersecting Input Is Handled
 
@@ -185,7 +185,7 @@ Any bugs that exist are **implementation errors** — code that does not faithfu
 
 ### "Next" Pointer Update After Dual Cancellation
 
-- [ ] The current implementation rebuilds next/prev pointers from scratch by re-scanning sorted_dcs at each vertex after dual cancellation. This is incorrect. The correct approach: when a DC `d` is deleted (dead), for each DC `p` whose `next[p] == d`, update `next[p] = next[dual(d)]`. If that next is also dead, continue following `next[dual(dead_dc)]` iteratively until a surviving DC is found. This chain of indirection is guaranteed to terminate because at least one surviving DC exists in the cycle. The same logic applies to prev pointers.
+- [ ] The current implementation rebuilds next/prev pointers from scratch by re-scanning sorted_hcs at each vertex after dual cancellation. This is incorrect. The correct approach: when a HC `d` is deleted (dead), for each HC `p` whose `next[p] == d`, update `next[p] = next[dual(d)]`. If that next is also dead, continue following `next[dual(dead_dc)]` iteratively until a surviving HC is found. This chain of indirection is guaranteed to terminate because at least one surviving HC exists in the cycle. The same logic applies to prev pointers.
 
 ### Implementation Issues (Not Theoretical Bugs)
 

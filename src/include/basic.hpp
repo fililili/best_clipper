@@ -131,7 +131,7 @@ struct chain_build_result {
     std::vector<std::size_t> edge_to_chain;
 };
 
-struct dup_chain_view {
+struct half_chain {
     std::size_t id;
     std::size_t chain_id() const { return id / 2; }
     bool is_forward() const { return id % 2 == 0; }
@@ -151,7 +151,7 @@ struct dup_chain_view {
         if (is_forward()) return c.powers[chain_id()];
         else return -c.powers[chain_id()];
     }
-    dup_chain_view dual() const { return {id ^ 1}; }
+    half_chain dual() const { return {id ^ 1}; }
 };
 
 // ---------------------------------------------------------------------------
@@ -377,31 +377,31 @@ inline dsu_t make_dsu(std::size_t n) {
 // Step 5-6: angular sort, next/prev, coplanar pairs (sector adjacency)
 // ---------------------------------------------------------------------------
 
-inline auto build_dc_graph(const chain_build_result& chains,
+inline auto build_hc_graph(const chain_build_result& chains,
                            const std::vector<point>& hot_pixels) {
-    std::size_t num_dcs = (chains.offsets.size() - 1) * 2;
+    std::size_t num_hcs = (chains.offsets.size() - 1) * 2;
     std::size_t nv = hot_pixels.size();
 
-    std::vector<dup_chain_view> all;
-    all.reserve(num_dcs);
-    for (std::size_t i = 0; i < num_dcs; i++) all.push_back({i});
+    std::vector<half_chain> all;
+    all.reserve(num_hcs);
+    for (std::size_t i = 0; i < num_hcs; i++) all.push_back({i});
 
-    auto [begin_loc, end_loc, sorted_dcs] = bucket_sort(
-        all, nv, [&](dup_chain_view dc) { return dc.source_node(chains); },
-        [](dup_chain_view dc) { return dc; });
+    auto [begin_loc, end_loc, sorted_hcs] = bucket_sort(
+        all, nv, [&](half_chain hc) { return hc.source_node(chains); },
+        [](half_chain hc) { return hc; });
 
     for (std::size_t v = 0; v < nv; v++) {
         auto cb = begin_loc[v], ce = end_loc[v];
         if (ce - cb < 2) continue;
-        std::sort(sorted_dcs.begin() + cb, sorted_dcs.begin() + ce,
-                  [&](dup_chain_view a, dup_chain_view b) {
+        std::sort(sorted_hcs.begin() + cb, sorted_hcs.begin() + ce,
+                  [&](half_chain a, half_chain b) {
                       return less_by_direction(hot_pixels[v],
                                                hot_pixels[a.next_along_source(chains)],
                                                hot_pixels[b.next_along_source(chains)]);
                   });
     }
 
-    std::vector<dup_chain_view> next_dc(num_dcs, {~0ULL});
+    std::vector<half_chain> next_hc(num_hcs, {~0ULL});
     std::vector<std::pair<std::size_t, std::size_t>> coplanar;
 
     for (std::size_t v = 0; v < nv; v++) {
@@ -409,20 +409,20 @@ inline auto build_dc_graph(const chain_build_result& chains,
         if (cb == ce) continue;
         assert(cb + 1 != ce);
         for (auto it = cb + 1; it < ce; ++it) {
-            auto prev = sorted_dcs[it - 1], cur = sorted_dcs[it];
-            next_dc[prev.dual().id] = cur;
+            auto prev = sorted_hcs[it - 1], cur = sorted_hcs[it];
+            next_hc[prev.dual().id] = cur;
             coplanar.emplace_back(prev.id, cur.dual().id);
         }
-        auto first = sorted_dcs[cb], last = sorted_dcs[ce - 1];
-        next_dc[last.dual().id] = first;
+        auto first = sorted_hcs[cb], last = sorted_hcs[ce - 1];
+        next_hc[last.dual().id] = first;
         coplanar.emplace_back(last.id, first.dual().id);
     }
 
     return std::tuple{
-        std::move(sorted_dcs),
+        std::move(sorted_hcs),
         std::vector<std::size_t>(begin_loc.begin(), begin_loc.end()),
         std::vector<std::size_t>(end_loc.begin(), end_loc.end()),
-        std::move(next_dc), std::move(coplanar)};
+        std::move(next_hc), std::move(coplanar)};
 }
 
 // ---------------------------------------------------------------------------
@@ -430,53 +430,53 @@ inline auto build_dc_graph(const chain_build_result& chains,
 // ---------------------------------------------------------------------------
 
 // Cast ray in -x direction from leftmost vertex v.
-// Finds the DC at v whose left face contains the -x ray, then finds the nearest
-// DC hit by the ray. These two DCs are coplanar (share the exterior face).
-// If the ray hits nothing, the DC at v is the exterior face itself (w=0).
+// Finds the HC at v whose left face contains the -x ray, then finds the nearest
+// HC hit by the ray. These two HCs are coplanar (share the exterior face).
+// If the ray hits nothing, the HC at v is the exterior face itself (w=0).
 inline std::vector<std::pair<std::size_t, std::size_t>> cast_ray_minus_x(
     std::size_t v,
     const std::vector<point>& hot_pixels,
     const chain_build_result& chains,
-    const std::vector<dup_chain_view>& sorted_dcs,
-    const std::vector<std::size_t>& dc_begin,
-    const std::vector<std::size_t>& dc_end) {
+    const std::vector<half_chain>& sorted_hcs,
+    const std::vector<std::size_t>& hc_begin,
+    const std::vector<std::size_t>& hc_end) {
 
-    auto beg = dc_begin[v], end = dc_end[v];
+    auto beg = hc_begin[v], end = hc_end[v];
     if (beg == end) return {};
 
-    // Step 1: Find the DC at v whose left face contains the -x ray direction.
+    // Step 1: Find the HC at v whose left face contains the -x ray direction.
     // The -x ray lies in the sector between prev and next in CCW order.
-    // The sector = left(prev), so prev is the DC we want.
-    // We find prev: the DC whose direction is the closest CW from the -x ray
+    // The sector = left(prev), so prev is the HC we want.
+    // We find prev: the HC whose direction is the closest CW from the -x ray
     // (i.e., the maximum direction strictly less than -x in CCW order).
-    // If no DC direction is less than -x, the ray is before the first DC,
-    // so prev = the last DC (wrapping).
+    // If no HC direction is less than -x, the ray is before the first HC,
+    // so prev = the last HC (wrapping).
     point v_pt = hot_pixels[v];
     point ray_pt{bg::get<0>(v_pt) - 1, bg::get<1>(v_pt)};
-    auto prev_it = end - 1; // default: last DC (for wrapping case)
+    auto prev_it = end - 1; // default: last HC (for wrapping case)
     bool any_less = false;
     for (auto it = beg; it < end; it++) {
-        auto dc = sorted_dcs[it];
-        auto dc_pt = hot_pixels[dc.next_along_source(chains)];
-        if (less_by_direction(v_pt, dc_pt, ray_pt)) {
-            // dc_dir < ray_dir (CCW)
+        auto hc = sorted_hcs[it];
+        auto hc_pt = hot_pixels[hc.next_along_source(chains)];
+        if (less_by_direction(v_pt, hc_pt, ray_pt)) {
+            // hc_dir < ray_dir (CCW)
             if (!any_less) {
                 prev_it = it;
                 any_less = true;
             } else {
-                auto best_pt = hot_pixels[sorted_dcs[prev_it].next_along_source(chains)];
-                if (less_by_direction(v_pt, best_pt, dc_pt)) {
-                    // best_dir < dc_dir → dc is closer to ray from below
+                auto best_pt = hot_pixels[sorted_hcs[prev_it].next_along_source(chains)];
+                if (less_by_direction(v_pt, best_pt, hc_pt)) {
+                    // best_dir < hc_dir → hc is closer to ray from below
                     prev_it = it;
                 }
             }
         }
     }
-    dup_chain_view dc_vertex = sorted_dcs[prev_it];
+    half_chain hc_vertex = sorted_hcs[prev_it];
 
-    // Step 2: Cast ray in -x direction, find the nearest intersected DC.
+    // Step 2: Cast ray in -x direction, find the nearest intersected HC.
     // Simulation of simplicity: the ray is at y + ε (infinitesimal +dy).
-    // This ensures the ray doesn't pass through vertices, so only one DC
+    // This ensures the ray doesn't pass through vertices, so only one HC
     // can be hit at any intersection point.
     int64_t ray_y = bg::get<1>(v_pt);
     int min_x = bg::get<0>(v_pt);
@@ -521,13 +521,13 @@ inline std::vector<std::pair<std::size_t, std::size_t>> cast_ray_minus_x(
         }
     };
 
-    for (auto dc : sorted_dcs) {
+    for (auto hc : sorted_hcs) {
         auto& idx = chains.indices;
         auto& off = chains.offsets;
-        std::size_t cid = dc.chain_id();
+        std::size_t cid = hc.chain_id();
         auto cb = off[cid], ce = off[cid + 1];
 
-        if (dc.is_forward()) {
+        if (hc.is_forward()) {
             for (std::size_t k = cb; k + 1 < ce; k++) {
                 int64_t y1 = bg::get<1>(hot_pixels[idx[k]]);
                 int64_t y2 = bg::get<1>(hot_pixels[idx[k + 1]]);
@@ -536,13 +536,13 @@ inline std::vector<std::pair<std::size_t, std::size_t>> cast_ray_minus_x(
                     int64_t x2 = bg::get<0>(hot_pixels[idx[k + 1]]);
                     long double t = (long double)(ray_y - y1) / (y2 - y1);
                     int64_t ix = (int64_t)(x1 + t * (x2 - x1));
-                    try_edge(ix, x2 - x1, y2 - y1, y1, dc.id);
+                    try_edge(ix, x2 - x1, y2 - y1, y1, hc.id);
                 } else if (y2 <= ray_y && ray_y < y1) {
                     int64_t x1 = bg::get<0>(hot_pixels[idx[k]]);
                     int64_t x2 = bg::get<0>(hot_pixels[idx[k + 1]]);
                     long double t = (long double)(ray_y - y1) / (y2 - y1);
                     int64_t ix = (int64_t)(x1 + t * (x2 - x1));
-                    try_edge(ix, x2 - x1, y2 - y1, y2, dc.id);
+                    try_edge(ix, x2 - x1, y2 - y1, y2, hc.id);
                 }
             }
         } else {
@@ -554,45 +554,45 @@ inline std::vector<std::pair<std::size_t, std::size_t>> cast_ray_minus_x(
                     int64_t x2 = bg::get<0>(hot_pixels[idx[k - 1]]);
                     long double t = (long double)(ray_y - y1) / (y2 - y1);
                     int64_t ix = (int64_t)(x1 + t * (x2 - x1));
-                    try_edge(ix, x2 - x1, y2 - y1, y1, dc.id);
+                    try_edge(ix, x2 - x1, y2 - y1, y1, hc.id);
                 } else if (y2 <= ray_y && ray_y < y1) {
                     int64_t x1 = bg::get<0>(hot_pixels[idx[k]]);
                     int64_t x2 = bg::get<0>(hot_pixels[idx[k - 1]]);
                     long double t = (long double)(ray_y - y1) / (y2 - y1);
                     int64_t ix = (int64_t)(x1 + t * (x2 - x1));
-                    try_edge(ix, x2 - x1, y2 - y1, y2, dc.id);
+                    try_edge(ix, x2 - x1, y2 - y1, y2, hc.id);
                 }
             }
         }
     }
 
     // Step 3: Build the coplanar pair.
-    // If hit: dc_vertex and the hit side are coplanar (both bound the same face).
-    // If no hit: dc_vertex IS the exterior face.
+    // If hit: hc_vertex and the hit side are coplanar (both bound the same face).
+    // If no hit: hc_vertex IS the exterior face.
     std::vector<std::pair<std::size_t, std::size_t>> ray_pairs;
     if (hit_id != ~0ULL) {
         std::size_t hit_side = (hit_dy < 0) ? hit_id : (hit_id ^ 1);
-        ray_pairs.emplace_back(dc_vertex.id, hit_side);
+        ray_pairs.emplace_back(hc_vertex.id, hit_side);
     } else {
-        ray_pairs.emplace_back(dc_vertex.id, dc_vertex.id);
+        ray_pairs.emplace_back(hc_vertex.id, hc_vertex.id);
     }
     return ray_pairs;
 }
 
 // Find exterior face info per connected component.
-// Returns: the DC id in the exterior face (per component),
+// Returns: the HC id in the exterior face (per component),
 //   and all ray-coplanar pairs.
 inline auto find_exterior(const chain_build_result& chains,
                           const std::vector<point>& hot_pixels,
-                          const std::vector<dup_chain_view>& sorted_dcs,
-                          const std::vector<std::size_t>& dc_begin,
-                          const std::vector<std::size_t>& dc_end) {
+                          const std::vector<half_chain>& sorted_hcs,
+                          const std::vector<std::size_t>& hc_begin,
+                          const std::vector<std::size_t>& hc_end) {
     std::size_t nv = hot_pixels.size();
 
-    // Vertex components: union DC endpoints AND consecutive chain vertices
+    // Vertex components: union HC endpoints AND consecutive chain vertices
     auto dsu_v = make_dsu(nv);
-    for (auto dc : sorted_dcs)
-        dsu_v.unite(dc.source_node(chains), dc.target_node(chains));
+    for (auto hc : sorted_hcs)
+        dsu_v.unite(hc.source_node(chains), hc.target_node(chains));
     for (std::size_t c = 0; c + 1 < chains.offsets.size(); c++) {
         auto cb = chains.offsets[c], ce = chains.offsets[c + 1];
         for (std::size_t k = cb; k + 1 < ce; k++)
@@ -603,7 +603,7 @@ inline auto find_exterior(const chain_build_result& chains,
     std::vector<std::vector<std::size_t>> comps(nv);
     for (std::size_t v = 0; v < nv; v++) comps[dsu_v.p[v]].push_back(v);
 
-    std::vector<std::size_t> ext_dcs;
+    std::vector<std::size_t> ext_hcs;
     std::vector<std::pair<std::size_t, std::size_t>> ray_pairs;
 
     for (std::size_t c = 0; c < nv; c++) {
@@ -612,22 +612,22 @@ inline auto find_exterior(const chain_build_result& chains,
         std::size_t lmv = ~0ULL;
         int min_x = std::numeric_limits<int>::max();
         for (auto vv : comps[c]) {
-            if (dc_begin[vv] == dc_end[vv]) continue;
+            if (hc_begin[vv] == hc_end[vv]) continue;
             int x = bg::get<0>(hot_pixels[vv]);
             if (x < min_x) { min_x = x; lmv = vv; }
         }
         if (lmv == ~0ULL) continue;
 
-        auto rp = cast_ray_minus_x(lmv, hot_pixels, chains, sorted_dcs, dc_begin, dc_end);
+        auto rp = cast_ray_minus_x(lmv, hot_pixels, chains, sorted_hcs, hc_begin, hc_end);
         for (auto& p : rp) {
             if (p.first == p.second) {
-                ext_dcs.push_back(p.first);
+                ext_hcs.push_back(p.first);
             }
             ray_pairs.push_back(std::move(p));
         }
     }
 
-    return std::tuple{std::move(ext_dcs), std::move(ray_pairs)};
+    return std::tuple{std::move(ext_hcs), std::move(ray_pairs)};
 }
 
 // ---------------------------------------------------------------------------
@@ -635,49 +635,49 @@ inline auto find_exterior(const chain_build_result& chains,
 // Coplanarity sources: sector adjacency + ray.
 // Propagation: for consecutive a,b at vertex CCW:
 //   W(face(b)) = W(face(a)) + power(b)
-// Returns: dc_winding and dc_root (face id for each DC).
+// Returns: hc_winding and hc_root (face id for each HC).
 // ---------------------------------------------------------------------------
 
-inline auto compute_dc_winding(
+inline auto compute_hc_winding(
     const chain_build_result& chains,
-    const std::vector<dup_chain_view>& sorted_dcs,
-    const std::vector<std::size_t>& dc_begin,
-    const std::vector<std::size_t>& dc_end,
+    const std::vector<half_chain>& sorted_hcs,
+    const std::vector<std::size_t>& hc_begin,
+    const std::vector<std::size_t>& hc_end,
     const std::vector<std::pair<std::size_t, std::size_t>>& coplanar_pairs,
     const std::vector<std::pair<std::size_t, std::size_t>>& ray_pairs,
-    const std::vector<std::size_t>& exterior_dcs) {
+    const std::vector<std::size_t>& exterior_hcs) {
 
-    std::size_t num_dcs = (chains.offsets.size() - 1) * 2;
-    std::size_t nv = dc_begin.size();
+    std::size_t num_hcs = (chains.offsets.size() - 1) * 2;
+    std::size_t nv = hc_begin.size();
 
     // DSU: all coplanar sources
-    auto dsu = make_dsu(num_dcs);
+    auto dsu = make_dsu(num_hcs);
     for (auto [a, b] : coplanar_pairs) dsu.unite(a, b);
     for (auto [a, b] : ray_pairs) dsu.unite(a, b);
     dsu.compress();
     auto& root = dsu.p;
 
-    // Face adjacency: each DC connects its left face to its right face.
-    // W(right_face) = W(left_face) + power(dc)
-    std::vector<std::vector<std::pair<std::size_t, int>>> adj(num_dcs);
-    for (std::size_t i = 0; i < num_dcs; i++) {
-        auto dc = dup_chain_view{i};
+    // Face adjacency: each HC connects its left face to its right face.
+    // W(right_face) = W(left_face) + power(hc)
+    std::vector<std::vector<std::pair<std::size_t, int>>> adj(num_hcs);
+    for (std::size_t i = 0; i < num_hcs; i++) {
+        auto hc = half_chain{i};
         std::size_t lf = root[i], rf = root[i ^ 1];
         if (lf != rf) {
-            int p = dc.power(chains);
+            int p = hc.power(chains);
             adj[lf].emplace_back(rf, p);
             adj[rf].emplace_back(lf, -p);
         }
     }
 
     constexpr int UNK = std::numeric_limits<int>::max() / 2;
-    std::vector<int> rwind(num_dcs, UNK);
+    std::vector<int> rwind(num_hcs, UNK);
 
-    for (auto ext : exterior_dcs) rwind[root[ext]] = 0;
+    for (auto ext : exterior_hcs) rwind[root[ext]] = 0;
 
     std::queue<std::size_t> q;
-    std::vector<bool> vis(num_dcs);
-    for (std::size_t i = 0; i < num_dcs; i++) {
+    std::vector<bool> vis(num_hcs);
+    for (std::size_t i = 0; i < num_hcs; i++) {
         if (root[i] == i && rwind[i] != UNK) { q.push(i); vis[i] = true; }
     }
 
@@ -688,8 +688,8 @@ inline auto compute_dc_winding(
         }
     }
 
-    std::vector<int> dw(num_dcs);
-    for (std::size_t i = 0; i < num_dcs; i++) dw[i] = rwind[root[i]];
+    std::vector<int> dw(num_hcs);
+    for (std::size_t i = 0; i < num_hcs; i++) dw[i] = rwind[root[i]];
     return std::tuple{std::move(dw), std::move(root)};
 }
 
@@ -699,75 +699,75 @@ inline auto compute_dc_winding(
 
 inline multi_polygon build_output(const chain_build_result& chains,
                                    const std::vector<point>& hot_pixels,
-                                   const std::vector<dup_chain_view>& sorted_dcs,
-                                   const std::vector<std::size_t>& dc_begin,
-                                   const std::vector<std::size_t>& dc_end,
-                                   std::vector<dup_chain_view> next_dc,
-                                   const std::vector<int>& dc_winding,
+                                   const std::vector<half_chain>& sorted_hcs,
+                                   const std::vector<std::size_t>& hc_begin,
+                                   const std::vector<std::size_t>& hc_end,
+                                   std::vector<half_chain> next_hc,
+                                   const std::vector<int>& hc_winding,
                                    std::vector<std::size_t> face_root,
                                    auto filter_fn) {
-    std::size_t num_dcs = (chains.offsets.size() - 1) * 2;
+    std::size_t num_hcs = (chains.offsets.size() - 1) * 2;
     std::size_t num_chains = chains.offsets.size() - 1;
 
-    // 1. Which DCs survive
-    std::vector<bool> survive(num_dcs);
-    for (std::size_t i = 0; i < num_dcs; i++)
-        survive[i] = filter_fn(dc_winding[i]);
+    // 1. Which HCs survive
+    std::vector<bool> survive(num_hcs);
+    for (std::size_t i = 0; i < num_hcs; i++)
+        survive[i] = filter_fn(hc_winding[i]);
 
     // 2. Dual cancellation: both fwd and rev survive → dead + merge faces
-    std::vector<bool> dead(num_dcs, false);
+    std::vector<bool> dead(num_hcs, false);
 
     for (std::size_t cid = 0; cid < num_chains; cid++) {
         std::size_t fwd = 2 * cid, rev = 2 * cid + 1;
         if (!survive[fwd] || !survive[rev]) continue;
 
         dead[fwd] = dead[rev] = true;
-        auto d = make_dsu(num_dcs);
+        auto d = make_dsu(num_hcs);
         d.p = face_root;
         d.unite(fwd, rev);
         face_root = std::move(d.p);
     }
 
     {
-        auto d = make_dsu(num_dcs);
+        auto d = make_dsu(num_hcs);
         d.p = std::move(face_root);
         d.compress();
         face_root = std::move(d.p);
     }
 
     // Rebuild next from scratch, respecting face boundaries
-    std::vector<dup_chain_view> new_next(num_dcs, {~0ULL});
+    std::vector<half_chain> new_next(num_hcs, {~0ULL});
     {
-        std::size_t nv = dc_begin.size();
+        std::size_t nv = hc_begin.size();
         for (std::size_t v = 0; v < nv; v++) {
-            std::size_t beg = dc_begin[v], end = dc_end[v];
+            std::size_t beg = hc_begin[v], end = hc_end[v];
             for (auto it = beg; it < end; it++) {
-                auto s = sorted_dcs[it];
+                auto s = sorted_hcs[it];
                 auto arr = s.dual();
                 if (!survive[arr.id] || dead[arr.id]) continue;
                 auto arr_face = face_root[arr.id];
-                auto cur = next_dc[arr.id];
+                auto cur = next_hc[arr.id];
                 while (cur.id != arr.id &&
                        (!survive[cur.id] || dead[cur.id] || face_root[cur.id] != arr_face))
-                    cur = next_dc[cur.dual().id];
+                    cur = next_hc[cur.dual().id];
                 if (cur.id != arr.id) new_next[arr.id] = cur;
             }
         }
     }
-    next_dc = std::move(new_next);
+    next_hc = std::move(new_next);
 
-    // 3. Group surviving non-dead DCs by face
-    std::vector<std::vector<std::size_t>> face_dcs(num_dcs);
-    for (std::size_t i = 0; i < num_dcs; i++) {
+    // 3. Group surviving non-dead HCs by face
+    std::vector<std::vector<std::size_t>> face_hcs(num_hcs);
+    for (std::size_t i = 0; i < num_hcs; i++) {
         if (!dead[i] && survive[i])
-            face_dcs[face_root[i]].push_back(i);
+            face_hcs[face_root[i]].push_back(i);
     }
 
-    // 4. For each face, trace its DCs into a polygon
+    // 4. For each face, trace its HCs into a polygon
     multi_polygon result;
 
-    for (std::size_t f = 0; f < num_dcs; f++) {
-        auto& dcs = face_dcs[f];
+    for (std::size_t f = 0; f < num_hcs; f++) {
+        auto& dcs = face_hcs[f];
         if (dcs.empty()) continue;
 
         // Map dc_id → position in dcs
@@ -783,10 +783,10 @@ inline multi_polygon build_output(const chain_build_result& chains,
             ring r;
             std::size_t cur_id = dcs[j];
             do {
-                auto dc = dup_chain_view{cur_id};
-                auto cid = dc.chain_id();
+                auto hc = half_chain{cur_id};
+                auto cid = hc.chain_id();
                 auto cb = chains.offsets[cid], ce = chains.offsets[cid + 1];
-                if (dc.is_forward()) {
+                if (hc.is_forward()) {
                     for (std::size_t k = cb; k < ce - 1; k++)
                         r.push_back(hot_pixels[chains.indices[k]]);
                 } else {
@@ -795,7 +795,7 @@ inline multi_polygon build_output(const chain_build_result& chains,
                 }
                 auto it = pos.find(cur_id);
                 if (it != pos.end()) done[it->second] = true;
-                cur_id = next_dc[cur_id].id;
+                cur_id = next_hc[cur_id].id;
             } while (cur_id != dcs[j]);
 
             // Close ring (boost::geometry requires closed rings)
@@ -836,7 +836,7 @@ inline multi_polygon build_output(const chain_build_result& chains,
 // ---------------------------------------------------------------------------
 
 inline auto run_pipeline(auto segs, auto filter) {
-    // Phase 1: edges → chains → DC graph
+    // Phase 1: edges → chains → HC graph
     auto [hot_pixels, ewp] = construct_edges_with_power(std::move(segs));
 
     auto sorted_edges = ewp;
@@ -852,21 +852,21 @@ inline auto run_pipeline(auto segs, auto filter) {
 
     auto chains = build_chains(sorted_edges, hot_pixels.size());
 
-    auto [sorted_dcs, dc_begin, dc_end, next_dc, coplanar] =
-        build_dc_graph(chains, hot_pixels);
+    auto [sorted_hcs, hc_begin, hc_end, next_hc, coplanar] =
+        build_hc_graph(chains, hot_pixels);
 
     // Phase 2: ray casting → ray coplanar pairs
-    auto [ext_dcs, ray_pairs] =
-        find_exterior(chains, hot_pixels, sorted_dcs, dc_begin, dc_end);
+    auto [ext_hcs, ray_pairs] =
+        find_exterior(chains, hot_pixels, sorted_hcs, hc_begin, hc_end);
 
     // Phase 3: winding numbers (sector + ray coplanarity → DSU → BFS)
-    auto [dc_winding, face_root] = compute_dc_winding(
-        chains, sorted_dcs, dc_begin, dc_end, coplanar, ray_pairs, ext_dcs);
+    auto [hc_winding, face_root] = compute_hc_winding(
+        chains, sorted_hcs, hc_begin, hc_end, coplanar, ray_pairs, ext_hcs);
 
     // Phase 4: build polygons face by face
-    return build_output(chains, hot_pixels, sorted_dcs, dc_begin, dc_end,
-                        std::move(next_dc),
-                        dc_winding, std::move(face_root), filter);
+    return build_output(chains, hot_pixels, sorted_hcs, hc_begin, hc_end,
+                        std::move(next_hc),
+                        hc_winding, std::move(face_root), filter);
 }
 
 // ---------------------------------------------------------------------------

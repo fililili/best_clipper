@@ -78,51 +78,51 @@ int main() {
 
     // Build face graph
     auto fg = build_face_graph(chains, hot_pixels);
-    std::cout << "Num dcs: " << fg.sorted_dcs.size() << std::endl;
+    std::cout << "Num dcs: " << fg.sorted_hcs.size() << std::endl;
 
     // Dump face graph
     for (size_t v = 0; v < hot_pixels.size(); v++) {
-        auto beg = fg.dc_begin[v];
-        auto end = fg.dc_end[v];
+        auto beg = fg.hc_begin[v];
+        auto end = fg.hc_end[v];
         if (beg == end) continue;
         std::cout << "  vertex " << v << " (" << bg::wkt(hot_pixels[v]) << "): ";
         for (auto i = beg; i < end; i++) {
-            auto dc = fg.sorted_dcs[i];
-            std::cout << "dc" << dc.id << "(c" << dc.chain_id()
-                      << (dc.is_forward()?"f":"r")
-                      << " src=" << dc.source_node(chains)
-                      << " tgt=" << dc.target_node(chains)
-                      << " next_src=" << dc.next_along_source(chains)
-                      << " p=" << dc.power(chains) << ") ";
+            auto hc = fg.sorted_hcs[i];
+            std::cout << "hc" << hc.id << "(c" << hc.chain_id()
+                      << (hc.is_forward()?"f":"r")
+                      << " src=" << hc.source_node(chains)
+                      << " tgt=" << hc.target_node(chains)
+                      << " next_src=" << hc.next_along_source(chains)
+                      << " p=" << hc.power(chains) << ") ";
         }
         std::cout << std::endl;
     }
     std::cout << "Coplanar pairs:" << std::endl;
     for (auto [a,b] : fg.coplanar_pairs) {
-        std::cout << "  dc" << a << " ~ dc" << b << std::endl;
+        std::cout << "  hc" << a << " ~ hc" << b << std::endl;
     }
 
     // Compute winding numbers
     auto winding = compute_winding_numbers(chains, hot_pixels, fg);
     std::cout << "Num faces: " << winding.num_faces << std::endl;
-    std::cout << "DC face winding numbers:" << std::endl;
-    for (size_t i = 0; i < winding.dc_face_winding.size(); i++) {
-        std::cout << "  dc" << i << ": face_winding=" << winding.dc_face_winding[i] << std::endl;
+    std::cout << "HC face winding numbers:" << std::endl;
+    for (size_t i = 0; i < winding.hc_face_winding.size(); i++) {
+        std::cout << "  hc" << i << ": face_winding=" << winding.hc_face_winding[i] << std::endl;
     }
 
     auto filter_union = [](int w) { return w > 0; };
     auto filter_inter = [](int w) { return w > 1; };
 
     std::cout << "\nUnion filter:" << std::endl;
-    for (size_t i = 0; i < winding.dc_face_winding.size(); i++) {
-        bool survive = filter_union(winding.dc_face_winding[i]);
-        std::cout << "  dc" << i << ": survive=" << survive << std::endl;
+    for (size_t i = 0; i < winding.hc_face_winding.size(); i++) {
+        bool survive = filter_union(winding.hc_face_winding[i]);
+        std::cout << "  hc" << i << ": survive=" << survive << std::endl;
     }
 
     std::cout << "\nIntersection filter:" << std::endl;
-    for (size_t i = 0; i < winding.dc_face_winding.size(); i++) {
-        bool survive = filter_inter(winding.dc_face_winding[i]);
-        std::cout << "  dc" << i << ": survive=" << survive << std::endl;
+    for (size_t i = 0; i < winding.hc_face_winding.size(); i++) {
+        bool survive = filter_inter(winding.hc_face_winding[i]);
+        std::cout << "  hc" << i << ": survive=" << survive << std::endl;
     }
 
     return 0;

@@ -44,28 +44,28 @@ int main() {
         std::cerr << "\n";
     }
 
-    auto [sorted_dcs, dc_begin, dc_end, next_dc, prev_dc, coplanar] = build_dc_graph(chains, hot_pixels);
-    std::cerr << "DCs: " << (chains.offsets.size()-1)*2 << "\n";
+    auto [sorted_hcs, hc_begin, hc_end, next_hc, prev_hc, coplanar] = build_hc_graph(chains, hot_pixels);
+    std::cerr << "HCs: " << (chains.offsets.size()-1)*2 << "\n";
     for (size_t v = 0; v < hot_pixels.size(); v++) {
-        auto beg = dc_begin[v], end = dc_end[v];
+        auto beg = hc_begin[v], end = hc_end[v];
         if (beg == end) continue;
         std::cerr << "  vertex " << v << " (" << bg::wkt(hot_pixels[v]) << "): ";
         for (auto i = beg; i < end; i++) {
-            auto dc = sorted_dcs[i];
-            std::cerr << "dc" << dc.id << "(" << (dc.is_forward()?"f":"r") << "c" << dc.chain_id()
-                      << " src=" << dc.source_node(chains) << " nxt=" << dc.next_along_source(chains)
-                      << " p=" << dc.power(chains) << ") ";
+            auto hc = sorted_hcs[i];
+            std::cerr << "hc" << hc.id << "(" << (hc.is_forward()?"f":"r") << "c" << hc.chain_id()
+                      << " src=" << hc.source_node(chains) << " nxt=" << hc.next_along_source(chains)
+                      << " p=" << hc.power(chains) << ") ";
         }
         std::cerr << "\n";
     }
 
     std::cerr << "Coplanar pairs:\n";
     for (auto [a,b] : coplanar)
-        std::cerr << "  dc" << a << " ~ dc" << b << "\n";
+        std::cerr << "  hc" << a << " ~ hc" << b << "\n";
 
     std::cerr << "Next:\n";
     for (size_t i = 0; i < (chains.offsets.size()-1)*2; i++)
-        std::cerr << "  dc" << i << " -> dc" << next_dc[i].id << "\n";
+        std::cerr << "  hc" << i << " -> hc" << next_hc[i].id << "\n";
 
     // Debug vertex components
     {
@@ -78,9 +78,9 @@ int main() {
             while (x != r) { std::size_t nxt = vp[x]; vp[x] = r; x = nxt; }
             return r;
         };
-        for (auto dc : sorted_dcs) {
-            std::size_t a = vfind2(dc.source_node(chains));
-            std::size_t b = vfind2(dc.target_node(chains));
+        for (auto hc : sorted_hcs) {
+            std::size_t a = vfind2(hc.source_node(chains));
+            std::size_t b = vfind2(hc.target_node(chains));
             if (a != b) vp[a] = b;
         }
         for (std::size_t v = 0; v < nv; v++) vp[v] = vfind2(v);
@@ -90,35 +90,35 @@ int main() {
         std::cerr << "\n";
     }
 
-    auto [ext_dcs, ray_pairs] = find_exterior(chains, hot_pixels, sorted_dcs, dc_begin, dc_end);
-    std::cerr << "Exterior DCs: ";
-    for (auto e : ext_dcs) std::cerr << "dc" << e << " ";
+    auto [ext_hcs, ray_pairs] = find_exterior(chains, hot_pixels, sorted_hcs, hc_begin, hc_end);
+    std::cerr << "Exterior HCs: ";
+    for (auto e : ext_hcs) std::cerr << "hc" << e << " ";
     std::cerr << "\n";
     std::cerr << "Ray coplanar pairs: ";
     for (auto [a,b] : ray_pairs) std::cerr << "(" << a << "," << b << ") ";
     std::cerr << "\n";
 
-    auto [dc_winding, face_root] = compute_dc_winding(chains, sorted_dcs, dc_begin, dc_end, coplanar, ray_pairs, ext_dcs);
-    std::cerr << "DC windings:\n";
-    for (size_t i = 0; i < dc_winding.size(); i++)
-        std::cerr << "  dc" << i << " w=" << dc_winding[i] << " face_root=" << face_root[i] << "\n";
+    auto [hc_winding, face_root] = compute_hc_winding(chains, sorted_hcs, hc_begin, hc_end, coplanar, ray_pairs, ext_hcs);
+    std::cerr << "HC windings:\n";
+    for (size_t i = 0; i < hc_winding.size(); i++)
+        std::cerr << "  hc" << i << " w=" << hc_winding[i] << " face_root=" << face_root[i] << "\n";
 
     std::cerr << "Survive union (w>0): ";
-    for (size_t i = 0; i < dc_winding.size(); i++)
-        if (dc_winding[i] > 0) std::cerr << "dc" << i << " ";
+    for (size_t i = 0; i < hc_winding.size(); i++)
+        if (hc_winding[i] > 0) std::cerr << "hc" << i << " ";
     std::cerr << "\n";
     std::cerr << "Survive intersection (w>1): ";
-    for (size_t i = 0; i < dc_winding.size(); i++)
-        if (dc_winding[i] > 1) std::cerr << "dc" << i << " ";
+    for (size_t i = 0; i < hc_winding.size(); i++)
+        if (hc_winding[i] > 1) std::cerr << "hc" << i << " ";
     std::cerr << "\n";
 
     // Show face groups
     std::cerr << "Face groups:\n";
     for (size_t i = 0; i < face_root.size(); i++) {
         if (face_root[i] == i) {
-            std::cerr << "  Face " << i << " (w=" << dc_winding[i] << "): ";
+            std::cerr << "  Face " << i << " (w=" << hc_winding[i] << "): ";
             for (size_t j = 0; j < face_root.size(); j++)
-                if (face_root[j] == i) std::cerr << "dc" << j << " ";
+                if (face_root[j] == i) std::cerr << "hc" << j << " ";
             std::cerr << "\n";
         }
     }
