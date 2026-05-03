@@ -62,7 +62,7 @@ Two HCs are **coplanar** iff they belong to the same face (same winding number).
 
 1. **Sector coplanarity**: At each vertex, departing HCs are sorted by CCW angle. Between adjacent HCs `prev` and `cur`, the sector lies on the left of `prev` and on the right of `cur`. Since a HC belongs to its left face, `prev` and `cur.dual()` belong to the same face: `coplanar(prev, cur.dual())`.
 
-2. **Ray-casting coplanarity**: From the leftmost vertex of each component, a -x ray identifies the exterior face. The HC whose left face contains the ray and the nearest HC hit by the ray are coplanar. If the ray hits nothing, that HC's left face is the exterior (winding = 0).
+2. **Ray-casting coplanarity**: From the leftmost vertex of each component, cast a ray in the -x direction (with an infinitesimal +dy perturbation to avoid passing through vertices). The ray is a continuous curve. Since it does not cross any boundary until it hits something, every point along the ray belongs to the **same face**. Therefore the HC whose left face contains the ray's origin and the HC on the hit side (the side the ray approaches from) are coplanar. If the ray hits nothing, that HC's left face is the exterior (winding = 0). This seeds winding number propagation.
 
 3. **Dual cancellation coplanarity**: When both forward and reverse HCs of a chain survive filtering, they cancel each other. Their adjacent faces merge: `coplanar(fwd, rev)`.
 
