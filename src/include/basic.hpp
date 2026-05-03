@@ -688,9 +688,9 @@ inline auto compute_hc_winding(
         }
     }
 
-    std::vector<int> dw(num_hcs);
-    for (std::size_t i = 0; i < num_hcs; i++) dw[i] = rwind[root[i]];
-    return std::tuple{std::move(dw), std::move(root)};
+    std::vector<int> winding(num_hcs);
+    for (std::size_t i = 0; i < num_hcs; i++) winding[i] = rwind[root[i]];
+    return std::tuple{std::move(winding), std::move(root)};
 }
 
 // ---------------------------------------------------------------------------
