@@ -656,7 +656,7 @@ inline auto compute_hc_winding(
     std::size_t num_hcs = (chains.offsets.size() - 1) * 2;
 
     // Collect edges: coplanar (weight 0), ray (weight 0), dual (weight -power)
-    std::vector<std::tuple<std::size_t, std::size_t, int>> edges;
+    std::vector<edge_with_power_t> edges;
     auto add = [&](std::size_t a, std::size_t b, int w) {
         edges.emplace_back(a, b, w);
         edges.emplace_back(b, a, -w);
@@ -668,8 +668,8 @@ inline auto compute_hc_winding(
 
     auto [adj_begin, adj_end, adj] = bucket_sort(
         edges, num_hcs,
-        [](const std::tuple<std::size_t, std::size_t, int>& e) { return std::get<0>(e); },
-        [](const std::tuple<std::size_t, std::size_t, int>& e) { return std::pair{std::get<1>(e), std::get<2>(e)}; });
+        [](const edge_with_power_t& e) { return e.start; },
+        [](const edge_with_power_t& e) { return std::pair{e.end, e.power}; });
 
     // DFS propagation from exterior seeds
     constexpr int UNK = std::numeric_limits<int>::max() / 2;
@@ -737,32 +737,39 @@ inline multi_polygon build_output(const chain_build_result& chains,
     }
     auto comp_id = connected_components(num_hcs, face_edges);
 
-    // 5. Group surviving non-dead HCs by face
-    std::vector<std::vector<std::size_t>> face_hcs(num_hcs);
-    for (std::size_t i = 0; i < num_hcs; i++) {
+    // 5. Group surviving non-dead HCs by face via bucket_sort
+    std::vector<std::pair<std::size_t, std::size_t>> hc_to_face;
+    for (std::size_t i = 0; i < num_hcs; i++)
         if (!dead[i] && survive[i])
-            face_hcs[comp_id[i]].push_back(i);
-    }
+            hc_to_face.emplace_back(comp_id[i], i);
 
-    // 4. For each face, trace its HCs into a polygon
+    std::size_t num_faces = 0;
+    for (auto c : comp_id) num_faces = std::max(num_faces, c + 1);
+    auto [face_begin, face_end, face_data] = bucket_sort(
+        hc_to_face, num_faces,
+        [](const std::pair<std::size_t, std::size_t>& p) { return p.first; },
+        [](const std::pair<std::size_t, std::size_t>& p) { return p.second; });
+
+    // 6. For each face, trace its HCs into a polygon
     multi_polygon result;
 
-    for (std::size_t f = 0; f < num_hcs; f++) {
-        auto& dcs = face_hcs[f];
-        if (dcs.empty()) continue;
+    for (std::size_t f = 0; f < num_faces; f++) {
+        auto beg = face_begin[f], end = face_end[f];
+        if (beg == end) continue;
+        std::size_t sz = end - beg;
 
-        // Map dc_id → position in dcs
         boost::container::flat_map<std::size_t, std::size_t> pos;
-        for (std::size_t j = 0; j < dcs.size(); j++) pos[dcs[j]] = j;
+        for (std::size_t j = 0; j < sz; j++)
+            pos[face_data[beg + j]] = j;
 
-        std::vector<bool> done(dcs.size(), false);
+        std::vector<bool> done(sz, false);
         std::vector<ring> rings;
 
-        for (std::size_t j = 0; j < dcs.size(); j++) {
+        for (std::size_t j = 0; j < sz; j++) {
             if (done[j]) continue;
 
             ring r;
-            std::size_t cur_id = dcs[j];
+            std::size_t cur_id = face_data[beg + j];
             do {
                 auto hc = half_chain{cur_id};
                 auto cid = hc.chain_id();
@@ -777,17 +784,14 @@ inline multi_polygon build_output(const chain_build_result& chains,
                 auto it = pos.find(cur_id);
                 if (it != pos.end()) done[it->second] = true;
                 cur_id = next_hc[cur_id].id;
-            } while (cur_id != dcs[j]);
+            } while (cur_id != face_data[beg + j]);
 
-            // Close ring (boost::geometry requires closed rings)
             if (!r.empty()) r.push_back(r.front());
-
             rings.push_back(std::move(r));
         }
 
         if (rings.empty()) continue;
 
-        // Find outer ring: the one containing the leftmost point
         std::size_t outer_i = 0;
         {
             int min_x = std::numeric_limits<int>::max();
