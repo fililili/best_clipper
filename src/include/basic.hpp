@@ -45,6 +45,46 @@ inline auto not_adjacent_find(auto begin, auto end, auto binary) {
     return std::next(cur);
 }
 
+// Undirected graph connected components via DFS. O(n + m).
+inline std::vector<std::size_t> connected_components(
+    std::size_t n,
+    const std::vector<std::pair<std::size_t, std::size_t>>& edges) {
+
+    std::vector<std::pair<std::size_t, std::size_t>> all_edges;
+    all_edges.reserve(edges.size() * 2);
+    for (auto [a, b] : edges) {
+        all_edges.emplace_back(a, b);
+        all_edges.emplace_back(b, a);
+    }
+
+    auto [adj_begin, adj_end, adj] = bucket_sort(
+        all_edges, n,
+        [](const std::pair<std::size_t, std::size_t>& e) { return e.first; },
+        [](const std::pair<std::size_t, std::size_t>& e) { return e.second; });
+
+    std::vector<std::size_t> comp(n, ~0ULL);
+    std::vector<std::size_t> stack;
+    std::size_t num_comps = 0;
+
+    for (std::size_t v = 0; v < n; v++) {
+        if (comp[v] != ~0ULL) continue;
+        comp[v] = num_comps++;
+        stack.push_back(v);
+        while (!stack.empty()) {
+            auto u = stack.back(); stack.pop_back();
+            for (auto j = adj_begin[u]; j < adj_end[u]; j++) {
+                auto w = adj[j];
+                if (comp[w] == ~0ULL) {
+                    comp[w] = comp[v];
+                    stack.push_back(w);
+                }
+            }
+        }
+    }
+
+    return comp;
+}
+
 // ---------------------------------------------------------------------------
 // Geometry
 // ---------------------------------------------------------------------------
@@ -346,33 +386,6 @@ inline chain_build_result build_chains(const std::vector<edge_with_power_t>& sor
 }
 
 // ---------------------------------------------------------------------------
-// DSU helper
-// ---------------------------------------------------------------------------
-
-struct dsu_t {
-    std::vector<std::size_t> p;
-    std::size_t find(std::size_t x) {
-        std::size_t r = x;
-        while (p[r] != r) r = p[r];
-        while (x != r) { auto n = p[x]; p[x] = r; x = n; }
-        return r;
-    }
-    void unite(std::size_t a, std::size_t b) {
-        a = find(a); b = find(b);
-        if (a != b) p[a] = b;
-    }
-    void compress() {
-        for (std::size_t i = 0; i < p.size(); i++) p[i] = find(i);
-    }
-};
-
-inline dsu_t make_dsu(std::size_t n) {
-    dsu_t d; d.p.resize(n);
-    for (std::size_t i = 0; i < n; i++) d.p[i] = i;
-    return d;
-}
-
-// ---------------------------------------------------------------------------
 // Step 5-6: angular sort, next/prev, coplanar pairs (sector adjacency)
 // ---------------------------------------------------------------------------
 
@@ -582,29 +595,32 @@ inline auto find_exterior(const chain_build_result& chains,
                           const std::vector<std::size_t>& hc_end) {
     std::size_t nv = hot_pixels.size();
 
-    // Vertex components: union HC endpoints AND consecutive chain vertices
-    auto dsu_v = make_dsu(nv);
+    // Vertex connected components
+    std::vector<std::pair<std::size_t, std::size_t>> v_edges;
     for (auto hc : sorted_hcs)
-        dsu_v.unite(hc.source_node(chains), hc.target_node(chains));
+        v_edges.emplace_back(hc.source_node(chains), hc.target_node(chains));
     for (std::size_t c = 0; c + 1 < chains.offsets.size(); c++) {
         auto cb = chains.offsets[c], ce = chains.offsets[c + 1];
         for (std::size_t k = cb; k + 1 < ce; k++)
-            dsu_v.unite(chains.indices[k], chains.indices[k + 1]);
+            v_edges.emplace_back(chains.indices[k], chains.indices[k + 1]);
     }
-    dsu_v.compress();
 
-    std::vector<std::vector<std::size_t>> comps(nv);
-    for (std::size_t v = 0; v < nv; v++) comps[dsu_v.p[v]].push_back(v);
+    auto comp_id = connected_components(nv, v_edges);
+
+    // Group vertices by component
+    std::size_t num_comps = 0;
+    for (auto c : comp_id) num_comps = std::max(num_comps, c + 1);
+    std::vector<std::vector<std::size_t>> comps(num_comps);
+    for (std::size_t v = 0; v < nv; v++)
+        comps[comp_id[v]].push_back(v);
 
     std::vector<std::size_t> ext_hcs;
     std::vector<std::pair<std::size_t, std::size_t>> ray_pairs;
 
-    for (std::size_t c = 0; c < nv; c++) {
-        if (comps[c].empty()) continue;
-
+    for (auto& comp : comps) {
         std::size_t lmv = ~0ULL;
         int min_x = std::numeric_limits<int>::max();
-        for (auto vv : comps[c]) {
+        for (auto vv : comp) {
             if (hc_begin[vv] == hc_end[vv]) continue;
             int x = bg::get<0>(hot_pixels[vv]);
             if (x < min_x) { min_x = x; lmv = vv; }
@@ -652,8 +668,8 @@ inline auto compute_hc_winding(
 
     auto [adj_begin, adj_end, adj] = bucket_sort(
         edges, num_hcs,
-        [](auto& e) { return std::get<0>(e); },
-        [](auto& e) { return std::pair{std::get<1>(e), std::get<2>(e)}; });
+        [](const std::tuple<std::size_t, std::size_t, int>& e) { return std::get<0>(e); },
+        [](const std::tuple<std::size_t, std::size_t, int>& e) { return std::pair{std::get<1>(e), std::get<2>(e)}; });
 
     // DFS propagation from exterior seeds
     constexpr int UNK = std::numeric_limits<int>::max() / 2;
@@ -711,21 +727,21 @@ inline multi_polygon build_output(const chain_build_result& chains,
             next_hc[i] = next_hc[next_hc[i].dual().id];
     }
 
-    // 4. Build DSU: coplanar pairs + ray pairs + dual cancellation merges
-    auto dsu = make_dsu(num_hcs);
-    for (auto [a, b] : coplanar_pairs) dsu.unite(a, b);
-    for (auto [a, b] : ray_pairs) dsu.unite(a, b);
+    // 4. Build connected components: coplanar + ray + dual cancellation → same face
+    std::vector<std::pair<std::size_t, std::size_t>> face_edges;
+    face_edges.insert(face_edges.end(), coplanar_pairs.begin(), coplanar_pairs.end());
+    face_edges.insert(face_edges.end(), ray_pairs.begin(), ray_pairs.end());
     for (std::size_t cid = 0; cid < num_chains; cid++) {
         std::size_t fwd = 2 * cid, rev = 2 * cid + 1;
-        if (dead[fwd]) dsu.unite(fwd, rev);
+        if (dead[fwd]) face_edges.emplace_back(fwd, rev);
     }
-    dsu.compress();
+    auto comp_id = connected_components(num_hcs, face_edges);
 
     // 5. Group surviving non-dead HCs by face
     std::vector<std::vector<std::size_t>> face_hcs(num_hcs);
     for (std::size_t i = 0; i < num_hcs; i++) {
         if (!dead[i] && survive[i])
-            face_hcs[dsu.p[i]].push_back(i);
+            face_hcs[comp_id[i]].push_back(i);
     }
 
     // 4. For each face, trace its HCs into a polygon
