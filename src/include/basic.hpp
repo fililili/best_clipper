@@ -530,6 +530,12 @@ inline auto build_half_chain_graph(const chain_build_result& chains,
 // Step 7: ray casting. Returns coplanar pairs from the ray.
 // ---------------------------------------------------------------------------
 
+struct chain_seg {
+    int64_t x1, y1, dx, dy;
+    std::size_t half_chain_id;
+};
+using segment_rtree = bg::index::rtree<std::pair<box, std::size_t>, bg::index::quadratic<128>>;
+
 // Cast ray in -x direction from leftmost vertex v.
 // Finds the half-chain at v whose right face contains the -x ray, then finds the nearest
 // half-chain hit by the ray. These two half-chains are coplanar (share the exterior face).
@@ -540,7 +546,9 @@ inline std::vector<std::pair<std::size_t, std::size_t>> cast_ray_minus_x(
     const chain_build_result& chains,
     const std::vector<half_chain>& sorted_half_chains,
     const std::vector<std::size_t>& half_chain_begin,
-    const std::vector<std::size_t>& half_chain_end) {
+    const std::vector<std::size_t>& half_chain_end,
+    const segment_rtree& seg_rtree,
+    const std::vector<chain_seg>& seg_data) {
 
     auto range_begin = half_chain_begin[v], range_end = half_chain_end[v];
     if (range_begin == range_end) return {};
@@ -615,40 +623,16 @@ inline std::vector<std::pair<std::size_t, std::size_t>> cast_ray_minus_x(
         return (int64_t)(((int128_t)x1 * dy + (int128_t)(ray_y - y1) * dx) / dy);
     };
 
-    for (auto h : sorted_half_chains) {
-        auto& idx = chains.indices;
-        auto& off = chains.offsets;
-        std::size_t chain_idx = h.chain_id();
-        auto chain_begin_idx = off[chain_idx], chain_end_idx = off[chain_idx + 1];
-
-        if (h.is_forward()) {
-            for (std::size_t k = chain_begin_idx; k + 1 < chain_end_idx; k++) {
-                int64_t y1 = bg::get<1>(hot_pixels[idx[k]]);
-                int64_t y2 = bg::get<1>(hot_pixels[idx[k + 1]]);
-                int64_t dx = (int64_t)bg::get<0>(hot_pixels[idx[k + 1]]) - (int64_t)bg::get<0>(hot_pixels[idx[k]]);
-                int64_t dy = y2 - y1;
-                if (y1 <= ray_y && ray_y < y2) {
-                    int64_t ix = intersect_x(bg::get<0>(hot_pixels[idx[k]]), y1, dx, dy);
-                    try_edge(ix, dx, dy, y1, h.id);
-                } else if (y2 <= ray_y && ray_y < y1) {
-                    int64_t ix = intersect_x(bg::get<0>(hot_pixels[idx[k]]), y1, dx, dy);
-                    try_edge(ix, dx, dy, y2, h.id);
-                }
-            }
-        } else {
-            for (std::size_t k = chain_end_idx - 1; k > chain_begin_idx; k--) {
-                int64_t y1 = bg::get<1>(hot_pixels[idx[k]]);
-                int64_t y2 = bg::get<1>(hot_pixels[idx[k - 1]]);
-                int64_t dx = (int64_t)bg::get<0>(hot_pixels[idx[k - 1]]) - (int64_t)bg::get<0>(hot_pixels[idx[k]]);
-                int64_t dy = y2 - y1;
-                if (y1 <= ray_y && ray_y < y2) {
-                    int64_t ix = intersect_x(bg::get<0>(hot_pixels[idx[k]]), y1, dx, dy);
-                    try_edge(ix, dx, dy, y1, h.id);
-                } else if (y2 <= ray_y && ray_y < y1) {
-                    int64_t ix = intersect_x(bg::get<0>(hot_pixels[idx[k]]), y1, dx, dy);
-                    try_edge(ix, dx, dy, y2, h.id);
-                }
-            }
+    auto query_box = box{point{0, (uint32_t)ray_y}, point{vx, (uint32_t)ray_y}};
+    for (auto it = seg_rtree.qbegin(bg::index::intersects(query_box)); it != seg_rtree.qend(); ++it) {
+        auto& seg = seg_data[it->second];
+        int64_t y2 = seg.y1 + seg.dy;
+        if (seg.y1 <= ray_y && ray_y < y2) {
+            int64_t ix = intersect_x(seg.x1, seg.y1, seg.dx, seg.dy);
+            try_edge(ix, seg.dx, seg.dy, seg.y1, seg.half_chain_id);
+        } else if (y2 <= ray_y && ray_y < seg.y1) {
+            int64_t ix = intersect_x(seg.x1, seg.y1, seg.dx, seg.dy);
+            try_edge(ix, seg.dx, seg.dy, y2, seg.half_chain_id);
         }
     }
 
@@ -696,6 +680,41 @@ inline auto find_exterior(const chain_build_result& chains,
     for (std::size_t v = 0; v < num_vertices; v++)
         vertex_components[component_id[v]].push_back(v);
 
+    std::vector<chain_seg> seg_data;
+    std::vector<std::pair<box, std::size_t>> seg_boxes;
+    for (auto h : sorted_half_chains) {
+        auto& idx = chains.indices;
+        auto& off = chains.offsets;
+        std::size_t ci = h.chain_id();
+        auto cbi = off[ci], cei = off[ci + 1];
+        if (h.is_forward()) {
+            for (std::size_t k = cbi; k + 1 < cei; k++) {
+                point p1 = hot_pixels[idx[k]], p2 = hot_pixels[idx[k + 1]];
+                uint32_t x1 = bg::get<0>(p1), y1 = bg::get<1>(p1);
+                uint32_t x2 = bg::get<0>(p2), y2 = bg::get<1>(p2);
+                seg_data.push_back({(int64_t)x1, (int64_t)y1,
+                                    (int64_t)x2 - (int64_t)x1,
+                                    (int64_t)y2 - (int64_t)y1, h.id});
+                seg_boxes.emplace_back(box{point{std::min(x1, x2), std::min(y1, y2)},
+                                            point{std::max(x1, x2), std::max(y1, y2)}},
+                                       seg_data.size() - 1);
+            }
+        } else {
+            for (std::size_t k = cei - 1; k > cbi; k--) {
+                point p1 = hot_pixels[idx[k]], p2 = hot_pixels[idx[k - 1]];
+                uint32_t x1 = bg::get<0>(p1), y1 = bg::get<1>(p1);
+                uint32_t x2 = bg::get<0>(p2), y2 = bg::get<1>(p2);
+                seg_data.push_back({(int64_t)x1, (int64_t)y1,
+                                    (int64_t)x2 - (int64_t)x1,
+                                    (int64_t)y2 - (int64_t)y1, h.id});
+                seg_boxes.emplace_back(box{point{std::min(x1, x2), std::min(y1, y2)},
+                                            point{std::max(x1, x2), std::max(y1, y2)}},
+                                       seg_data.size() - 1);
+            }
+        }
+    }
+    segment_rtree seg_rtree(std::move(seg_boxes));
+
     std::vector<std::size_t> exterior_half_chains;
     std::vector<std::pair<std::size_t, std::size_t>> ray_pairs;
 
@@ -709,7 +728,7 @@ inline auto find_exterior(const chain_build_result& chains,
         }
         if (leftmost_vertex == ~0ULL) continue;
 
-        auto ray_pairs_result = cast_ray_minus_x(leftmost_vertex, hot_pixels, chains, sorted_half_chains, half_chain_begin, half_chain_end);
+        auto ray_pairs_result = cast_ray_minus_x(leftmost_vertex, hot_pixels, chains, sorted_half_chains, half_chain_begin, half_chain_end, seg_rtree, seg_data);
         for (auto& p : ray_pairs_result) {
             if (p.first == p.second) {
                 exterior_half_chains.push_back(p.first);
