@@ -4,15 +4,22 @@
 #include <boost/container/flat_map.hpp>
 #include <boost/geometry.hpp>
 #include <cassert>
-#include <cmath>
+#include <cstdint>
 #include <limits>
 #include <numeric>
 #include <optional>
 #include <ranges>
 #include <vector>
 
+#ifdef _MSC_VER
+#include <boost/multiprecision/cpp_int.hpp>
+using int128_t = boost::multiprecision::int128_t;
+#else
+using int128_t = int128_t;
+#endif
+
 namespace bg = boost::geometry;
-using point = bg::model::d2::point_xy<int>;
+using point = bg::model::d2::point_xy<uint32_t>;
 using segment = bg::model::segment<point>;
 using box = bg::model::box<point>;
 using ring = bg::model::ring<point>;
@@ -24,10 +31,10 @@ using multi_polygon = bg::model::multi_polygon<polygon>;
 // ---------------------------------------------------------------------------
 
 inline auto bucket_sort(auto vec, auto bucket_size, auto get_bucket, auto get_left) {
-    std::vector<int> times(bucket_size);
+    std::vector<std::size_t> times(bucket_size);
     for (auto val : vec) times[get_bucket(val)]++;
-    std::vector<unsigned int> begin_location(times.size());
-    std::exclusive_scan(std::begin(times), std::end(times), std::begin(begin_location), 0);
+    std::vector<std::size_t> begin_location(times.size());
+    std::exclusive_scan(std::begin(times), std::end(times), std::begin(begin_location), std::size_t{0});
     std::vector<std::invoke_result_t<decltype(get_left), typename decltype(vec)::value_type>> left(
         vec.size());
     auto current_location{begin_location};
@@ -90,32 +97,77 @@ inline std::vector<std::size_t> connected_components(
 // ---------------------------------------------------------------------------
 
 struct less_by_segment {
+    // Compare (p2-p1)·(s[1]-s[0]) > 0, i.e. is p2 ahead of p1 along the segment direction?
+    // Uses uint64_t for products; each term ≤ 2^64, sum sign determined from sign+mag.
     bool operator()(point p1, point p2) const {
-        int64_t x1 = bg::get<0>(p1), y1 = bg::get<1>(p1);
-        int64_t x2 = bg::get<0>(p2), y2 = bg::get<1>(p2);
-        int64_t x3 = bg::get<0, 0>(s), y3 = bg::get<0, 1>(s);
-        int64_t x4 = bg::get<1, 0>(s), y4 = bg::get<1, 1>(s);
-        return (x2 - x1) * (x4 - x3) + (y2 - y1) * (y4 - y3) > 0;
+        int64_t dxp = (int64_t)bg::get<0>(p2) - (int64_t)bg::get<0>(p1);
+        int64_t dyp = (int64_t)bg::get<1>(p2) - (int64_t)bg::get<1>(p1);
+        int64_t dxs = (int64_t)bg::get<1, 0>(s) - (int64_t)bg::get<0, 0>(s);
+        int64_t dys = (int64_t)bg::get<1, 1>(s) - (int64_t)bg::get<0, 1>(s);
+        int sign_a = (dxp ^ dxs) >= 0 ? 1 : -1;
+        int sign_b = (dyp ^ dys) >= 0 ? 1 : -1;
+        uint64_t abs_a = (uint64_t)(dxp >= 0 ? dxp : -dxp) * (uint64_t)(dxs >= 0 ? dxs : -dxs);
+        uint64_t abs_b = (uint64_t)(dyp >= 0 ? dyp : -dyp) * (uint64_t)(dys >= 0 ? dys : -dys);
+        if (sign_a == sign_b) return sign_a > 0;
+        return sign_a > 0 ? abs_a > abs_b : abs_a < abs_b;
     }
     segment s;
 };
 
-inline bool less_by_direction(point source, point target1, point target2) {
-    auto get_direction = [](point v1, point v2) {
-        int64_t dx = bg::get<0>(v2) - bg::get<0>(v1);
-        int64_t dy = bg::get<1>(v2) - bg::get<1>(v1);
-        enum class quadrant { _1, _2, _3, _4, zero };
-        if (dx > 0 && dy >= 0) return std::pair{quadrant::_1, (long double)dy / dx};
-        if (dx <= 0 && dy > 0) return std::pair{quadrant::_2, -(long double)dx / dy};
-        if (dx < 0 && dy <= 0) return std::pair{quadrant::_3, (long double)dy / dx};
-        if (dx >= 0 && dy < 0) return std::pair{quadrant::_4, -(long double)dx / dy};
-        return std::pair{quadrant::zero, 0.0L};
-    };
-    return get_direction(source, target1) < get_direction(source, target2);
+// Returns true if a*b > c*d (all non-negative). Safe: uint64 products fit.
+inline bool product_gt(uint64_t a, uint64_t b, uint64_t c, uint64_t d) {
+    return a * b > c * d;
 }
 
-inline int64_t cross(int64_t x1, int64_t y1, int64_t x2, int64_t y2) {
-    return x1 * y2 - y1 * x2;
+inline bool less_by_direction(point source, point target1, point target2) {
+    int64_t dx1 = (int64_t)bg::get<0>(target1) - (int64_t)bg::get<0>(source);
+    int64_t dy1 = (int64_t)bg::get<1>(target1) - (int64_t)bg::get<1>(source);
+    int64_t dx2 = (int64_t)bg::get<0>(target2) - (int64_t)bg::get<0>(source);
+    int64_t dy2 = (int64_t)bg::get<1>(target2) - (int64_t)bg::get<1>(source);
+
+    // Quadrant CCW order: Q1(0) < Q2(1) < Q3(2) < Q4(3)
+    auto quadrant = [](int64_t dx, int64_t dy) {
+        if (dx > 0 && dy >= 0) return 0;   // +x..+y
+        if (dx <= 0 && dy > 0) return 1;   // +y..-x
+        if (dx < 0 && dy <= 0) return 2;   // -x..-y
+        return 3;                            // -y..+x (dx >= 0 && dy < 0)
+    };
+    int q1 = quadrant(dx1, dy1), q2 = quadrant(dx2, dy2);
+    if (q1 != q2) return q1 < q2;
+
+    // Same quadrant: cross(dx1,dy1, dx2,dy2) > 0 means v1 is CCW-before v2
+    // Use absolute values for overflow-safe uint64 product comparison
+    uint64_t ux1 = dx1 >= 0 ? (uint64_t)dx1 : (uint64_t)(-dx1);
+    uint64_t uy1 = dy1 >= 0 ? (uint64_t)dy1 : (uint64_t)(-dy1);
+    uint64_t ux2 = dx2 >= 0 ? (uint64_t)dx2 : (uint64_t)(-dx2);
+    uint64_t uy2 = dy2 >= 0 ? (uint64_t)dy2 : (uint64_t)(-dy2);
+    bool cross_positive = (q1 % 2 == 0) ? product_gt(ux1, uy2, uy1, ux2)
+                                        : product_gt(uy1, ux2, ux1, uy2);
+    return cross_positive;
+}
+
+// floor division for n/d where d > 0 (rounds toward -∞, unlike C truncation)
+inline int64_t floor_div(int64_t n, int64_t d) {
+    int64_t q = n / d;
+    int64_t r = n % d;
+    if (r < 0) q--;
+    return q;
+}
+
+// Signed cross product using uint64_t for magnitude + separate sign.
+// |dx*dy| ≤ (2^32-1)^2 < 2^64, so each product fits in uint64_t.
+// The cross product itself may need 65 bits signed — we use int128_t only here.
+inline int128_t cross_i128(int64_t dx1, int64_t dy1, int64_t dx2, int64_t dy2) {
+    return (int128_t)dx1 * dy2 - (int128_t)dy1 * dx2;
+}
+
+// Compare dx1*dy2 == dy1*dx2 using uint64_t
+inline bool cross_eq(int64_t dx1, int64_t dy1, int64_t dx2, int64_t dy2) {
+    if ((dx1 >= 0) != (dy2 >= 0)) return false; // different sign → not equal
+    if ((dy1 >= 0) != (dx2 >= 0)) return false;
+    uint64_t a = (uint64_t)(dx1 >= 0 ? dx1 : -dx1) * (uint64_t)(dy2 >= 0 ? dy2 : -dy2);
+    uint64_t b = (uint64_t)(dy1 >= 0 ? dy1 : -dy1) * (uint64_t)(dx2 >= 0 ? dx2 : -dx2);
+    return a == b;
 }
 
 inline std::optional<point> get_intersection(segment s1, segment s2) {
@@ -125,35 +177,82 @@ inline std::optional<point> get_intersection(segment s1, segment s2) {
     int64_t x4 = bg::get<1, 0>(s2), y4 = bg::get<1, 1>(s2);
     int64_t dx1 = x2 - x1, dy1 = y2 - y1;
     int64_t dx2 = x4 - x3, dy2 = y4 - y3;
-    int64_t d = cross(dx1, dy1, dx2, dy2);
-    if (d == 0) return {};
-    int64_t t1_num = cross(x3 - x1, y3 - y1, dx2, dy2);
-    int64_t t2_num = cross(x3 - x1, y3 - y1, dx1, dy1);
+
+    // d == 0 (parallel) check using uint64_t
+    if (cross_eq(dx1, dy1, dx2, dy2)) return {};
+
+    // Compute cross products — only place needing int128_t.
+    // |d| ≤ 2^64 fits in uint64_t magnitude, but we need signed values
+    // and t1_num * dx1 can reach 2^96 for the snap rounding below.
+    int128_t d = cross_i128(dx1, dy1, dx2, dy2);
+    int128_t t1_num = cross_i128(x3 - x1, y3 - y1, dx2, dy2);
+    int128_t t2_num = cross_i128(x3 - x1, y3 - y1, dx1, dy1);
     if (d < 0) { d = -d; t1_num = -t1_num; t2_num = -t2_num; }
     if (t1_num <= 0 || t1_num >= d || t2_num <= 0 || t2_num >= d) return {};
-    long double fx = (long double)x1 + (long double)t1_num * dx1 / d;
-    long double fy = (long double)y1 + (long double)t1_num * dy1 / d;
-    return point{static_cast<int>(std::ceil(fx - 0.5L)),
-                 static_cast<int>(std::ceil(fy - 0.5L))};
+
+    // Snap to nearest integer grid point: round(x1 + t1_num * dx1 / d)
+    // round-half-toward-negative-infinity: floor((2*num_dx + den - 1) / (2*den))
+    auto snap = [&](int64_t x, int64_t dx, int128_t num, int128_t den) -> uint32_t {
+        int128_t num_dx = num * dx;
+        int128_t n = 2 * num_dx + den - 1;
+        int128_t dd = 2 * den;
+        int64_t q = (int64_t)(n >= 0 ? n / dd : (n - dd + 1) / dd);
+        return (uint32_t)(x + q);
+    };
+    return point{snap(x1, dx1, t1_num, d), snap(y1, dy1, t1_num, d)};
 }
 
 inline bool is_point_on_segment(point p, segment s) {
     int64_t x = bg::get<0>(p), y = bg::get<1>(p);
     int64_t x1 = bg::get<0, 0>(s), y1 = bg::get<0, 1>(s);
     int64_t x2 = bg::get<1, 0>(s), y2 = bg::get<1, 1>(s);
-    if ((x2 - x1) * (x - x1) + (y2 - y1) * (y - y1) < 0) return false;
-    if ((x2 - x1) * (x2 - x) + (y2 - y1) * (y2 - y) < 0) return false;
-    int64_t dx = x2 - x1, dy = y2 - y1;
-    if ((2 * x + 1 - x1 - x2) * dy > (2 * y + 1 - y1 - y2) * dx &&
-        (2 * x + 1 - x1 - x2) * dy >= (2 * y - 1 - y1 - y2) * dx &&
-        (2 * x - 1 - x1 - x2) * dy >= (2 * y + 1 - y1 - y2) * dx &&
-        (2 * x - 1 - x1 - x2) * dy >= (2 * y - 1 - y1 - y2) * dx)
-        return false;
-    if ((2 * x + 1 - x1 - x2) * dy < (2 * y + 1 - y1 - y2) * dx &&
-        (2 * x + 1 - x1 - x2) * dy <= (2 * y - 1 - y1 - y2) * dx &&
-        (2 * x - 1 - x1 - x2) * dy <= (2 * y + 1 - y1 - y2) * dx &&
-        (2 * x - 1 - x1 - x2) * dy <= (2 * y - 1 - y1 - y2) * dx)
-        return false;
+    int64_t dxs = x2 - x1, dys = y2 - y1;
+    // Check p projects within the segment (dot product bounds check)
+    {
+        int64_t dxp = x - x1, dyp = y - y1;
+        int sign_a = (dxp ^ dxs) >= 0 ? 1 : -1;
+        int sign_b = (dyp ^ dys) >= 0 ? 1 : -1;
+        uint64_t abs_a = (uint64_t)(dxp >= 0 ? dxp : -dxp) * (uint64_t)(dxs >= 0 ? dxs : -dxs);
+        uint64_t abs_b = (uint64_t)(dyp >= 0 ? dyp : -dyp) * (uint64_t)(dys >= 0 ? dys : -dys);
+        // dot = dxp*dxs + dyp*dys < 0
+        bool dot_lt_0;
+        if (sign_a == sign_b) dot_lt_0 = sign_a < 0 && (abs_a > 0 || abs_b > 0);
+        else dot_lt_0 = sign_a > 0 ? abs_b > abs_a : abs_a > abs_b;
+        if (dot_lt_0) return false;
+    }
+    {
+        int64_t dxp = x2 - x, dyp = y2 - y;
+        int sign_a = (dxp ^ dxs) >= 0 ? 1 : -1;
+        int sign_b = (dyp ^ dys) >= 0 ? 1 : -1;
+        uint64_t abs_a = (uint64_t)(dxp >= 0 ? dxp : -dxp) * (uint64_t)(dxs >= 0 ? dxs : -dxs);
+        uint64_t abs_b = (uint64_t)(dyp >= 0 ? dyp : -dyp) * (uint64_t)(dys >= 0 ? dys : -dys);
+        bool dot_lt_0;
+        if (sign_a == sign_b) dot_lt_0 = sign_a < 0 && (abs_a > 0 || abs_b > 0);
+        else dot_lt_0 = sign_a > 0 ? abs_b > abs_a : abs_a > abs_b;
+        if (dot_lt_0) return false;
+    }
+    // Hot pixel exclusion: check if pixel center is outside the half-pixel band around the segment.
+    int64_t A = 2 * x + 1 - x1 - x2, B = 2 * x - 1 - x1 - x2;
+    int64_t C = 2 * y + 1 - y1 - y2, D = 2 * y - 1 - y1 - y2;
+    auto cmp_gt = [](int64_t a, int64_t b, int64_t c, int64_t d) {
+        int sign_a = (a ^ b) >= 0 ? 1 : -1;
+        int sign_b = (c ^ d) >= 0 ? 1 : -1;
+        if (sign_a != sign_b) return sign_a > sign_b;
+        uint64_t abs_a = (uint64_t)(a >= 0 ? a : -a) * (uint64_t)(b >= 0 ? b : -b);
+        uint64_t abs_b = (uint64_t)(c >= 0 ? c : -c) * (uint64_t)(d >= 0 ? d : -d);
+        return sign_a > 0 ? abs_a > abs_b : abs_a < abs_b;
+    };
+    auto cmp_ge = [&](int64_t a, int64_t b, int64_t c, int64_t d) {
+        return !cmp_gt(c, d, a, b);
+    };
+    auto cmp_lt = [&](int64_t a, int64_t b, int64_t c, int64_t d) {
+        return cmp_gt(c, d, a, b);
+    };
+    auto cmp_le = [&](int64_t a, int64_t b, int64_t c, int64_t d) {
+        return !cmp_gt(a, b, c, d);
+    };
+    if (cmp_gt(A, dys, C, dxs) && cmp_ge(A, dys, D, dxs) && cmp_ge(B, dys, C, dxs) && cmp_ge(B, dys, D, dxs)) return false;
+    if (cmp_lt(A, dys, C, dxs) && cmp_le(A, dys, D, dxs) && cmp_le(B, dys, C, dxs) && cmp_le(B, dys, D, dxs)) return false;
     return true;
 }
 
@@ -229,9 +328,9 @@ inline std::tuple<std::vector<edge_t>, std::vector<point>> construct_graph(auto 
 
     std::vector<std::pair<std::size_t, std::size_t>> segment_pixel_pairs;
     for (std::size_t i = 0; i < hot_pixels.size(); i++) {
-        constexpr auto expand = 1;
-        auto min_corner = point{bg::get<0>(hot_pixels[i]) - expand, bg::get<1>(hot_pixels[i]) - expand};
-        auto max_corner = point{bg::get<0>(hot_pixels[i]) + expand, bg::get<1>(hot_pixels[i]) + expand};
+        uint32_t x = bg::get<0>(hot_pixels[i]), y = bg::get<1>(hot_pixels[i]);
+        auto min_corner = point{x > 0 ? x - 1 : 0, y > 0 ? y - 1 : 0};
+        auto max_corner = point{x < UINT32_MAX ? x + 1 : UINT32_MAX, y < UINT32_MAX ? y + 1 : UINT32_MAX};
         std::for_each(
             segments_box_rtree.qbegin(bg::index::intersects(box{min_corner, max_corner})), segments_box_rtree.qend(),
             [&](auto const& val) {
@@ -447,20 +546,16 @@ inline std::vector<std::pair<std::size_t, std::size_t>> cast_ray_minus_x(
     if (range_begin == range_end) return {};
 
     // Step 1: Find the half-chain at v whose right face contains the -x ray direction.
-    // The -x ray lies in the sector between prev and cur in CCW order.
-    // The sector = right(cur), so cur is the half-chain we want.
-    // cur is the first half-chain whose direction is strictly greater than -x in CCW order.
-    // If no half-chain direction is greater than -x, the ray wraps around,
-    // so cur = the first half-chain (wrapping).
     point vertex_point = hot_pixels[v];
-    point ray_point{bg::get<0>(vertex_point) - 1, bg::get<1>(vertex_point)};
+    uint32_t vx = bg::get<0>(vertex_point);
+    uint32_t vy = bg::get<1>(vertex_point);
+    point ray_point{vx > 0 ? vx - 1 : 0, vy};
     half_chain vertex_half_chain;
     bool found = false;
     for (auto it = range_begin; it < range_end; it++) {
         auto h = sorted_half_chains[it];
         auto half_chain_point = hot_pixels[h.next_along_source(chains)];
         if (less_by_direction(vertex_point, ray_point, half_chain_point)) {
-            // ray_dir < half_chain_dir (CCW) — first departure after the ray
             vertex_half_chain = h;
             found = true;
             break;
@@ -469,11 +564,8 @@ inline std::vector<std::pair<std::size_t, std::size_t>> cast_ray_minus_x(
     if (!found) vertex_half_chain = sorted_half_chains[range_begin];
 
     // Step 2: Cast ray in -x direction, find the nearest intersected half-chain.
-    // Simulation of simplicity: the ray is at y + ε (infinitesimal +dy).
-    // This ensures the ray doesn't pass through vertices, so only one half-chain
-    // can be hit at any intersection point.
-    int64_t ray_y = bg::get<1>(vertex_point);
-    int min_x = bg::get<0>(vertex_point);
+    int64_t ray_y = vy;
+    int64_t min_x = vx;
     int64_t best_x = std::numeric_limits<int64_t>::min();
     std::size_t hit_id = ~0ULL;
     int64_t hit_dy = 0;
@@ -486,25 +578,28 @@ inline std::vector<std::pair<std::size_t, std::size_t>> cast_ray_minus_x(
         if (ix > best_x) {
             better = true;
         } else if (ix == best_x) {
-            // Compare dx/dy ratio. Edge with larger dx/dy is hit first by
-            // the perturbed ray (ix shifts by ε·dx/dy).
-            long double slope_a = (long double)dx / dy;
-            long double slope_b = (long double)best_dx / hit_dy;
-            if (slope_a > slope_b) {
+            // Compare dx/dy vs best_dx/hit_dy using uint64_t products.
+            // Each product |dx * hit_dy| ≤ 2^64, fits in uint64_t.
+            int sign_a = (dx ^ hit_dy) >= 0 ? 1 : -1;
+            int sign_b = (best_dx ^ dy) >= 0 ? 1 : -1;
+            bool same_sign = sign_a == sign_b;
+            uint64_t abs_a = (uint64_t)(dx >= 0 ? dx : -dx) * (uint64_t)(hit_dy >= 0 ? hit_dy : -hit_dy);
+            uint64_t abs_b = (uint64_t)(best_dx >= 0 ? best_dx : -best_dx) * (uint64_t)(dy >= 0 ? dy : -dy);
+            bool slope_gt;
+            if (!same_sign) slope_gt = sign_a > sign_b;
+            else if (sign_a > 0) slope_gt = abs_a > abs_b;
+            else slope_gt = abs_a < abs_b;
+            if (slope_gt) {
                 better = true;
-            } else if (slope_a == slope_b) {
-                // Equal slopes: use higher-order SoS.
-                // Compare parametric position along edge: (ray_y - y_low) / |dy|.
-                // Edge hit closer to its bottom endpoint wins.
-                int64_t da = ray_y - y_low;         // ≥ 0 since y_low ≤ ray_y
-                int64_t db = ray_y - hit_y_low;
-                int64_t abs_dy = dy > 0 ? dy : -dy;
-                int64_t abs_hdy = hit_dy > 0 ? hit_dy : -hit_dy;
+            } else if (same_sign && abs_a == abs_b) {
+                // Equal slopes: compare parametric position along edge.
+                uint64_t da = ray_y - y_low;
+                uint64_t db = ray_y - hit_y_low;
+                uint64_t abs_dy = dy > 0 ? (uint64_t)dy : (uint64_t)(-dy);
+                uint64_t abs_hdy = hit_dy > 0 ? (uint64_t)hit_dy : (uint64_t)(-hit_dy);
                 if (da * abs_hdy < db * abs_dy) {
                     better = true;
                 } else if (da * abs_hdy == db * abs_dy && abs_dy > abs_hdy) {
-                    // Both hit at same parametric position (e.g. both start at ray_y).
-                    // Steeper edge wins (smaller ε/dy for the perturbed ray).
                     better = true;
                 }
             }
@@ -513,6 +608,11 @@ inline std::vector<std::pair<std::size_t, std::size_t>> cast_ray_minus_x(
             best_x = ix; best_dx = dx; hit_dy = dy; hit_id = half_chain_id;
             hit_y_low = y_low;
         }
+    };
+
+    // Compute intersection x-coordinate: trunc_toward_zero(x1 + (ray_y - y1) * dx / dy)
+    auto intersect_x = [&](int64_t x1, int64_t y1, int64_t dx, int64_t dy) -> int64_t {
+        return (int64_t)(((int128_t)x1 * dy + (int128_t)(ray_y - y1) * dx) / dy);
     };
 
     for (auto h : sorted_half_chains) {
@@ -525,36 +625,28 @@ inline std::vector<std::pair<std::size_t, std::size_t>> cast_ray_minus_x(
             for (std::size_t k = chain_begin_idx; k + 1 < chain_end_idx; k++) {
                 int64_t y1 = bg::get<1>(hot_pixels[idx[k]]);
                 int64_t y2 = bg::get<1>(hot_pixels[idx[k + 1]]);
+                int64_t dx = (int64_t)bg::get<0>(hot_pixels[idx[k + 1]]) - (int64_t)bg::get<0>(hot_pixels[idx[k]]);
+                int64_t dy = y2 - y1;
                 if (y1 <= ray_y && ray_y < y2) {
-                    int64_t x1 = bg::get<0>(hot_pixels[idx[k]]);
-                    int64_t x2 = bg::get<0>(hot_pixels[idx[k + 1]]);
-                    long double t = (long double)(ray_y - y1) / (y2 - y1);
-                    int64_t ix = (int64_t)(x1 + t * (x2 - x1));
-                    try_edge(ix, x2 - x1, y2 - y1, y1, h.id);
+                    int64_t ix = intersect_x(bg::get<0>(hot_pixels[idx[k]]), y1, dx, dy);
+                    try_edge(ix, dx, dy, y1, h.id);
                 } else if (y2 <= ray_y && ray_y < y1) {
-                    int64_t x1 = bg::get<0>(hot_pixels[idx[k]]);
-                    int64_t x2 = bg::get<0>(hot_pixels[idx[k + 1]]);
-                    long double t = (long double)(ray_y - y1) / (y2 - y1);
-                    int64_t ix = (int64_t)(x1 + t * (x2 - x1));
-                    try_edge(ix, x2 - x1, y2 - y1, y2, h.id);
+                    int64_t ix = intersect_x(bg::get<0>(hot_pixels[idx[k]]), y1, dx, dy);
+                    try_edge(ix, dx, dy, y2, h.id);
                 }
             }
         } else {
             for (std::size_t k = chain_end_idx - 1; k > chain_begin_idx; k--) {
                 int64_t y1 = bg::get<1>(hot_pixels[idx[k]]);
                 int64_t y2 = bg::get<1>(hot_pixels[idx[k - 1]]);
+                int64_t dx = (int64_t)bg::get<0>(hot_pixels[idx[k - 1]]) - (int64_t)bg::get<0>(hot_pixels[idx[k]]);
+                int64_t dy = y2 - y1;
                 if (y1 <= ray_y && ray_y < y2) {
-                    int64_t x1 = bg::get<0>(hot_pixels[idx[k]]);
-                    int64_t x2 = bg::get<0>(hot_pixels[idx[k - 1]]);
-                    long double t = (long double)(ray_y - y1) / (y2 - y1);
-                    int64_t ix = (int64_t)(x1 + t * (x2 - x1));
-                    try_edge(ix, x2 - x1, y2 - y1, y1, h.id);
+                    int64_t ix = intersect_x(bg::get<0>(hot_pixels[idx[k]]), y1, dx, dy);
+                    try_edge(ix, dx, dy, y1, h.id);
                 } else if (y2 <= ray_y && ray_y < y1) {
-                    int64_t x1 = bg::get<0>(hot_pixels[idx[k]]);
-                    int64_t x2 = bg::get<0>(hot_pixels[idx[k - 1]]);
-                    long double t = (long double)(ray_y - y1) / (y2 - y1);
-                    int64_t ix = (int64_t)(x1 + t * (x2 - x1));
-                    try_edge(ix, x2 - x1, y2 - y1, y2, h.id);
+                    int64_t ix = intersect_x(bg::get<0>(hot_pixels[idx[k]]), y1, dx, dy);
+                    try_edge(ix, dx, dy, y2, h.id);
                 }
             }
         }
@@ -609,10 +701,10 @@ inline auto find_exterior(const chain_build_result& chains,
 
     for (auto& vertex_component : vertex_components) {
         std::size_t leftmost_vertex = ~0ULL;
-        int min_x = std::numeric_limits<int>::max();
+        uint32_t min_x = std::numeric_limits<uint32_t>::max();
         for (auto vertex : vertex_component) {
             if (half_chain_begin[vertex] == half_chain_end[vertex]) continue;
-            int x = bg::get<0>(hot_pixels[vertex]);
+            uint32_t x = bg::get<0>(hot_pixels[vertex]);
             if (x < min_x) { min_x = x; leftmost_vertex = vertex; }
         }
         if (leftmost_vertex == ~0ULL) continue;
@@ -784,10 +876,10 @@ inline multi_polygon build_output(const chain_build_result& chains,
 
         std::size_t outer_index = 0;
         {
-            int min_x = std::numeric_limits<int>::max();
+            uint32_t min_x = std::numeric_limits<uint32_t>::max();
             for (std::size_t ring_index = 0; ring_index < rings.size(); ring_index++) {
                 for (const auto& point_value : rings[ring_index]) {
-                    int x = bg::get<0>(point_value);
+                    uint32_t x = bg::get<0>(point_value);
                     if (x < min_x) { min_x = x; outer_index = ring_index; }
                 }
             }

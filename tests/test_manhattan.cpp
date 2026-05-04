@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "basic.hpp"
+#include "uint32_adaptor.hpp"
 
 // All polygons below are OGC valid: no self-intersections, no overlapping
 // components, correct ring orientation. All edges are axis-aligned with integer
@@ -11,41 +11,41 @@
 // multi_polygon components). For valid input, Boost produces correct results.
 
 // Use Boost.Geometry's union_ and intersection as ground truth.
-multi_polygon bg_self_union(const multi_polygon& p) {
+multi_polygon_s32 bg_self_union(const multi_polygon_s32& p) {
     if (p.empty()) return p;
-    multi_polygon out;
+    multi_polygon_s32 out;
     out.push_back(p[0]);
     for (size_t i = 1; i < p.size(); i++) {
-        multi_polygon tmp;
-        bg::union_(out, multi_polygon{p[i]}, tmp);
+        multi_polygon_s32 tmp;
+        bg::union_(out, multi_polygon_s32{p[i]}, tmp);
         out = std::move(tmp);
     }
     bg::correct(out);
     return out;
 }
 
-multi_polygon bg_union(const multi_polygon& a, const multi_polygon& b) {
+multi_polygon_s32 bg_union(const multi_polygon_s32& a, const multi_polygon_s32& b) {
     auto au = bg_self_union(a);
     auto bu = bg_self_union(b);
-    multi_polygon out;
+    multi_polygon_s32 out;
     bg::union_(au, bu, out);
     bg::correct(out);
     return out;
 }
 
-multi_polygon bg_intersection(const multi_polygon& a, const multi_polygon& b) {
+multi_polygon_s32 bg_intersection(const multi_polygon_s32& a, const multi_polygon_s32& b) {
     auto au = bg_self_union(a);
     auto bu = bg_self_union(b);
-    multi_polygon out;
+    multi_polygon_s32 out;
     bg::intersection(au, bu, out);
     bg::correct(out);
     return out;
 }
 
-multi_polygon bg_xor(const multi_polygon& a, const multi_polygon& b) {
+multi_polygon_s32 bg_xor(const multi_polygon_s32& a, const multi_polygon_s32& b) {
     auto au = bg_self_union(a);
     auto bu = bg_self_union(b);
-    multi_polygon un, inter, out;
+    multi_polygon_s32 un, inter, out;
     bg::union_(au, bu, un);
     bg::intersection(au, bu, inter);
     bg::difference(un, inter, out);
@@ -53,39 +53,39 @@ multi_polygon bg_xor(const multi_polygon& a, const multi_polygon& b) {
     return out;
 }
 
-multi_polygon bg_difference(const multi_polygon& a, const multi_polygon& b) {
+multi_polygon_s32 bg_difference(const multi_polygon_s32& a, const multi_polygon_s32& b) {
     auto au = bg_self_union(a);
     auto bu = bg_self_union(b);
-    multi_polygon out;
+    multi_polygon_s32 out;
     bg::difference(au, bu, out);
     bg::correct(out);
     return out;
 }
 
 // Helper: create a rectangle ring. CCW order.
-ring make_rect(int x1, int y1, int x2, int y2) {
-    ring r;
-    r.push_back(point{x1, y1});
-    r.push_back(point{x1, y2});
-    r.push_back(point{x2, y2});
-    r.push_back(point{x2, y1});
-    r.push_back(point{x1, y1}); // close
+ring_s32 make_rect(int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
+    ring_s32 r;
+    r.push_back(point_s32{x1, y1});
+    r.push_back(point_s32{x1, y2});
+    r.push_back(point_s32{x2, y2});
+    r.push_back(point_s32{x2, y1});
+    r.push_back(point_s32{x1, y1}); // close
     return r;
 }
 
 // Helper: create a CW ring (hole)
-ring make_hole(int x1, int y1, int x2, int y2) {
-    ring r;
-    r.push_back(point{x1, y1});
-    r.push_back(point{x2, y1});
-    r.push_back(point{x2, y2});
-    r.push_back(point{x1, y2});
-    r.push_back(point{x1, y1}); // close
+ring_s32 make_hole(int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
+    ring_s32 r;
+    r.push_back(point_s32{x1, y1});
+    r.push_back(point_s32{x2, y1});
+    r.push_back(point_s32{x2, y2});
+    r.push_back(point_s32{x1, y2});
+    r.push_back(point_s32{x1, y1}); // close
     return r;
 }
 
-polygon make_rect_poly(int x1, int y1, int x2, int y2) {
-    polygon p;
+polygon_s32 make_rect_poly(int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
+    polygon_s32 p;
     p.outer() = make_rect(x1, y1, x2, y2);
     return p;
 }
@@ -95,8 +95,8 @@ polygon make_rect_poly(int x1, int y1, int x2, int y2) {
 // ============================================================================
 
 TEST(ManhattanUnion, TwoSeparateRects) {
-    multi_polygon a; a.push_back(make_rect_poly(0, 0, 2, 2));
-    multi_polygon b; b.push_back(make_rect_poly(5, 5, 7, 7));
+    multi_polygon_s32 a; a.push_back(make_rect_poly(0, 0, 2, 2));
+    multi_polygon_s32 b; b.push_back(make_rect_poly(5, 5, 7, 7));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
@@ -109,8 +109,8 @@ TEST(ManhattanUnion, TwoSeparateRects) {
 }
 
 TEST(ManhattanUnion, OverlappingRects) {
-    multi_polygon a; a.push_back(make_rect_poly(0, 0, 3, 3));
-    multi_polygon b; b.push_back(make_rect_poly(2, 2, 5, 5));
+    multi_polygon_s32 a; a.push_back(make_rect_poly(0, 0, 3, 3));
+    multi_polygon_s32 b; b.push_back(make_rect_poly(2, 2, 5, 5));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
@@ -124,8 +124,8 @@ TEST(ManhattanUnion, OverlappingRects) {
 
 TEST(ManhattanUnion, AdjacentRects) {
     // Sharing an edge
-    multi_polygon a; a.push_back(make_rect_poly(0, 0, 2, 2));
-    multi_polygon b; b.push_back(make_rect_poly(2, 0, 4, 2));
+    multi_polygon_s32 a; a.push_back(make_rect_poly(0, 0, 2, 2));
+    multi_polygon_s32 b; b.push_back(make_rect_poly(2, 0, 4, 2));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
@@ -140,8 +140,8 @@ TEST(ManhattanUnion, AdjacentRects) {
 
 TEST(ManhattanUnion, CornerTouching) {
     // Sharing a corner only
-    multi_polygon a; a.push_back(make_rect_poly(0, 0, 2, 2));
-    multi_polygon b; b.push_back(make_rect_poly(2, 2, 4, 4));
+    multi_polygon_s32 a; a.push_back(make_rect_poly(0, 0, 2, 2));
+    multi_polygon_s32 b; b.push_back(make_rect_poly(2, 2, 4, 4));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
@@ -154,8 +154,8 @@ TEST(ManhattanUnion, CornerTouching) {
 }
 
 TEST(ManhattanUnion, OneContainsOther) {
-    multi_polygon a; a.push_back(make_rect_poly(0, 0, 10, 10));
-    multi_polygon b; b.push_back(make_rect_poly(2, 2, 5, 5));
+    multi_polygon_s32 a; a.push_back(make_rect_poly(0, 0, 10, 10));
+    multi_polygon_s32 b; b.push_back(make_rect_poly(2, 2, 5, 5));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
@@ -170,10 +170,10 @@ TEST(ManhattanUnion, OneContainsOther) {
 
 TEST(ManhattanUnion, RectWithHole) {
     // Outer rect has a hole; union with a rect that overlaps the hole
-    polygon p1; p1.outer() = make_rect(0, 0, 6, 6);
+    polygon_s32 p1; p1.outer() = make_rect(0, 0, 6, 6);
     p1.inners().push_back(make_hole(2, 2, 4, 4));
-    multi_polygon a; a.push_back(p1);
-    multi_polygon b; b.push_back(make_rect_poly(3, 3, 8, 8));
+    multi_polygon_s32 a; a.push_back(p1);
+    multi_polygon_s32 b; b.push_back(make_rect_poly(3, 3, 8, 8));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
@@ -187,10 +187,10 @@ TEST(ManhattanUnion, RectWithHole) {
 
 TEST(ManhattanUnion, RectPartiallyFillsHole) {
     // Outer rect with hole; union with rect that partially covers the hole
-    polygon p1; p1.outer() = make_rect(0, 0, 8, 8);
+    polygon_s32 p1; p1.outer() = make_rect(0, 0, 8, 8);
     p1.inners().push_back(make_hole(2, 2, 6, 6));
-    multi_polygon a; a.push_back(p1);
-    multi_polygon b; b.push_back(make_rect_poly(4, 4, 7, 7));
+    multi_polygon_s32 a; a.push_back(p1);
+    multi_polygon_s32 b; b.push_back(make_rect_poly(4, 4, 7, 7));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
@@ -204,11 +204,11 @@ TEST(ManhattanUnion, RectPartiallyFillsHole) {
 
 TEST(ManhattanUnion, TwoHolesOneFilled) {
     // Outer rect with 2 holes; union with rect that fills one hole
-    polygon p1; p1.outer() = make_rect(0, 0, 10, 10);
+    polygon_s32 p1; p1.outer() = make_rect(0, 0, 10, 10);
     p1.inners().push_back(make_hole(1, 1, 4, 4));
     p1.inners().push_back(make_hole(6, 1, 9, 4));
-    multi_polygon a; a.push_back(p1);
-    multi_polygon b; b.push_back(make_rect_poly(2, 2, 8, 3));
+    multi_polygon_s32 a; a.push_back(p1);
+    multi_polygon_s32 b; b.push_back(make_rect_poly(2, 2, 8, 3));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
@@ -222,10 +222,10 @@ TEST(ManhattanUnion, TwoHolesOneFilled) {
 
 TEST(ManhattanUnion, NestedMultiPolygon) {
     // Two separate polygons in first, one overlapping rect in second
-    multi_polygon a;
+    multi_polygon_s32 a;
     a.push_back(make_rect_poly(0, 0, 3, 3));
     a.push_back(make_rect_poly(5, 0, 8, 3));
-    multi_polygon b;
+    multi_polygon_s32 b;
     b.push_back(make_rect_poly(1, 1, 7, 2));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
@@ -241,11 +241,11 @@ TEST(ManhattanUnion, NestedMultiPolygon) {
 
 TEST(ManhattanUnion, GridPattern) {
     // 3x3 grid of squares with a diagonal cross
-    multi_polygon a;
+    multi_polygon_s32 a;
     for (int i = 0; i < 3; i++)
         for (int j = 0; j < 3; j++)
             a.push_back(make_rect_poly(i * 10, j * 10, i * 10 + 4, j * 10 + 4));
-    multi_polygon b;
+    multi_polygon_s32 b;
     b.push_back(make_rect_poly(2, 2, 22, 22));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
@@ -259,14 +259,14 @@ TEST(ManhattanUnion, GridPattern) {
 }
 
 TEST(ManhattanUnion, LShaped) {
-    multi_polygon a;
+    multi_polygon_s32 a;
     {
-        polygon p; p.outer() = make_rect(0, 0, 5, 2);
-        polygon q; q.outer() = make_rect(0, 2, 2, 5);
+        polygon_s32 p; p.outer() = make_rect(0, 0, 5, 2);
+        polygon_s32 q; q.outer() = make_rect(0, 2, 2, 5);
         a.push_back(p); a.push_back(q);
         a = bg_self_union(a); // make it a valid L-shape
     }
-    multi_polygon b;
+    multi_polygon_s32 b;
     b.push_back(make_rect_poly(3, 0, 6, 3));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
@@ -281,11 +281,11 @@ TEST(ManhattanUnion, LShaped) {
 
 TEST(ManhattanUnion, CrossShape) {
     // A cross shape (like a plus sign)
-    multi_polygon a;
+    multi_polygon_s32 a;
     a.push_back(make_rect_poly(3, 0, 5, 10));
     a.push_back(make_rect_poly(0, 3, 8, 5));
     a = bg_self_union(a);
-    multi_polygon b;
+    multi_polygon_s32 b;
     b.push_back(make_rect_poly(2, 2, 6, 6));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
@@ -300,10 +300,10 @@ TEST(ManhattanUnion, CrossShape) {
 
 TEST(ManhattanUnion, ManyOverlappingSquares) {
     // 5 overlapping squares forming a staircase
-    multi_polygon a;
+    multi_polygon_s32 a;
     for (int i = 0; i < 5; i++)
         a.push_back(make_rect_poly(i * 2, i * 2, i * 2 + 3, i * 2 + 3));
-    multi_polygon b;
+    multi_polygon_s32 b;
     for (int i = 0; i < 5; i++)
         b.push_back(make_rect_poly(i * 2 + 1, i * 2 - 1, i * 2 + 4, i * 2 + 2));
     // a and b each contain internally-overlapping squares — multi_polygon
@@ -324,8 +324,8 @@ TEST(ManhattanUnion, ManyOverlappingSquares) {
 // ============================================================================
 
 TEST(ManhattanIntersection, TwoSeparateRects) {
-    multi_polygon a; a.push_back(make_rect_poly(0, 0, 2, 2));
-    multi_polygon b; b.push_back(make_rect_poly(5, 5, 7, 7));
+    multi_polygon_s32 a; a.push_back(make_rect_poly(0, 0, 2, 2));
+    multi_polygon_s32 b; b.push_back(make_rect_poly(5, 5, 7, 7));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
@@ -339,8 +339,8 @@ TEST(ManhattanIntersection, TwoSeparateRects) {
 }
 
 TEST(ManhattanIntersection, OverlappingRects) {
-    multi_polygon a; a.push_back(make_rect_poly(0, 0, 3, 3));
-    multi_polygon b; b.push_back(make_rect_poly(2, 2, 5, 5));
+    multi_polygon_s32 a; a.push_back(make_rect_poly(0, 0, 3, 3));
+    multi_polygon_s32 b; b.push_back(make_rect_poly(2, 2, 5, 5));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
@@ -354,8 +354,8 @@ TEST(ManhattanIntersection, OverlappingRects) {
 }
 
 TEST(ManhattanIntersection, AdjacentRects) {
-    multi_polygon a; a.push_back(make_rect_poly(0, 0, 2, 2));
-    multi_polygon b; b.push_back(make_rect_poly(2, 0, 4, 2));
+    multi_polygon_s32 a; a.push_back(make_rect_poly(0, 0, 2, 2));
+    multi_polygon_s32 b; b.push_back(make_rect_poly(2, 0, 4, 2));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
@@ -368,8 +368,8 @@ TEST(ManhattanIntersection, AdjacentRects) {
 }
 
 TEST(ManhattanIntersection, CornerTouching) {
-    multi_polygon a; a.push_back(make_rect_poly(0, 0, 2, 2));
-    multi_polygon b; b.push_back(make_rect_poly(2, 2, 4, 4));
+    multi_polygon_s32 a; a.push_back(make_rect_poly(0, 0, 2, 2));
+    multi_polygon_s32 b; b.push_back(make_rect_poly(2, 2, 4, 4));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
@@ -382,8 +382,8 @@ TEST(ManhattanIntersection, CornerTouching) {
 }
 
 TEST(ManhattanIntersection, OneContainsOther) {
-    multi_polygon a; a.push_back(make_rect_poly(0, 0, 10, 10));
-    multi_polygon b; b.push_back(make_rect_poly(2, 2, 5, 5));
+    multi_polygon_s32 a; a.push_back(make_rect_poly(0, 0, 10, 10));
+    multi_polygon_s32 b; b.push_back(make_rect_poly(2, 2, 5, 5));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
@@ -397,10 +397,10 @@ TEST(ManhattanIntersection, OneContainsOther) {
 }
 
 TEST(ManhattanIntersection, RectWithHole) {
-    polygon p1; p1.outer() = make_rect(0, 0, 6, 6);
+    polygon_s32 p1; p1.outer() = make_rect(0, 0, 6, 6);
     p1.inners().push_back(make_hole(2, 2, 4, 4));
-    multi_polygon a; a.push_back(p1);
-    multi_polygon b; b.push_back(make_rect_poly(1, 1, 5, 5));
+    multi_polygon_s32 a; a.push_back(p1);
+    multi_polygon_s32 b; b.push_back(make_rect_poly(1, 1, 5, 5));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
@@ -413,10 +413,10 @@ TEST(ManhattanIntersection, RectWithHole) {
 }
 
 TEST(ManhattanIntersection, MultiPolygonBothSides) {
-    multi_polygon a;
+    multi_polygon_s32 a;
     a.push_back(make_rect_poly(0, 0, 3, 3));
     a.push_back(make_rect_poly(5, 0, 8, 3));
-    multi_polygon b;
+    multi_polygon_s32 b;
     b.push_back(make_rect_poly(1, 1, 7, 2));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
@@ -435,7 +435,7 @@ TEST(ManhattanIntersection, MultiPolygonBothSides) {
 // ============================================================================
 
 TEST(ManhattanSelfOr, TwoOverlappingRects) {
-    multi_polygon a;
+    multi_polygon_s32 a;
     a.push_back(make_rect_poly(0, 0, 3, 3));
     a.push_back(make_rect_poly(2, 2, 5, 5));
     // a has overlapping parts – input itself may not be valid as multi_polygon
@@ -448,7 +448,7 @@ TEST(ManhattanSelfOr, TwoOverlappingRects) {
 }
 
 TEST(ManhattanSelfOr, DisjointRects) {
-    multi_polygon a;
+    multi_polygon_s32 a;
     a.push_back(make_rect_poly(0, 0, 2, 2));
     a.push_back(make_rect_poly(4, 4, 6, 6));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
@@ -461,7 +461,7 @@ TEST(ManhattanSelfOr, DisjointRects) {
 }
 
 TEST(ManhattanSelfOr, NestedRect) {
-    multi_polygon a;
+    multi_polygon_s32 a;
     a.push_back(make_rect_poly(0, 0, 10, 10));
     a.push_back(make_rect_poly(2, 2, 5, 5));
     // overlapping — input invalid as multi_polygon per bg convention
@@ -474,7 +474,7 @@ TEST(ManhattanSelfOr, NestedRect) {
 }
 
 TEST(ManhattanSelfOr, ThreeOverlapping) {
-    multi_polygon a;
+    multi_polygon_s32 a;
     a.push_back(make_rect_poly(0, 0, 3, 3));
     a.push_back(make_rect_poly(2, 1, 5, 4));
     a.push_back(make_rect_poly(1, 2, 4, 6));
@@ -486,7 +486,7 @@ TEST(ManhattanSelfOr, ThreeOverlapping) {
 }
 
 TEST(ManhattanSelfOr, LShapedSelfOr) {
-    multi_polygon a;
+    multi_polygon_s32 a;
     a.push_back(make_rect_poly(0, 0, 5, 2));
     a.push_back(make_rect_poly(0, 2, 2, 5));
     // edge-touching inputs — bg considers overlapping/touching multi_polygon invalid
@@ -505,8 +505,8 @@ TEST(ManhattanSelfOr, LShapedSelfOr) {
 
 TEST(ManhattanEdgeCase, ZeroAreaIntersection) {
     // Intersection is a line segment (zero area)
-    multi_polygon a; a.push_back(make_rect_poly(0, 0, 2, 2));
-    multi_polygon b; b.push_back(make_rect_poly(2, 0, 4, 2));
+    multi_polygon_s32 a; a.push_back(make_rect_poly(0, 0, 2, 2));
+    multi_polygon_s32 b; b.push_back(make_rect_poly(2, 0, 4, 2));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
@@ -520,8 +520,8 @@ TEST(ManhattanEdgeCase, ZeroAreaIntersection) {
 }
 
 TEST(ManhattanEdgeCase, VeryNarrowOverlap) {
-    multi_polygon a; a.push_back(make_rect_poly(0, 0, 10, 10));
-    multi_polygon b; b.push_back(make_rect_poly(9, 0, 11, 10));
+    multi_polygon_s32 a; a.push_back(make_rect_poly(0, 0, 10, 10));
+    multi_polygon_s32 b; b.push_back(make_rect_poly(9, 0, 11, 10));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
@@ -535,10 +535,10 @@ TEST(ManhattanEdgeCase, VeryNarrowOverlap) {
 
 TEST(ManhattanEdgeCase, ExactlyFittingHole) {
     // Union fills the hole exactly
-    polygon p1; p1.outer() = make_rect(0, 0, 10, 10);
+    polygon_s32 p1; p1.outer() = make_rect(0, 0, 10, 10);
     p1.inners().push_back(make_hole(2, 2, 6, 6));
-    multi_polygon a; a.push_back(p1);
-    multi_polygon b; b.push_back(make_rect_poly(2, 2, 6, 6));
+    multi_polygon_s32 a; a.push_back(p1);
+    multi_polygon_s32 b; b.push_back(make_rect_poly(2, 2, 6, 6));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
@@ -554,8 +554,8 @@ TEST(ManhattanEdgeCase, ExactlyFittingHole) {
 
 TEST(ManhattanEdgeCase, LastColumnOverlap) {
     // Two rects that overlap only in the last column of pixels
-    multi_polygon a; a.push_back(make_rect_poly(0, 0, 5, 5));
-    multi_polygon b; b.push_back(make_rect_poly(4, 2, 8, 3));
+    multi_polygon_s32 a; a.push_back(make_rect_poly(0, 0, 5, 5));
+    multi_polygon_s32 b; b.push_back(make_rect_poly(4, 2, 8, 3));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
@@ -568,14 +568,14 @@ TEST(ManhattanEdgeCase, LastColumnOverlap) {
 }
 
 TEST(ManhattanEdgeCase, MultipleHoles) {
-    polygon p; p.outer() = make_rect(0, 0, 10, 10);
+    polygon_s32 p; p.outer() = make_rect(0, 0, 10, 10);
     p.inners().push_back(make_hole(1, 1, 3, 3));
     p.inners().push_back(make_hole(4, 1, 6, 3));
     p.inners().push_back(make_hole(7, 1, 9, 3));
     p.inners().push_back(make_hole(1, 5, 3, 9));
     p.inners().push_back(make_hole(5, 6, 9, 7));
-    multi_polygon a; a.push_back(p);
-    multi_polygon b;
+    multi_polygon_s32 a; a.push_back(p);
+    multi_polygon_s32 b;
     b.push_back(make_rect_poly(2, 2, 8, 8));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
@@ -590,10 +590,10 @@ TEST(ManhattanEdgeCase, MultipleHoles) {
 
 TEST(ManhattanEdgeCase, SharingMultipleEdges) {
     // Two L-shapes sharing a partial boundary
-    multi_polygon a;
+    multi_polygon_s32 a;
     a.push_back(make_rect_poly(0, 0, 4, 2));
     a.push_back(make_rect_poly(0, 2, 2, 4));
-    multi_polygon b;
+    multi_polygon_s32 b;
     b.push_back(make_rect_poly(2, 0, 6, 2));
     b.push_back(make_rect_poly(4, 2, 6, 4));
     // edge-touching inputs — bg considers touching multi_polygon invalid
@@ -613,15 +613,15 @@ TEST(ManhattanEdgeCase, SharingMultipleEdges) {
 // ============================================================================
 
 TEST(ManhattanLarge, RectWith100Holes) {
-    multi_polygon a;
+    multi_polygon_s32 a;
     {
-        polygon p; p.outer() = make_rect(0, 0, 100, 100);
+        polygon_s32 p; p.outer() = make_rect(0, 0, 100, 100);
         for (int i = 0; i < 10; i++)
             for (int j = 0; j < 10; j++)
                 p.inners().push_back(make_hole(2 + i * 10, 2 + j * 10, 8 + i * 10, 8 + j * 10));
         a.push_back(p);
     }
-    multi_polygon b;
+    multi_polygon_s32 b;
     b.push_back(make_rect_poly(1, 1, 52, 99));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
@@ -636,15 +636,15 @@ TEST(ManhattanLarge, RectWith100Holes) {
 
 TEST(ManhattanLarge, RectWith20Holes) {
     // Scaled-down version of RectWith100Holes for debugging
-    multi_polygon a;
+    multi_polygon_s32 a;
     {
-        polygon p; p.outer() = make_rect(0, 0, 100, 100);
+        polygon_s32 p; p.outer() = make_rect(0, 0, 100, 100);
         for (int i = 0; i < 4; i++)
             for (int j = 0; j < 5; j++)
                 p.inners().push_back(make_hole(2 + i * 10, 2 + j * 20, 8 + i * 10, 8 + j * 20));
         a.push_back(p);
     }
-    multi_polygon b;
+    multi_polygon_s32 b;
     b.push_back(make_rect_poly(1, 1, 52, 99));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
@@ -659,14 +659,14 @@ TEST(ManhattanLarge, RectWith20Holes) {
 
 TEST(ManhattanLarge, RectWithCoincidentHole) {
     // Hole left edge at x=52 coincides with B's right edge — the root issue.
-    multi_polygon a;
+    multi_polygon_s32 a;
     {
-        polygon p; p.outer() = make_rect(0, 0, 100, 100);
+        polygon_s32 p; p.outer() = make_rect(0, 0, 100, 100);
         p.inners().push_back(make_hole(52, 2, 58, 8)); // hole column 5, left at x=52
         p.inners().push_back(make_hole(2, 2, 8, 8));   // hole column 0, inside B
         a.push_back(p);
     }
-    multi_polygon b;
+    multi_polygon_s32 b;
     b.push_back(make_rect_poly(1, 1, 52, 99)); // B's right edge at x=52 coincides with hole left
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
@@ -681,15 +681,15 @@ TEST(ManhattanLarge, RectWithCoincidentHole) {
 
 TEST(ManhattanLarge, RectWithTwoCoincidentHoles) {
     // Two holes sharing left boundary with B at x=52
-    multi_polygon a;
+    multi_polygon_s32 a;
     {
-        polygon p; p.outer() = make_rect(0, 0, 100, 100);
+        polygon_s32 p; p.outer() = make_rect(0, 0, 100, 100);
         p.inners().push_back(make_hole(52, 2, 58, 8));   // hole 0, x=52..58, y=2..8
         p.inners().push_back(make_hole(52, 12, 58, 18)); // hole 1, x=52..58, y=12..18
         p.inners().push_back(make_hole(2, 2, 8, 8));     // inside B
         a.push_back(p);
     }
-    multi_polygon b;
+    multi_polygon_s32 b;
     b.push_back(make_rect_poly(1, 1, 52, 99));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
@@ -704,14 +704,14 @@ TEST(ManhattanLarge, RectWithTwoCoincidentHoles) {
 
 TEST(ManhattanLarge, RectWithTenCoincidentHoles) {
     // 10 holes all with left edge at x=52 (coincident with B)
-    multi_polygon a;
+    multi_polygon_s32 a;
     {
-        polygon p; p.outer() = make_rect(0, 0, 100, 100);
+        polygon_s32 p; p.outer() = make_rect(0, 0, 100, 100);
         for (int j = 0; j < 10; j++)
             p.inners().push_back(make_hole(52, 2 + j * 10, 58, 8 + j * 10));
         a.push_back(p);
     }
-    multi_polygon b;
+    multi_polygon_s32 b;
     b.push_back(make_rect_poly(1, 1, 52, 99));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
@@ -726,9 +726,9 @@ TEST(ManhattanLarge, RectWithTenCoincidentHoles) {
 
 TEST(ManhattanLarge, RectWithThreeColumns) {
     // Column 4 (inside B), column 5 (coincident), column 6 (outside B)
-    multi_polygon a;
+    multi_polygon_s32 a;
     {
-        polygon p; p.outer() = make_rect(0, 0, 100, 100);
+        polygon_s32 p; p.outer() = make_rect(0, 0, 100, 100);
         // Column 4: inside B, should be filled
         for (int j = 0; j < 3; j++)
             p.inners().push_back(make_hole(42, 2 + j * 10, 48, 8 + j * 10));
@@ -740,7 +740,7 @@ TEST(ManhattanLarge, RectWithThreeColumns) {
             p.inners().push_back(make_hole(62, 2 + j * 10, 68, 8 + j * 10));
         a.push_back(p);
     }
-    multi_polygon b;
+    multi_polygon_s32 b;
     b.push_back(make_rect_poly(1, 1, 52, 99));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
@@ -755,9 +755,9 @@ TEST(ManhattanLarge, RectWithThreeColumns) {
 
 TEST(ManhattanLarge, RectWithSixColumnsPlusColumn9) {
     // Columns 0-5 + column 9: does adding a far-away column trigger the bug?
-    multi_polygon a;
+    multi_polygon_s32 a;
     {
-        polygon p; p.outer() = make_rect(0, 0, 100, 100);
+        polygon_s32 p; p.outer() = make_rect(0, 0, 100, 100);
         for (int i = 0; i < 6; i++)
             for (int j = 0; j < 10; j++)
                 p.inners().push_back(make_hole(2 + i * 10, 2 + j * 10, 8 + i * 10, 8 + j * 10));
@@ -766,7 +766,7 @@ TEST(ManhattanLarge, RectWithSixColumnsPlusColumn9) {
             p.inners().push_back(make_hole(92, 2 + j * 10, 98, 8 + j * 10));
         a.push_back(p);
     }
-    multi_polygon b;
+    multi_polygon_s32 b;
     b.push_back(make_rect_poly(1, 1, 52, 99));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
@@ -781,15 +781,15 @@ TEST(ManhattanLarge, RectWithSixColumnsPlusColumn9) {
 
 TEST(ManhattanLarge, RectWithSixColumns) {
     // Columns 0-5, 10 rows each = 60 holes. Cols 0-4 inside B, col 5 coincident.
-    multi_polygon a;
+    multi_polygon_s32 a;
     {
-        polygon p; p.outer() = make_rect(0, 0, 100, 100);
+        polygon_s32 p; p.outer() = make_rect(0, 0, 100, 100);
         for (int i = 0; i < 6; i++)
             for (int j = 0; j < 10; j++)
                 p.inners().push_back(make_hole(2 + i * 10, 2 + j * 10, 8 + i * 10, 8 + j * 10));
         a.push_back(p);
     }
-    multi_polygon b;
+    multi_polygon_s32 b;
     b.push_back(make_rect_poly(1, 1, 52, 99));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
@@ -804,9 +804,9 @@ TEST(ManhattanLarge, RectWithSixColumns) {
 
 TEST(ManhattanLarge, RectWithSixColumnsPlusColumn9Intersection) {
     // Intersection: columns 0-5 + column 9 ∩ rect at x=1..52
-    multi_polygon a;
+    multi_polygon_s32 a;
     {
-        polygon p; p.outer() = make_rect(0, 0, 100, 100);
+        polygon_s32 p; p.outer() = make_rect(0, 0, 100, 100);
         for (int i = 0; i < 6; i++)
             for (int j = 0; j < 10; j++)
                 p.inners().push_back(make_hole(2 + i * 10, 2 + j * 10, 8 + i * 10, 8 + j * 10));
@@ -814,7 +814,7 @@ TEST(ManhattanLarge, RectWithSixColumnsPlusColumn9Intersection) {
             p.inners().push_back(make_hole(92, 2 + j * 10, 98, 8 + j * 10));
         a.push_back(p);
     }
-    multi_polygon b;
+    multi_polygon_s32 b;
     b.push_back(make_rect_poly(1, 1, 52, 99));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
@@ -829,16 +829,16 @@ TEST(ManhattanLarge, RectWithSixColumnsPlusColumn9Intersection) {
 
 TEST(ManhattanLarge, RectWithTwoColumnsFarApart) {
     // Only columns 0 and 9 — max distance between hole groups
-    multi_polygon a;
+    multi_polygon_s32 a;
     {
-        polygon p; p.outer() = make_rect(0, 0, 100, 100);
+        polygon_s32 p; p.outer() = make_rect(0, 0, 100, 100);
         for (int j = 0; j < 10; j++)
             p.inners().push_back(make_hole(2, 2 + j * 10, 8, 8 + j * 10));
         for (int j = 0; j < 10; j++)
             p.inners().push_back(make_hole(92, 2 + j * 10, 98, 8 + j * 10));
         a.push_back(p);
     }
-    multi_polygon b;
+    multi_polygon_s32 b;
     b.push_back(make_rect_poly(1, 1, 10, 99));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
@@ -853,9 +853,9 @@ TEST(ManhattanLarge, RectWithTwoColumnsFarApart) {
 
 TEST(ManhattanLarge, RectWithSixColumnsPlusColumn8And9) {
     // Two far-away columns (8 and 9) — multiple isolated groups
-    multi_polygon a;
+    multi_polygon_s32 a;
     {
-        polygon p; p.outer() = make_rect(0, 0, 100, 100);
+        polygon_s32 p; p.outer() = make_rect(0, 0, 100, 100);
         for (int i = 0; i < 6; i++)
             for (int j = 0; j < 10; j++)
                 p.inners().push_back(make_hole(2 + i * 10, 2 + j * 10, 8 + i * 10, 8 + j * 10));
@@ -865,7 +865,7 @@ TEST(ManhattanLarge, RectWithSixColumnsPlusColumn8And9) {
             p.inners().push_back(make_hole(92, 2 + j * 10, 98, 8 + j * 10));
         a.push_back(p);
     }
-    multi_polygon b;
+    multi_polygon_s32 b;
     b.push_back(make_rect_poly(1, 1, 52, 99));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
@@ -883,8 +883,8 @@ TEST(ManhattanLarge, RectWithSixColumnsPlusColumn8And9) {
 // ============================================================================
 
 TEST(ManhattanXor, TwoSeparateRects) {
-    multi_polygon a; a.push_back(make_rect_poly(0, 0, 2, 2));
-    multi_polygon b; b.push_back(make_rect_poly(5, 5, 7, 7));
+    multi_polygon_s32 a; a.push_back(make_rect_poly(0, 0, 2, 2));
+    multi_polygon_s32 b; b.push_back(make_rect_poly(5, 5, 7, 7));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
@@ -898,8 +898,8 @@ TEST(ManhattanXor, TwoSeparateRects) {
 }
 
 TEST(ManhattanXor, OverlappingRects) {
-    multi_polygon a; a.push_back(make_rect_poly(0, 0, 3, 3));
-    multi_polygon b; b.push_back(make_rect_poly(2, 2, 5, 5));
+    multi_polygon_s32 a; a.push_back(make_rect_poly(0, 0, 3, 3));
+    multi_polygon_s32 b; b.push_back(make_rect_poly(2, 2, 5, 5));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
@@ -913,8 +913,8 @@ TEST(ManhattanXor, OverlappingRects) {
 }
 
 TEST(ManhattanXor, AdjacentRects) {
-    multi_polygon a; a.push_back(make_rect_poly(0, 0, 2, 2));
-    multi_polygon b; b.push_back(make_rect_poly(2, 0, 4, 2));
+    multi_polygon_s32 a; a.push_back(make_rect_poly(0, 0, 2, 2));
+    multi_polygon_s32 b; b.push_back(make_rect_poly(2, 0, 4, 2));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
@@ -927,8 +927,8 @@ TEST(ManhattanXor, AdjacentRects) {
 }
 
 TEST(ManhattanXor, OneContainsOther) {
-    multi_polygon a; a.push_back(make_rect_poly(0, 0, 10, 10));
-    multi_polygon b; b.push_back(make_rect_poly(2, 2, 5, 5));
+    multi_polygon_s32 a; a.push_back(make_rect_poly(0, 0, 10, 10));
+    multi_polygon_s32 b; b.push_back(make_rect_poly(2, 2, 5, 5));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
@@ -942,10 +942,10 @@ TEST(ManhattanXor, OneContainsOther) {
 }
 
 TEST(ManhattanXor, RectWithHole) {
-    polygon p1; p1.outer() = make_rect(0, 0, 6, 6);
+    polygon_s32 p1; p1.outer() = make_rect(0, 0, 6, 6);
     p1.inners().push_back(make_hole(2, 2, 4, 4));
-    multi_polygon a; a.push_back(p1);
-    multi_polygon b; b.push_back(make_rect_poly(3, 3, 8, 8));
+    multi_polygon_s32 a; a.push_back(p1);
+    multi_polygon_s32 b; b.push_back(make_rect_poly(3, 3, 8, 8));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
@@ -962,8 +962,8 @@ TEST(ManhattanXor, RectWithHole) {
 // ============================================================================
 
 TEST(ManhattanDifference, TwoSeparateRects) {
-    multi_polygon a; a.push_back(make_rect_poly(0, 0, 2, 2));
-    multi_polygon b; b.push_back(make_rect_poly(5, 5, 7, 7));
+    multi_polygon_s32 a; a.push_back(make_rect_poly(0, 0, 2, 2));
+    multi_polygon_s32 b; b.push_back(make_rect_poly(5, 5, 7, 7));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
@@ -977,8 +977,8 @@ TEST(ManhattanDifference, TwoSeparateRects) {
 }
 
 TEST(ManhattanDifference, OverlappingRects) {
-    multi_polygon a; a.push_back(make_rect_poly(0, 0, 3, 3));
-    multi_polygon b; b.push_back(make_rect_poly(2, 2, 5, 5));
+    multi_polygon_s32 a; a.push_back(make_rect_poly(0, 0, 3, 3));
+    multi_polygon_s32 b; b.push_back(make_rect_poly(2, 2, 5, 5));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
@@ -992,8 +992,8 @@ TEST(ManhattanDifference, OverlappingRects) {
 }
 
 TEST(ManhattanDifference, AdjacentRects) {
-    multi_polygon a; a.push_back(make_rect_poly(0, 0, 2, 2));
-    multi_polygon b; b.push_back(make_rect_poly(2, 0, 4, 2));
+    multi_polygon_s32 a; a.push_back(make_rect_poly(0, 0, 2, 2));
+    multi_polygon_s32 b; b.push_back(make_rect_poly(2, 0, 4, 2));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
@@ -1007,8 +1007,8 @@ TEST(ManhattanDifference, AdjacentRects) {
 }
 
 TEST(ManhattanDifference, OneContainsOther) {
-    multi_polygon a; a.push_back(make_rect_poly(0, 0, 10, 10));
-    multi_polygon b; b.push_back(make_rect_poly(2, 2, 5, 5));
+    multi_polygon_s32 a; a.push_back(make_rect_poly(0, 0, 10, 10));
+    multi_polygon_s32 b; b.push_back(make_rect_poly(2, 2, 5, 5));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
@@ -1022,8 +1022,8 @@ TEST(ManhattanDifference, OneContainsOther) {
 }
 
 TEST(ManhattanDifference, BcontainsA) {
-    multi_polygon a; a.push_back(make_rect_poly(2, 2, 5, 5));
-    multi_polygon b; b.push_back(make_rect_poly(0, 0, 10, 10));
+    multi_polygon_s32 a; a.push_back(make_rect_poly(2, 2, 5, 5));
+    multi_polygon_s32 b; b.push_back(make_rect_poly(0, 0, 10, 10));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
@@ -1037,10 +1037,10 @@ TEST(ManhattanDifference, BcontainsA) {
 }
 
 TEST(ManhattanDifference, RectWithHole) {
-    polygon p1; p1.outer() = make_rect(0, 0, 6, 6);
+    polygon_s32 p1; p1.outer() = make_rect(0, 0, 6, 6);
     p1.inners().push_back(make_hole(2, 2, 4, 4));
-    multi_polygon a; a.push_back(p1);
-    multi_polygon b; b.push_back(make_rect_poly(3, 3, 8, 8));
+    multi_polygon_s32 a; a.push_back(p1);
+    multi_polygon_s32 b; b.push_back(make_rect_poly(3, 3, 8, 8));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
@@ -1053,10 +1053,10 @@ TEST(ManhattanDifference, RectWithHole) {
 }
 
 TEST(ManhattanDifference, RectMinusHoleFiller) {
-    polygon p1; p1.outer() = make_rect(0, 0, 10, 10);
+    polygon_s32 p1; p1.outer() = make_rect(0, 0, 10, 10);
     p1.inners().push_back(make_hole(2, 2, 6, 6));
-    multi_polygon a; a.push_back(p1);
-    multi_polygon b; b.push_back(make_rect_poly(2, 2, 6, 6));
+    multi_polygon_s32 a; a.push_back(p1);
+    multi_polygon_s32 b; b.push_back(make_rect_poly(2, 2, 6, 6));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 

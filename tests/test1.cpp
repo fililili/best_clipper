@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "basic.hpp"
+#include "uint32_adaptor.hpp"
 
 // ============================================================================
 // Helpers — verify against known WKT
@@ -7,7 +7,7 @@
 
 void test_union(const std::string& a_wkt, const std::string& b_wkt,
                 const std::string& expected_wkt) {
-    multi_polygon a, b, expected;
+    multi_polygon_s32 a, b, expected;
     bg::read_wkt(a_wkt, a);     ASSERT_TRUE(bg::is_valid(a));
     bg::read_wkt(b_wkt, b);     ASSERT_TRUE(bg::is_valid(b));
     bg::read_wkt(expected_wkt, expected);
@@ -21,7 +21,7 @@ void test_union(const std::string& a_wkt, const std::string& b_wkt,
 
 void test_intersection(const std::string& a_wkt, const std::string& b_wkt,
                        const std::string& expected_wkt) {
-    multi_polygon a, b, expected;
+    multi_polygon_s32 a, b, expected;
     bg::read_wkt(a_wkt, a);     ASSERT_TRUE(bg::is_valid(a));
     bg::read_wkt(b_wkt, b);     ASSERT_TRUE(bg::is_valid(b));
     bg::read_wkt(expected_wkt, expected);
@@ -80,14 +80,14 @@ TEST(BasicTest, Union) {
 // ============================================================================
 
 void test_union_rectangle(int size) {
-    multi_polygon a, b;
+    multi_polygon_s32 a, b;
     for (int i = 0; i < size; i++) {
-        a.emplace_back(polygon{ {{0 + 2 * i, 0 + 2 * i},
+        a.emplace_back(polygon_s32{ {{0 + 2 * i, 0 + 2 * i},
                                  {0 + 2 * i, 2 + 2 * i},
                                  {2 + 2 * i, 2 + 2 * i},
                                  {2 + 2 * i, 0 + 2 * i},
                                  {0 + 2 * i, 0 + 2 * i}} });
-        b.emplace_back(polygon{ {{1 + 2 * i, 1 + 2 * i},
+        b.emplace_back(polygon_s32{ {{1 + 2 * i, 1 + 2 * i},
                                  {1 + 2 * i, 3 + 2 * i},
                                  {3 + 2 * i, 3 + 2 * i},
                                  {3 + 2 * i, 1 + 2 * i},
@@ -103,9 +103,9 @@ void test_union_rectangle(int size) {
 }
 
 void test_self_or_rectangle(int size) {
-    multi_polygon poly;
+    multi_polygon_s32 poly;
     for (int i = 0; i < size; i++) {
-        poly.emplace_back(polygon{ {{0 + i, 0 + i},
+        poly.emplace_back(polygon_s32{ {{0 + i, 0 + i},
                                     {0 + i, 2 + i},
                                     {2 + i, 2 + i},
                                     {2 + i, 0 + i},
@@ -176,7 +176,7 @@ TEST(BasicTest, Intersection) {
 TEST(BasicTest, Xor) {
     // Two overlapping axis-aligned rects
     {
-        multi_polygon a, b;
+        multi_polygon_s32 a, b;
         bg::read_wkt("MULTIPOLYGON(((0 0,0 2,2 2,2 0,0 0)))", a);
         bg::read_wkt("MULTIPOLYGON(((1 1,1 3,3 3,3 1,1 1)))", b);
         auto result = xor_(a, b);
@@ -186,7 +186,7 @@ TEST(BasicTest, Xor) {
 
     // One rect contains the other — XOR produces a hole
     {
-        multi_polygon a, b;
+        multi_polygon_s32 a, b;
         bg::read_wkt("MULTIPOLYGON(((0 0,0 3,3 3,3 0,0 0)))", a);
         bg::read_wkt("MULTIPOLYGON(((1 1,1 2,2 2,2 1,1 1)))", b);
         auto result = xor_(a, b);
@@ -196,7 +196,7 @@ TEST(BasicTest, Xor) {
 
     // Two disjoint rects — both survive
     {
-        multi_polygon a, b;
+        multi_polygon_s32 a, b;
         bg::read_wkt("MULTIPOLYGON(((0 0,0 1,1 1,1 0,0 0)))", a);
         bg::read_wkt("MULTIPOLYGON(((3 3,3 4,4 4,4 3,3 3)))", b);
         auto result = xor_(a, b);
@@ -206,7 +206,7 @@ TEST(BasicTest, Xor) {
 
     // Adjacent (edge-sharing) rects — zero-area intersection
     {
-        multi_polygon a, b;
+        multi_polygon_s32 a, b;
         bg::read_wkt("MULTIPOLYGON(((0 0,0 1,1 1,1 0,0 0)))", a);
         bg::read_wkt("MULTIPOLYGON(((1 0,1 1,2 1,2 0,1 0)))", b);
         auto result = xor_(a, b);
@@ -218,7 +218,7 @@ TEST(BasicTest, Xor) {
     // Triangle: (0,0)-(0,4)-(8,0), hypotenuse x+2y=8
     // Rect: (2,1)-(5,3). Hypotenuse ∩ right edge (x=5): y=1.5 → snaps to (5,2)
     {
-        multi_polygon a, b;
+        multi_polygon_s32 a, b;
         bg::read_wkt("MULTIPOLYGON(((0 0,0 4,8 0,0 0)))", a);
         bg::read_wkt("MULTIPOLYGON(((2 1,2 3,5 3,5 1,2 1)))", b);
         auto result = xor_(a, b);
@@ -234,7 +234,7 @@ TEST(BasicTest, Xor) {
 TEST(BasicTest, Difference) {
     // A \ B where A and B overlap
     {
-        multi_polygon a, b;
+        multi_polygon_s32 a, b;
         bg::read_wkt("MULTIPOLYGON(((0 0,0 2,2 2,2 0,0 0)))", a);
         bg::read_wkt("MULTIPOLYGON(((1 1,1 3,3 3,3 1,1 1)))", b);
         auto result = difference(a, b);
@@ -244,7 +244,7 @@ TEST(BasicTest, Difference) {
 
     // A \ B where B is entirely inside A — result has a hole
     {
-        multi_polygon a, b;
+        multi_polygon_s32 a, b;
         bg::read_wkt("MULTIPOLYGON(((0 0,0 3,3 3,3 0,0 0)))", a);
         bg::read_wkt("MULTIPOLYGON(((1 1,1 2,2 2,2 1,1 1)))", b);
         auto result = difference(a, b);
@@ -254,7 +254,7 @@ TEST(BasicTest, Difference) {
 
     // A \ B where A and B are disjoint — A unchanged
     {
-        multi_polygon a, b;
+        multi_polygon_s32 a, b;
         bg::read_wkt("MULTIPOLYGON(((0 0,0 1,1 1,1 0,0 0)))", a);
         bg::read_wkt("MULTIPOLYGON(((3 3,3 4,4 4,4 3,3 3)))", b);
         auto result = difference(a, b);
@@ -264,7 +264,7 @@ TEST(BasicTest, Difference) {
 
     // A \ B where B completely covers A — result is empty
     {
-        multi_polygon a, b;
+        multi_polygon_s32 a, b;
         bg::read_wkt("MULTIPOLYGON(((1 1,1 2,2 2,2 1,1 1)))", a);
         bg::read_wkt("MULTIPOLYGON(((0 0,0 3,3 3,3 0,0 0)))", b);
         auto result = difference(a, b);
@@ -274,7 +274,7 @@ TEST(BasicTest, Difference) {
 
     // A \ B where A and B are identical — result is empty
     {
-        multi_polygon a, b;
+        multi_polygon_s32 a, b;
         bg::read_wkt("MULTIPOLYGON(((0 0,0 3,3 3,3 0,0 0)))", a);
         bg::read_wkt("MULTIPOLYGON(((0 0,0 3,3 3,3 0,0 0)))", b);
         auto result = difference(a, b);
@@ -286,7 +286,7 @@ TEST(BasicTest, Difference) {
     // Triangle: (0,0)-(0,4)-(8,0), hypotenuse x+2y=8
     // Rect: (2,1)-(5,3). Hypotenuse ∩ right edge (x=5): y=1.5 → snaps to (5,2)
     {
-        multi_polygon a, b;
+        multi_polygon_s32 a, b;
         bg::read_wkt("MULTIPOLYGON(((0 0,0 4,8 0,0 0)))", a);
         bg::read_wkt("MULTIPOLYGON(((2 1,2 3,5 3,5 1,2 1)))", b);
         auto result = difference(a, b);

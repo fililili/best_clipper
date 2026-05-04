@@ -6,4 +6,4 @@ target_include_directories(best_clipper_basic INTERFACE
 
 target_compile_features(best_clipper_basic INTERFACE cxx_std_20)
 
-target_link_libraries(best_clipper_basic INTERFACE Boost::geometry Boost::container)
+target_link_libraries(best_clipper_basic INTERFACE Boost::geometry Boost::container Boost::multiprecision)
