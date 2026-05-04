@@ -10,58 +10,6 @@
 // Boost is only unreliable when the input is invalid (e.g. self-overlapping
 // multi_polygon components). For valid input, Boost produces correct results.
 
-// Use Boost.Geometry's union_ and intersection as ground truth.
-multi_polygon_s32 bg_self_union(const multi_polygon_s32& p) {
-    if (p.empty()) return p;
-    multi_polygon_s32 out;
-    out.push_back(p[0]);
-    for (size_t i = 1; i < p.size(); i++) {
-        multi_polygon_s32 tmp;
-        bg::union_(out, multi_polygon_s32{p[i]}, tmp);
-        out = std::move(tmp);
-    }
-    bg::correct(out);
-    return out;
-}
-
-multi_polygon_s32 bg_union(const multi_polygon_s32& a, const multi_polygon_s32& b) {
-    auto au = bg_self_union(a);
-    auto bu = bg_self_union(b);
-    multi_polygon_s32 out;
-    bg::union_(au, bu, out);
-    bg::correct(out);
-    return out;
-}
-
-multi_polygon_s32 bg_intersection(const multi_polygon_s32& a, const multi_polygon_s32& b) {
-    auto au = bg_self_union(a);
-    auto bu = bg_self_union(b);
-    multi_polygon_s32 out;
-    bg::intersection(au, bu, out);
-    bg::correct(out);
-    return out;
-}
-
-multi_polygon_s32 bg_xor(const multi_polygon_s32& a, const multi_polygon_s32& b) {
-    auto au = bg_self_union(a);
-    auto bu = bg_self_union(b);
-    multi_polygon_s32 un, inter, out;
-    bg::union_(au, bu, un);
-    bg::intersection(au, bu, inter);
-    bg::difference(un, inter, out);
-    bg::correct(out);
-    return out;
-}
-
-multi_polygon_s32 bg_difference(const multi_polygon_s32& a, const multi_polygon_s32& b) {
-    auto au = bg_self_union(a);
-    auto bu = bg_self_union(b);
-    multi_polygon_s32 out;
-    bg::difference(au, bu, out);
-    bg::correct(out);
-    return out;
-}
-
 // Helper: create a rectangle ring. CCW order.
 ring_s32 make_rect(int32_t x1, int32_t y1, int32_t x2, int32_t y2) {
     ring_s32 r;
@@ -101,7 +49,9 @@ TEST(ManhattanUnion, TwoSeparateRects) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = add(a, b);
-    auto expected = bg_union(a, b);
+    multi_polygon_s32 expected;
+    bg::union_(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -115,7 +65,9 @@ TEST(ManhattanUnion, OverlappingRects) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = add(a, b);
-    auto expected = bg_union(a, b);
+    multi_polygon_s32 expected;
+    bg::union_(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -130,7 +82,9 @@ TEST(ManhattanUnion, AdjacentRects) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = add(a, b);
-    auto expected = bg_union(a, b);
+    multi_polygon_s32 expected;
+    bg::union_(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -146,7 +100,9 @@ TEST(ManhattanUnion, CornerTouching) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = add(a, b);
-    auto expected = bg_union(a, b);
+    multi_polygon_s32 expected;
+    bg::union_(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -160,7 +116,9 @@ TEST(ManhattanUnion, OneContainsOther) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = add(a, b);
-    auto expected = bg_union(a, b);
+    multi_polygon_s32 expected;
+    bg::union_(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -178,7 +136,9 @@ TEST(ManhattanUnion, RectWithHole) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = add(a, b);
-    auto expected = bg_union(a, b);
+    multi_polygon_s32 expected;
+    bg::union_(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -195,7 +155,9 @@ TEST(ManhattanUnion, RectPartiallyFillsHole) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = add(a, b);
-    auto expected = bg_union(a, b);
+    multi_polygon_s32 expected;
+    bg::union_(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -213,7 +175,9 @@ TEST(ManhattanUnion, TwoHolesOneFilled) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = add(a, b);
-    auto expected = bg_union(a, b);
+    multi_polygon_s32 expected;
+    bg::union_(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -231,7 +195,9 @@ TEST(ManhattanUnion, NestedMultiPolygon) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = add(a, b);
-    auto expected = bg_union(a, b);
+    multi_polygon_s32 expected;
+    bg::union_(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -251,7 +217,9 @@ TEST(ManhattanUnion, GridPattern) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = add(a, b);
-    auto expected = bg_union(a, b);
+    multi_polygon_s32 expected;
+    bg::union_(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -264,7 +232,7 @@ TEST(ManhattanUnion, LShaped) {
         polygon_s32 p; p.outer() = make_rect(0, 0, 5, 2);
         polygon_s32 q; q.outer() = make_rect(0, 2, 2, 5);
         a.push_back(p); a.push_back(q);
-        a = bg_self_union(a); // make it a valid L-shape
+        a = self_or(a); // make it a valid L-shape
     }
     multi_polygon_s32 b;
     b.push_back(make_rect_poly(3, 0, 6, 3));
@@ -272,7 +240,9 @@ TEST(ManhattanUnion, LShaped) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = add(a, b);
-    auto expected = bg_union(a, b);
+    multi_polygon_s32 expected;
+    bg::union_(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -284,14 +254,16 @@ TEST(ManhattanUnion, CrossShape) {
     multi_polygon_s32 a;
     a.push_back(make_rect_poly(3, 0, 5, 10));
     a.push_back(make_rect_poly(0, 3, 8, 5));
-    a = bg_self_union(a);
+    a = self_or(a);
     multi_polygon_s32 b;
     b.push_back(make_rect_poly(2, 2, 6, 6));
     ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = add(a, b);
-    auto expected = bg_union(a, b);
+    multi_polygon_s32 expected;
+    bg::union_(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -308,11 +280,13 @@ TEST(ManhattanUnion, ManyOverlappingSquares) {
         b.push_back(make_rect_poly(i * 2 + 1, i * 2 - 1, i * 2 + 4, i * 2 + 2));
     // a and b each contain internally-overlapping squares — multi_polygon
     // validity requires non-overlapping polygons, skip input validity check
-    ASSERT_TRUE(bg::is_valid(bg_self_union(a))) << "self-union a invalid";
-    ASSERT_TRUE(bg::is_valid(bg_self_union(b))) << "self-union b invalid";
+    a = self_or(a); b = self_or(b);
+    ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
+    ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = add(a, b);
-    auto expected = bg_union(a, b);
+    multi_polygon_s32 expected;
+    bg::union_(a, b, expected);
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::is_valid(expected));
@@ -330,7 +304,9 @@ TEST(ManhattanIntersection, TwoSeparateRects) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = intersection(a, b);
-    auto expected = bg_intersection(a, b);
+    multi_polygon_s32 expected;
+    bg::intersection(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -345,7 +321,9 @@ TEST(ManhattanIntersection, OverlappingRects) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = intersection(a, b);
-    auto expected = bg_intersection(a, b);
+    multi_polygon_s32 expected;
+    bg::intersection(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -360,7 +338,9 @@ TEST(ManhattanIntersection, AdjacentRects) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = intersection(a, b);
-    auto expected = bg_intersection(a, b);
+    multi_polygon_s32 expected;
+    bg::intersection(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -374,7 +354,9 @@ TEST(ManhattanIntersection, CornerTouching) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = intersection(a, b);
-    auto expected = bg_intersection(a, b);
+    multi_polygon_s32 expected;
+    bg::intersection(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -388,7 +370,9 @@ TEST(ManhattanIntersection, OneContainsOther) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = intersection(a, b);
-    auto expected = bg_intersection(a, b);
+    multi_polygon_s32 expected;
+    bg::intersection(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -405,7 +389,9 @@ TEST(ManhattanIntersection, RectWithHole) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = intersection(a, b);
-    auto expected = bg_intersection(a, b);
+    multi_polygon_s32 expected;
+    bg::intersection(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -422,7 +408,9 @@ TEST(ManhattanIntersection, MultiPolygonBothSides) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = intersection(a, b);
-    auto expected = bg_intersection(a, b);
+    multi_polygon_s32 expected;
+    bg::intersection(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -490,7 +478,7 @@ TEST(ManhattanSelfOr, LShapedSelfOr) {
     a.push_back(make_rect_poly(0, 0, 5, 2));
     a.push_back(make_rect_poly(0, 2, 2, 5));
     // edge-touching inputs — bg considers overlapping/touching multi_polygon invalid
-    ASSERT_TRUE(bg::is_valid(bg_self_union(a))) << "self-union a invalid";
+    ASSERT_TRUE(bg::is_valid(self_or(a))) << "self-union a invalid";
 
     auto result = self_or(a);
 
@@ -511,7 +499,9 @@ TEST(ManhattanEdgeCase, ZeroAreaIntersection) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = intersection(a, b);
-    auto expected = bg_intersection(a, b);
+    multi_polygon_s32 expected;
+    bg::intersection(a, b, expected);
+
 
     // Should be empty (zero-area intersection along shared edge)
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
@@ -526,7 +516,9 @@ TEST(ManhattanEdgeCase, VeryNarrowOverlap) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = add(a, b);
-    auto expected = bg_union(a, b);
+    multi_polygon_s32 expected;
+    bg::union_(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -543,7 +535,9 @@ TEST(ManhattanEdgeCase, ExactlyFittingHole) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = add(a, b);
-    auto expected = bg_union(a, b);
+    multi_polygon_s32 expected;
+    bg::union_(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -560,7 +554,9 @@ TEST(ManhattanEdgeCase, LastColumnOverlap) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = add(a, b);
-    auto expected = bg_union(a, b);
+    multi_polygon_s32 expected;
+    bg::union_(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -581,7 +577,9 @@ TEST(ManhattanEdgeCase, MultipleHoles) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = add(a, b);
-    auto expected = bg_union(a, b);
+    multi_polygon_s32 expected;
+    bg::union_(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -597,11 +595,13 @@ TEST(ManhattanEdgeCase, SharingMultipleEdges) {
     b.push_back(make_rect_poly(2, 0, 6, 2));
     b.push_back(make_rect_poly(4, 2, 6, 4));
     // edge-touching inputs — bg considers touching multi_polygon invalid
-    ASSERT_TRUE(bg::is_valid(bg_self_union(a))) << "self-union a invalid";
-    ASSERT_TRUE(bg::is_valid(bg_self_union(b))) << "self-union b invalid";
+    a = self_or(a); b = self_or(b);
+    ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
+    ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = add(a, b);
-    auto expected = bg_union(a, b);
+    multi_polygon_s32 expected;
+    bg::union_(a, b, expected);
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::is_valid(expected));
@@ -627,7 +627,9 @@ TEST(ManhattanLarge, RectWith100Holes) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = add(a, b);
-    auto expected = bg_union(a, b);
+    multi_polygon_s32 expected;
+    bg::union_(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::is_valid(expected));
@@ -650,7 +652,9 @@ TEST(ManhattanLarge, RectWith20Holes) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = add(a, b);
-    auto expected = bg_union(a, b);
+    multi_polygon_s32 expected;
+    bg::union_(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::is_valid(expected));
@@ -672,7 +676,9 @@ TEST(ManhattanLarge, RectWithCoincidentHole) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = add(a, b);
-    auto expected = bg_union(a, b);
+    multi_polygon_s32 expected;
+    bg::union_(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::is_valid(expected));
@@ -695,7 +701,9 @@ TEST(ManhattanLarge, RectWithTwoCoincidentHoles) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = add(a, b);
-    auto expected = bg_union(a, b);
+    multi_polygon_s32 expected;
+    bg::union_(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::is_valid(expected));
@@ -717,7 +725,9 @@ TEST(ManhattanLarge, RectWithTenCoincidentHoles) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = add(a, b);
-    auto expected = bg_union(a, b);
+    multi_polygon_s32 expected;
+    bg::union_(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::is_valid(expected));
@@ -746,7 +756,9 @@ TEST(ManhattanLarge, RectWithThreeColumns) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = add(a, b);
-    auto expected = bg_union(a, b);
+    multi_polygon_s32 expected;
+    bg::union_(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::is_valid(expected));
@@ -772,7 +784,9 @@ TEST(ManhattanLarge, RectWithSixColumnsPlusColumn9) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = add(a, b);
-    auto expected = bg_union(a, b);
+    multi_polygon_s32 expected;
+    bg::union_(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::is_valid(expected));
@@ -795,7 +809,9 @@ TEST(ManhattanLarge, RectWithSixColumns) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = add(a, b);
-    auto expected = bg_union(a, b);
+    multi_polygon_s32 expected;
+    bg::union_(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::is_valid(expected));
@@ -820,7 +836,9 @@ TEST(ManhattanLarge, RectWithSixColumnsPlusColumn9Intersection) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = intersection(a, b);
-    auto expected = bg_intersection(a, b);
+    multi_polygon_s32 expected;
+    bg::intersection(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::is_valid(expected));
@@ -844,7 +862,9 @@ TEST(ManhattanLarge, RectWithTwoColumnsFarApart) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = add(a, b);
-    auto expected = bg_union(a, b);
+    multi_polygon_s32 expected;
+    bg::union_(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::is_valid(expected));
@@ -871,7 +891,9 @@ TEST(ManhattanLarge, RectWithSixColumnsPlusColumn8And9) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = add(a, b);
-    auto expected = bg_union(a, b);
+    multi_polygon_s32 expected;
+    bg::union_(a, b, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::is_valid(expected));
@@ -889,7 +911,11 @@ TEST(ManhattanXor, TwoSeparateRects) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = xor_(a, b);
-    auto expected = bg_xor(a, b);
+    multi_polygon_s32 un, inter, expected;
+    bg::union_(a, b, un);
+    bg::intersection(a, b, inter);
+    bg::difference(un, inter, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -904,7 +930,11 @@ TEST(ManhattanXor, OverlappingRects) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = xor_(a, b);
-    auto expected = bg_xor(a, b);
+    multi_polygon_s32 un, inter, expected;
+    bg::union_(a, b, un);
+    bg::intersection(a, b, inter);
+    bg::difference(un, inter, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -919,7 +949,11 @@ TEST(ManhattanXor, AdjacentRects) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = xor_(a, b);
-    auto expected = bg_xor(a, b);
+    multi_polygon_s32 un, inter, expected;
+    bg::union_(a, b, un);
+    bg::intersection(a, b, inter);
+    bg::difference(un, inter, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -933,7 +967,11 @@ TEST(ManhattanXor, OneContainsOther) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = xor_(a, b);
-    auto expected = bg_xor(a, b);
+    multi_polygon_s32 un, inter, expected;
+    bg::union_(a, b, un);
+    bg::intersection(a, b, inter);
+    bg::difference(un, inter, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -950,7 +988,11 @@ TEST(ManhattanXor, RectWithHole) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = xor_(a, b);
-    auto expected = bg_xor(a, b);
+    multi_polygon_s32 un, inter, expected;
+    bg::union_(a, b, un);
+    bg::intersection(a, b, inter);
+    bg::difference(un, inter, expected);
+
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -968,7 +1010,8 @@ TEST(ManhattanDifference, TwoSeparateRects) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = difference(a, b);
-    auto expected = bg_difference(a, b);
+    multi_polygon_s32 expected;
+    bg::difference(a, b, expected);
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -983,7 +1026,8 @@ TEST(ManhattanDifference, OverlappingRects) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = difference(a, b);
-    auto expected = bg_difference(a, b);
+    multi_polygon_s32 expected;
+    bg::difference(a, b, expected);
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -998,7 +1042,8 @@ TEST(ManhattanDifference, AdjacentRects) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = difference(a, b);
-    auto expected = bg_difference(a, b);
+    multi_polygon_s32 expected;
+    bg::difference(a, b, expected);
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -1013,7 +1058,8 @@ TEST(ManhattanDifference, OneContainsOther) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = difference(a, b);
-    auto expected = bg_difference(a, b);
+    multi_polygon_s32 expected;
+    bg::difference(a, b, expected);
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -1028,7 +1074,8 @@ TEST(ManhattanDifference, BcontainsA) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = difference(a, b);
-    auto expected = bg_difference(a, b);
+    multi_polygon_s32 expected;
+    bg::difference(a, b, expected);
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -1045,7 +1092,8 @@ TEST(ManhattanDifference, RectWithHole) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = difference(a, b);
-    auto expected = bg_difference(a, b);
+    multi_polygon_s32 expected;
+    bg::difference(a, b, expected);
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
@@ -1061,7 +1109,8 @@ TEST(ManhattanDifference, RectMinusHoleFiller) {
     ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
     auto result = difference(a, b);
-    auto expected = bg_difference(a, b);
+    multi_polygon_s32 expected;
+    bg::difference(a, b, expected);
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::equals(result, expected))
