@@ -5,7 +5,7 @@
 // XOR tests — validity checks (areas verified independently)
 // ============================================================================
 
-TEST(BasicTest, Xor) {
+TEST(CoreTest, Xor) {
     // Two overlapping axis-aligned rects
     {
         multi_polygon_s32 a, b;

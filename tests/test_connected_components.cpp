@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include "uint32_adaptor.hpp"
 
+using namespace best_clipper;
+
 // ============================================================================
 // connected_components unit tests
 // ============================================================================

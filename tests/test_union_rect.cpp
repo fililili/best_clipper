@@ -42,7 +42,7 @@ void test_self_or_rectangle(int size) {
     EXPECT_DOUBLE_EQ(bg::area(result), 1 + 3 * size);
 }
 
-TEST(BasicUnion, RectangleUnion) {
+TEST(CoreUnion, RectangleUnion) {
     test_union_rectangle(100);
     test_union_rectangle(3);
     test_union_rectangle(1010);
@@ -50,7 +50,7 @@ TEST(BasicUnion, RectangleUnion) {
     test_union_rectangle(2521);
 }
 
-TEST(BasicUnion, RectangleSelfOr) {
+TEST(CoreUnion, RectangleSelfOr) {
     test_self_or_rectangle(100);
     test_self_or_rectangle(3);
     test_self_or_rectangle(1010);

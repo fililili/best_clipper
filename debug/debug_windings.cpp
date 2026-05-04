@@ -1,5 +1,6 @@
-#include "basic.hpp"
+#include "core.hpp"
 #include <iostream>
+using namespace best_clipper;
 
 int main() {
     multi_polygon first, second;
@@ -17,42 +18,24 @@ int main() {
     for (auto& e : ewp)
         std::cerr << "  " << e.start << "->" << e.end << " p=" << e.power << "\n";
 
-    // Sort edges for chain building
-    auto sorted_edges = ewp;
-    std::sort(sorted_edges.begin(), sorted_edges.end(),
-              [](const edge_with_power_t& a, const edge_with_power_t& b) {
-                  auto ts = [](const edge_with_power_t& e) { return e.power > 0 ? e.start : e.end; };
-                  auto sa = ts(a), sb = ts(b);
-                  if (sa != sb) return sa < sb;
-                  auto ta = a.power > 0 ? a.end : a.start;
-                  auto tb = b.power > 0 ? b.end : b.start;
-                  return ta < tb;
-              });
-    std::vector<std::size_t> edge_offsets(hot_pixels.size() + 1, 0);
-    { std::vector<std::size_t> cnt(hot_pixels.size(), 0);
-      for (auto& e : sorted_edges) cnt[e.power > 0 ? e.start : e.end]++;
-      std::size_t cur = 0;
-      for (std::size_t v = 0; v < hot_pixels.size(); v++) { edge_offsets[v] = cur; cur += cnt[v]; }
-      edge_offsets.back() = cur; }
-
-    auto chains = build_chains(sorted_edges, edge_offsets, hot_pixels.size());
-    std::cerr << "Chains: " << (chains.offsets.size()-1) << "\n";
+    auto chains = build_chains(ewp, hot_pixels.size());
+    std::cerr << "Chains: " << (chains.offsets.size() - 1) << "\n";
     for (size_t c = 0; c + 1 < chains.offsets.size(); c++) {
         std::cerr << "  chain[" << c << "] p=" << chains.powers[c] << ": ";
-        for (size_t k = chains.offsets[c]; k < chains.offsets[c+1]; k++)
+        for (size_t k = chains.offsets[c]; k < chains.offsets[c + 1]; k++)
             std::cerr << chains.indices[k] << " ";
         std::cerr << "\n";
     }
 
-    auto [sorted_hcs, hc_begin, hc_end, next_hc, prev_hc, coplanar] = build_hc_graph(chains, hot_pixels);
-    std::cerr << "HCs: " << (chains.offsets.size()-1)*2 << "\n";
+    auto [sorted_hcs, hc_begin, hc_end, next_hc, coplanar] = build_half_chain_graph(chains, hot_pixels);
+    std::cerr << "HCs: " << (chains.offsets.size() - 1) * 2 << "\n";
     for (size_t v = 0; v < hot_pixels.size(); v++) {
         auto beg = hc_begin[v], end = hc_end[v];
         if (beg == end) continue;
         std::cerr << "  vertex " << v << " (" << bg::wkt(hot_pixels[v]) << "): ";
         for (auto i = beg; i < end; i++) {
             auto hc = sorted_hcs[i];
-            std::cerr << "hc" << hc.id << "(" << (hc.is_forward()?"f":"r") << "c" << hc.chain_id()
+            std::cerr << "hc" << hc.id << "(" << (hc.is_forward() ? "f" : "r") << "c" << hc.chain_id()
                       << " src=" << hc.source_node(chains) << " nxt=" << hc.next_along_source(chains)
                       << " p=" << hc.power(chains) << ") ";
         }
@@ -60,11 +43,11 @@ int main() {
     }
 
     std::cerr << "Coplanar pairs:\n";
-    for (auto [a,b] : coplanar)
+    for (auto [a, b] : coplanar)
         std::cerr << "  hc" << a << " ~ hc" << b << "\n";
 
     std::cerr << "Next:\n";
-    for (size_t i = 0; i < (chains.offsets.size()-1)*2; i++)
+    for (size_t i = 0; i < (chains.offsets.size() - 1) * 2; i++)
         std::cerr << "  hc" << i << " -> hc" << next_hc[i].id << "\n";
 
     // Debug vertex components
@@ -95,13 +78,13 @@ int main() {
     for (auto e : ext_hcs) std::cerr << "hc" << e << " ";
     std::cerr << "\n";
     std::cerr << "Ray coplanar pairs: ";
-    for (auto [a,b] : ray_pairs) std::cerr << "(" << a << "," << b << ") ";
+    for (auto [a, b] : ray_pairs) std::cerr << "(" << a << "," << b << ") ";
     std::cerr << "\n";
 
-    auto [hc_winding, face_root] = compute_hc_winding(chains, sorted_hcs, hc_begin, hc_end, coplanar, ray_pairs, ext_hcs);
+    auto hc_winding = compute_winding(chains, coplanar, ray_pairs, ext_hcs);
     std::cerr << "HC windings:\n";
     for (size_t i = 0; i < hc_winding.size(); i++)
-        std::cerr << "  hc" << i << " w=" << hc_winding[i] << " face_root=" << face_root[i] << "\n";
+        std::cerr << "  hc" << i << " w=" << hc_winding[i] << "\n";
 
     std::cerr << "Survive union (w>0): ";
     for (size_t i = 0; i < hc_winding.size(); i++)
@@ -112,24 +95,13 @@ int main() {
         if (hc_winding[i] > 1) std::cerr << "hc" << i << " ";
     std::cerr << "\n";
 
-    // Show face groups
-    std::cerr << "Face groups:\n";
-    for (size_t i = 0; i < face_root.size(); i++) {
-        if (face_root[i] == i) {
-            std::cerr << "  Face " << i << " (w=" << hc_winding[i] << "): ";
-            for (size_t j = 0; j < face_root.size(); j++)
-                if (face_root[j] == i) std::cerr << "hc" << j << " ";
-            std::cerr << "\n";
-        }
-    }
-
-    auto result_inter = run_pipeline(segs, [](int w) { return w > 1; });
+    auto result_inter = intersection(first, second);
     std::cerr << "Intersection area: " << bg::area(result_inter) << "\n";
     std::cerr << "Intersection num polygons: " << result_inter.size() << "\n";
     std::cerr << "Intersection valid: " << bg::is_valid(result_inter) << "\n";
     std::cerr << "Intersection WKT: " << bg::wkt(result_inter) << "\n";
 
-    auto result_union = run_pipeline(segs, [](int w) { return w > 0; });
+    auto result_union = add(first, second);
     std::cerr << "Union area: " << bg::area(result_union) << "\n";
     std::cerr << "Union num polygons: " << result_union.size() << "\n";
     std::cerr << "Union valid: " << bg::is_valid(result_union) << "\n";
@@ -138,9 +110,8 @@ int main() {
         auto& p = result_union[0];
         std::cerr << "  outer area: " << bg::area(p.outer()) << "\n";
         std::cerr << "  num holes: " << p.inners().size() << "\n";
-        for (size_t i = 0; i < p.inners().size(); i++) {
+        for (size_t i = 0; i < p.inners().size(); i++)
             std::cerr << "  hole[" << i << "] area: " << bg::area(p.inners()[i]) << "\n";
-        }
         std::cerr << "  polygon valid: " << bg::is_valid(p) << "\n";
     }
 

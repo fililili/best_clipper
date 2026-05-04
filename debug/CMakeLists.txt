@@ -1,0 +1,27 @@
+add_executable(debug_test debug_test.cpp)
+target_compile_features(debug_test PRIVATE cxx_std_20)
+target_link_libraries(debug_test PRIVATE best_clipper_core)
+
+add_executable(debug_union debug_union.cpp)
+target_compile_features(debug_union PRIVATE cxx_std_20)
+target_link_libraries(debug_union PRIVATE best_clipper_core)
+
+add_executable(debug_windings debug_windings.cpp)
+target_compile_features(debug_windings PRIVATE cxx_std_20)
+target_link_libraries(debug_windings PRIVATE best_clipper_core)
+
+add_executable(debug_trace debug_trace.cpp)
+target_compile_features(debug_trace PRIVATE cxx_std_20)
+target_link_libraries(debug_trace PRIVATE best_clipper_core)
+
+add_executable(debug_crash1 debug_crash1.cpp)
+target_compile_features(debug_crash1 PRIVATE cxx_std_20)
+target_link_libraries(debug_crash1 PRIVATE best_clipper_core)
+
+add_executable(debug_hole debug_hole.cpp)
+target_compile_features(debug_hole PRIVATE cxx_std_20)
+target_link_libraries(debug_hole PRIVATE best_clipper_core)
+
+add_executable(debug_column9 debug_column9.cpp)
+target_compile_features(debug_column9 PRIVATE cxx_std_20)
+target_link_libraries(debug_column9 PRIVATE best_clipper_core)

@@ -19,7 +19,7 @@ void test_union(const std::string& a_wkt, const std::string& b_wkt,
         << "Expected: " << bg::wkt(expected);
 }
 
-TEST(BasicTest, Union) {
+TEST(CoreTest, Union) {
     test_union(
         "MULTIPOLYGON(((-59 867,-36 492,-182 486,-59 867)))",
         "MULTIPOLYGON(((-220 877,-54 821,-402 541,-808 638,-220 877)))",

@@ -1,6 +1,7 @@
 #include <cstdio>
 #include <sstream>
-#include "basic.hpp"
+#include "core.hpp"
+using namespace best_clipper;
 
 int main() {
     // Check area conventions

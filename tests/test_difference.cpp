@@ -5,7 +5,7 @@
 // Difference tests
 // ============================================================================
 
-TEST(BasicTest, Difference) {
+TEST(CoreTest, Difference) {
     // A \ B where A and B overlap
     {
         multi_polygon_s32 a, b;

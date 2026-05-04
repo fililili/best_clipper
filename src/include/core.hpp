@@ -8,14 +8,18 @@
 #include <limits>
 #include <numeric>
 #include <optional>
-#include <ranges>
 #include <vector>
 
 #ifdef _MSC_VER
 #include <boost/multiprecision/cpp_int.hpp>
+#endif
+
+namespace best_clipper {
+
+#ifdef _MSC_VER
 using int128_t = boost::multiprecision::int128_t;
 #else
-using int128_t = int128_t;
+using int128_t = __int128;
 #endif
 
 namespace bg = boost::geometry;
@@ -293,10 +297,10 @@ struct half_chain {
 };
 
 // ---------------------------------------------------------------------------
-// Step 1-3: edges with power
+// Edge construction (intersections, split, dedup, assign power)
 // ---------------------------------------------------------------------------
 
-inline std::tuple<std::vector<edge_t>, std::vector<point>> construct_graph(auto segments) {
+inline std::tuple<std::vector<edge_t>, std::vector<point>> construct_graph(const std::vector<segment>& segments) {
     std::vector<std::pair<box, std::size_t>> boxes(segments.size());
     for (std::size_t i = 0; i < segments.size(); i++)
         boxes[i] = {bg::return_envelope<box>(segments[i]), i};
@@ -393,14 +397,14 @@ inline std::vector<edge_with_power_t> unique_edges(std::vector<edge_with_power_t
     return result;
 }
 
-inline auto construct_edges_with_power(auto segments) {
-    auto [edges, hot_pixels] = construct_graph(std::move(segments));
+inline auto construct_edges_with_power(const std::vector<segment>& segments) {
+    auto [edges, hot_pixels] = construct_graph(segments);
     return std::tuple{std::move(hot_pixels),
                       unique_edges(edges_to_power(std::move(edges)), hot_pixels.size())};
 }
 
 // ---------------------------------------------------------------------------
-// Step 4: chains
+// Chains
 // ---------------------------------------------------------------------------
 
 inline chain_build_result build_chains(const std::vector<edge_with_power_t>& sorted_edges,
@@ -475,7 +479,7 @@ inline chain_build_result build_chains(const std::vector<edge_with_power_t>& sor
 }
 
 // ---------------------------------------------------------------------------
-// Step 5-6: angular sort, next/prev, coplanar pairs (sector adjacency)
+// Half-chain graph (angular sort, next pointers, sector coplanarity)
 // ---------------------------------------------------------------------------
 
 inline auto build_half_chain_graph(const chain_build_result& chains,
@@ -527,7 +531,7 @@ inline auto build_half_chain_graph(const chain_build_result& chains,
 }
 
 // ---------------------------------------------------------------------------
-// Step 7: ray casting. Returns coplanar pairs from the ray.
+// Ray casting (exterior face detection)
 // ---------------------------------------------------------------------------
 
 struct chain_seg {
@@ -553,7 +557,7 @@ inline std::vector<std::pair<std::size_t, std::size_t>> cast_ray_minus_x(
     auto range_begin = half_chain_begin[v], range_end = half_chain_end[v];
     if (range_begin == range_end) return {};
 
-    // Step 1: Find the half-chain at v whose right face contains the -x ray direction.
+    // Find the half-chain at v whose right face contains the -x ray direction.
     point vertex_point = hot_pixels[v];
     uint32_t vx = bg::get<0>(vertex_point);
     uint32_t vy = bg::get<1>(vertex_point);
@@ -571,7 +575,7 @@ inline std::vector<std::pair<std::size_t, std::size_t>> cast_ray_minus_x(
     }
     if (!found) vertex_half_chain = sorted_half_chains[range_begin];
 
-    // Step 2: Cast ray in -x direction, find the nearest intersected half-chain.
+    // Cast ray in -x direction, find the nearest intersected half-chain.
     int64_t ray_y = vy;
     int64_t min_x = vx;
     int64_t best_x = std::numeric_limits<int64_t>::min();
@@ -636,7 +640,7 @@ inline std::vector<std::pair<std::size_t, std::size_t>> cast_ray_minus_x(
         }
     }
 
-    // Step 3: Build the coplanar pair (RIGHT-face convention).
+    // Build the coplanar pair (RIGHT-face convention).
     // hit_side is the half-chain whose right face is the approach face of the ray.
     // dy > 0 (edge going up): right face = east, ray approaches from east → hit_id
     // dy < 0 (edge going down): right face = west, ray approaches from east → dual
@@ -741,7 +745,7 @@ inline auto find_exterior(const chain_build_result& chains,
 }
 
 // ---------------------------------------------------------------------------
-// Step 8: compute winding numbers.
+// Winding numbers (coplanarity graph + DFS propagation from exterior seeds)
 // Coplanarity sources: sector adjacency + ray.
 // Propagation: for consecutive a,b at vertex CCW:
 //   W(face(b)) = W(face(a)) + power(b)
@@ -792,7 +796,7 @@ inline auto compute_winding(
 }
 
 // ---------------------------------------------------------------------------
-// Step 9-10: build polygons face-by-face
+// Build output polygons (filter → cancel → rebuild next → trace rings)
 // ---------------------------------------------------------------------------
 
 inline multi_polygon build_output(const chain_build_result& chains,
@@ -805,12 +809,12 @@ inline multi_polygon build_output(const chain_build_result& chains,
     std::size_t num_half_chains = (chains.offsets.size() - 1) * 2;
     std::size_t num_chains = chains.offsets.size() - 1;
 
-    // 1. Which half-chains survive
+    // Filter half-chains by winding number
     std::vector<bool> survive(num_half_chains);
     for (std::size_t i = 0; i < num_half_chains; i++)
         survive[i] = filter_fn(winding[i]);
 
-    // 2. Dual cancellation: both fwd and rev survive → both dead
+    // Dual cancellation: both fwd and rev survive → both dead
     std::vector<bool> dead(num_half_chains, false);
     for (std::size_t chain_idx = 0; chain_idx < num_chains; chain_idx++) {
         std::size_t forward_id = 2 * chain_idx, reverse_id = 2 * chain_idx + 1;
@@ -818,17 +822,17 @@ inline multi_polygon build_output(const chain_build_result& chains,
             dead[forward_id] = dead[reverse_id] = true;
     }
 
-    // 3. Update next_half_chain via indirection: for each surviving half-chain whose next
-    //    points to a dead half-chain, follow next_half_chain[dead.dual()] until a live half-chain
-    //    is found. This terminates because at least one half-chain per vertex cycle
-    //    survives (not all faces can be cancelled).
+    // Update next_half_chain via indirection: for each surviving half-chain whose next
+    // points to a dead half-chain, follow next_half_chain[dead.dual()] until a live
+    // half-chain is found. Terminates because at least one half-chain per vertex cycle
+    // survives (not all faces can be cancelled).
     for (std::size_t i = 0; i < num_half_chains; i++) {
         if (!survive[i] || dead[i]) continue;
         while (dead[next_half_chain[i].id])
             next_half_chain[i] = next_half_chain[next_half_chain[i].dual().id];
     }
 
-    // 4. Build connected components: coplanar + ray + dual cancellation → same face
+    // Build connected components: coplanar + ray + dual cancellation → same face
     std::vector<std::pair<std::size_t, std::size_t>> face_edges;
     face_edges.insert(face_edges.end(), coplanar_pairs.begin(), coplanar_pairs.end());
     face_edges.insert(face_edges.end(), ray_pairs.begin(), ray_pairs.end());
@@ -838,7 +842,7 @@ inline multi_polygon build_output(const chain_build_result& chains,
     }
     auto component_id = connected_components(num_half_chains, face_edges);
 
-    // 5. Group surviving non-dead half-chains by face via bucket_sort
+    // Group surviving non-dead half-chains by face
     std::vector<std::pair<std::size_t, std::size_t>> half_chain_to_face;
     for (std::size_t i = 0; i < num_half_chains; i++)
         if (!dead[i] && survive[i])
@@ -851,7 +855,7 @@ inline multi_polygon build_output(const chain_build_result& chains,
         [](const std::pair<std::size_t, std::size_t>& p) { return p.first; },
         [](const std::pair<std::size_t, std::size_t>& p) { return p.second; });
 
-    // 6. For each face, trace its half-chains into a polygon
+    // For each face, trace its half-chains into a polygon
     multi_polygon result;
 
     for (std::size_t f = 0; f < num_faces; f++) {
@@ -921,8 +925,7 @@ inline multi_polygon build_output(const chain_build_result& chains,
 // Main pipeline
 // ---------------------------------------------------------------------------
 
-inline auto run_pipeline(auto segments, auto filter) {
-    // Phase 1: edges → chains → half-chain graph
+inline auto run_pipeline(std::vector<segment> segments, auto filter) {
     auto [hot_pixels, sorted_edges] = construct_edges_with_power(std::move(segments));
 
     auto chains = build_chains(sorted_edges, hot_pixels.size());
@@ -930,14 +933,11 @@ inline auto run_pipeline(auto segments, auto filter) {
     auto [sorted_half_chains, half_chain_begin, half_chain_end, next_half_chain, coplanar] =
         build_half_chain_graph(chains, hot_pixels);
 
-    // Phase 2: ray casting → ray coplanar pairs
     auto [exterior_half_chains, ray_pairs] =
         find_exterior(chains, hot_pixels, sorted_half_chains, half_chain_begin, half_chain_end);
 
-    // Phase 3: winding numbers
     auto winding = compute_winding(chains, coplanar, ray_pairs, exterior_half_chains);
 
-    // Phase 4: build polygons face by face
     return build_output(chains, hot_pixels, std::move(next_half_chain),
                         winding, coplanar, ray_pairs, filter);
 }
@@ -983,3 +983,5 @@ inline auto difference(const auto& polygons1, const auto& polygons2) {
     });
     return run_pipeline(std::move(segments), [](int w) { return w > 0; });
 }
+
+} // namespace best_clipper

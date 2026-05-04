@@ -2,7 +2,7 @@
 
 ## Overview
 
-`best_clipper` is a C++20 header-only library for polygon boolean operations (union, intersection) using snap rounding planar graph construction followed by chain-based face traversal. The algorithm leverages the theoretical foundation of snap rounding to guarantee topological correctness while maintaining O(n log n) time complexity.
+`best_clipper` is a C++20 header-only library for polygon boolean operations (union, intersection, XOR, difference, self-union) using snap rounding planar graph construction followed by winding number face traversal. The algorithm leverages the theoretical foundation of snap rounding to guarantee topological correctness while maintaining O(n log n) time complexity.
 
 ## Theoretical Foundation
 
@@ -18,97 +18,55 @@ The paper proves that snapping intersection points to integer grid points (hot p
 
 The winding number (绕数) of a face is computed using the residue theorem. For a point in a face, the winding number counts the net number of counterclockwise turns around the point by the boundary. For boolean operations:
 
-- **Union**: faces with winding number > 0 survive (point is inside at least one polygon)
-- **Intersection**: faces with winding number > 1 survive (point is inside both polygons)
+- **Union**: faces with winding number > 0 survive
+- **Intersection**: faces with winding number > 1 survive
+- **XOR**: faces with winding number == 1 survive
+- **Difference (A - B)**: reverse B's segments, then faces with winding number > 0 survive
+- **Self-union** (`self_or`): union of a polygon with itself, resolves self-intersections
 
 ### Chain-based Face Traversal
 
 Rather than operating on individual half-edges, we collapse non-branching edges into **chains** to reduce the graph size. This is the key innovation over standard half-edge approaches.
 
-## Algorithm Pipeline (14 Steps)
+## Algorithm Pipeline
 
-### Step 1: Find All Intersection Points (Hot Pixels)
+### Steps 1-3: Edges with Power
 
-Input segments are decomposed from multi-polygons. All pairwise segment intersections are computed. Each intersection point is snapped to the nearest integer grid point (hot pixel). All segment endpoints are also added as hot pixels.
-
-### Step 2: Split Segments at Hot Pixels
-
-For each segment, find all hot pixels that lie on it. Sort these pixels along the segment direction. Form new sub-segments between consecutive hot pixels.
-
-### Step 3: Deduplicate Edges and Compute Power
-
-Each edge is normalized so that `start < end`. Duplicate edges (same start/end) have their power summed. The power of an edge is +1 for a forward traversal (from the left polygon boundary) and -1 for backward. The power represents the winding number contribution when crossing the edge from left to right.
-
-Edges with power == 0 (equal forward and backward traversals) are removed.
+All segment endpoints and pairwise segment intersections are snapped to integer grid points (**hot pixels**). Each segment is split into sub-segments between consecutive hot pixels lying on it. Edges are normalized (`start < end`) and deduplicated: overlapping edges from different input polygons have their powers summed. Power = +1 when an edge goes from lower to higher pixel index, -1 when reversed. Zero-power edges (equal forward and reverse traversal) are removed.
 
 ### Step 4: Build Chains
 
-Consecutive edges where each vertex has exactly one incoming and one outgoing edge with the same power are merged into chains. Chains reduce the number of elements for subsequent steps.
+Consecutive edges where each intermediate vertex has exactly one incoming and one outgoing edge with the same power are merged into **chains**. This is a lossless compression: chain endpoints are exactly the branch points of the graph, and all topological information is preserved.
 
-A vertex is a chain endpoint if:
-- Its out_degree != 1, or
-- Its in_degree != 1, or  
-- out_power != in_power
+### Steps 5-6: Half-Chain Graph
 
-Starting from each endpoint, follow edges until another endpoint is reached.
+Each chain produces two **half chains** following Boost.Geometry's right-face convention:
+- **Forward** (even index): belongs to the face on its **right** side
+- **Reverse** (odd index): belongs to the face on its **right** side (the other face)
 
-Pure cycles (where all vertices satisfy the chain-continuation condition) are handled separately.
+At each vertex, departing half chains are sorted by CCW angle. The sector between adjacent half chains `prev` and `cur` (CCW) lies on the right of `cur`. Since a half chain belongs to its right face, `cur` and `prev.dual()` are **coplanar** (same face). Next pointers connect half chains around each face: `next[prev.dual()] = cur`.
 
-### Step 5: Create Duplicated Chains
+### Step 7: Ray Casting
 
-Each chain produces two directed half-chains (dual chains / duplicated chains):
-- **Forward** (even index): traverses the chain in original direction, belongs to the left face
-- **Reverse** (odd index): traverses the chain in reverse direction, belongs to the right face
+For each connected component, the leftmost vertex is identified. A ray is cast in the -x direction. The half chain whose right face contains the ray, and the nearest half chain hit by the ray, are coplanar. If nothing is hit, that half chain's right face is the exterior (winding = 0). This seeds winding number propagation.
 
-The power of a duplicated chain is the winding number difference when crossing from its left face to its right face.
+### Step 8: Compute Winding Numbers
 
-### Step 6: Angular Sort at Vertices
+A weighted graph on half-chain IDs is built: coplanar/ray pairs (weight 0) and dual edges `i ↔ i^1` (weight `-power(i)`). A DFS from the exterior seeds (w = 0) propagates winding numbers to all reachable half chains.
 
-At each vertex, duplicated chains starting from that vertex are sorted counterclockwise by their direction vector. Adjacent duplicated chains in this sorted order share a face — the face on the right side of one is the face on the left side of the next.
+### Steps 9-10: Build Output Polygons
 
-### Step 7: Face Co-planarity Propagation
-
-Given the angular sort, adjacent duplicated chains a and b establish that a's dual and b are coplanar (belong to the same face) with the same winding number.
-
-### Step 8: Connected Components
-
-Vertices are grouped into connected components based on shared duplicated chains. Within each component, face winding numbers are related.
-
-### Step 9: Ray Casting for Exterior Face
-
-For each connected component, find the leftmost vertex. Cast a ray in the -x direction. Find the nearest intersecting duplicated chain. The face on the left side of this chain belongs to the same connected component. If the ray hits no chain, the leftmost vertex's left face is the exterior (winding number = 0).
-
-### Step 10: Compute All Winding Numbers
-
-Using DFS/BFS from the known exterior face(s), propagate winding numbers through all coplanar relationships. The difference in winding number between adjacent faces equals the power of the separating duplicated chain.
-
-### Step 11: Filter by Winding Number
-
-Duplicated chains are filtered based on their face's winding number:
-- Union: keep chains whose left face has winding number > 0
-- Intersection: keep chains whose left face has winding number > 1
-
-### Step 12: Dual Cancellation
-
-If both directions of a chain survive, they cancel out (remove from output). Cancellation also modifies the adjacency of neighboring duplicated chains: the predecessor of one is linked to the successor of the other, and vice versa.
-
-### Step 13: Form Rings
-
-Surviving duplicated chains are connected end-to-end using the angular ordering at each vertex. Each connected cycle forms a ring.
-
-### Step 14: Assemble Multi-Polygons
-
-Rings are classified as:
-- **Outer rings** (CW, positive area): the ring with minimum x-coordinate is the outer ring
-- **Holes** (CCW, negative area): nested inside outer rings
-
-Holes are assigned to their parent outer ring using point-in-polygon tests (DE-9IM `TFF` mask via Boost.Geometry rtree).
+1. Filter half chains by winding number according to the operation
+2. Dual cancellation: if both forward and reverse half chains of a chain survive, kill both
+3. Rebuild next pointers, bypassing dead half chains via indirection
+4. Trace surviving half chains along next pointers into closed rings
+5. Assemble rings into polygons (ring with minimum x-coordinate = outer, rest = holes)
 
 ## Dependencies
 
-- **Boost.Geometry**: rtree for spatial indexing, polygon validity, WKT I/O
+- **Boost.Geometry**: rtree for spatial indexing, segment/polygon model types
 - **Boost.Container**: flat_map for sorted associative containers
-- **C++20**: ranges, concepts, std::exclusive_scan
+- **C++20**: `std::exclusive_scan`, abbreviated function templates
 
 ## References
 

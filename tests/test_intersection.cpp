@@ -19,7 +19,7 @@ void test_intersection(const std::string& a_wkt, const std::string& b_wkt,
         << "Expected: " << bg::wkt(expected);
 }
 
-TEST(BasicTest, Intersection) {
+TEST(CoreTest, Intersection) {
     test_intersection(
         "MULTIPOLYGON(((0 0, 0 2, 2 2, 2 0, 0 0)))",
         "MULTIPOLYGON(((1 1, 1 3, 3 3, 3 1, 1 1)))",

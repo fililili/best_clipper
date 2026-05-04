@@ -1,5 +1,6 @@
-#include "basic.hpp"
+#include "core.hpp"
 #include <iostream>
+using namespace best_clipper;
 
 int main() {
     multi_polygon first, second, expected;

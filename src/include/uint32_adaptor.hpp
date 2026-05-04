@@ -8,7 +8,7 @@
 #include <boost/geometry.hpp>
 #include <cstdint>
 
-#include "basic.hpp"
+#include "core.hpp"
 
 namespace bg = boost::geometry;
 
@@ -18,7 +18,11 @@ using box_s32 = bg::model::box<point_s32>;
 using ring_s32 = bg::model::ring<point_s32>;
 using polygon_s32 = bg::model::polygon<point_s32>;
 using multi_polygon_s32 = bg::model::multi_polygon<polygon_s32>;
-using multi_polygon_u32 = multi_polygon;
+using multi_polygon_u32 = best_clipper::multi_polygon;
+
+using best_clipper::point;
+using best_clipper::ring;
+using best_clipper::polygon;
 
 constexpr uint32_t BIAS = 0x80000000;
 
@@ -68,21 +72,21 @@ inline multi_polygon_s32 unbias_mp(const multi_polygon_u32& src) {
 }
 
 inline multi_polygon_s32 add(const multi_polygon_s32& a, const multi_polygon_s32& b) {
-    return unbias_mp(::add(bias_mp(a), bias_mp(b)));
+    return unbias_mp(best_clipper::add(bias_mp(a), bias_mp(b)));
 }
 
 inline multi_polygon_s32 intersection(const multi_polygon_s32& a, const multi_polygon_s32& b) {
-    return unbias_mp(::intersection(bias_mp(a), bias_mp(b)));
+    return unbias_mp(best_clipper::intersection(bias_mp(a), bias_mp(b)));
 }
 
 inline multi_polygon_s32 xor_(const multi_polygon_s32& a, const multi_polygon_s32& b) {
-    return unbias_mp(::xor_(bias_mp(a), bias_mp(b)));
+    return unbias_mp(best_clipper::xor_(bias_mp(a), bias_mp(b)));
 }
 
 inline multi_polygon_s32 difference(const multi_polygon_s32& a, const multi_polygon_s32& b) {
-    return unbias_mp(::difference(bias_mp(a), bias_mp(b)));
+    return unbias_mp(best_clipper::difference(bias_mp(a), bias_mp(b)));
 }
 
 inline multi_polygon_s32 self_or(const multi_polygon_s32& a) {
-    return unbias_mp(::self_or(bias_mp(a)));
+    return unbias_mp(best_clipper::self_or(bias_mp(a)));
 }
