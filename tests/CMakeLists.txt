@@ -44,3 +44,8 @@ add_executable(test_manhattan test_manhattan.cpp)
 target_compile_features(test_manhattan PRIVATE cxx_std_20)
 target_link_libraries(test_manhattan PRIVATE best_clipper_core GTest::gtest_main)
 add_test(NAME _test_manhattan COMMAND test_manhattan)
+
+add_executable(test_uniform_grid test_uniform_grid.cpp)
+target_compile_features(test_uniform_grid PRIVATE cxx_std_20)
+target_link_libraries(test_uniform_grid PRIVATE best_clipper_core GTest::gtest_main)
+add_test(NAME _test_uniform_grid COMMAND test_uniform_grid)

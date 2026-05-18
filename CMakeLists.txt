@@ -29,6 +29,33 @@ else()
     message(FATAL_ERROR "Boost::container target not found!")
 endif()
 
+# oneTBB (required by Embree)
+CPMAddPackage(
+    NAME oneTBB
+    GITHUB_REPOSITORY oneapi-src/oneTBB
+    GIT_TAG v2021.13.0
+    OPTIONS "TBB_TEST OFF" "TBB_EXAMPLES OFF" "TBB_STRICT OFF" "TBBMALLOC_BUILD OFF"
+)
+if(TARGET tbb AND NOT TARGET TBB::tbb)
+    add_library(TBB::tbb ALIAS tbb)
+endif()
+if(TARGET tbbmalloc AND NOT TARGET TBB::tbbmalloc)
+    add_library(TBB::tbbmalloc ALIAS tbbmalloc)
+endif()
+set(TBB_FOUND TRUE CACHE BOOL "TBB found via CPM" FORCE)
+
+# Intel Embree - high-performance ray tracing
+CPMAddPackage(
+    NAME embree
+    GITHUB_REPOSITORY embree/embree
+    GIT_TAG v4.3.3
+    OPTIONS
+    "EMBREE_ISPC_SUPPORT OFF"
+    "EMBREE_TUTORIALS OFF"
+    "EMBREE_TESTING OFF"
+    "EMBREE_STATIC_LIB ON"
+)
+
 add_subdirectory(src)
 enable_testing()
 add_subdirectory(tests)

@@ -25,3 +25,11 @@ target_link_libraries(debug_hole PRIVATE best_clipper_core)
 add_executable(debug_column9 debug_column9.cpp)
 target_compile_features(debug_column9 PRIVATE cxx_std_20)
 target_link_libraries(debug_column9 PRIVATE best_clipper_core)
+
+add_executable(debug_profile debug_profile.cpp)
+target_compile_features(debug_profile PRIVATE cxx_std_20)
+target_link_libraries(debug_profile PRIVATE best_clipper_core)
+
+add_executable(debug_validate debug_validate.cpp)
+target_compile_features(debug_validate PRIVATE cxx_std_20)
+target_link_libraries(debug_validate PRIVATE best_clipper_core)
