@@ -1,0 +1,555 @@
+#include "include/core.hpp"
+#include "core_detail.hpp"
+#include "include/uniform_grid.hpp"
+
+#include <algorithm>
+#include <cassert>
+#include <limits>
+#include <utility>
+#include <vector>
+
+namespace best_clipper {
+
+namespace bg = boost::geometry;
+
+// ---------------------------------------------------------------------------
+// connected_components
+// ---------------------------------------------------------------------------
+
+std::vector<std::size_t> connected_components(
+    std::size_t n,
+    const std::vector<std::pair<std::size_t, std::size_t>>& edges) {
+
+    std::vector<std::pair<std::size_t, std::size_t>> all_edges;
+    all_edges.reserve(edges.size() * 2);
+    for (auto [a, b] : edges) {
+        all_edges.emplace_back(a, b);
+        all_edges.emplace_back(b, a);
+    }
+
+    auto [adj_begin, adj_end, adjacency] = bucket_sort(
+        all_edges, n,
+        [](const std::pair<std::size_t, std::size_t>& e) { return e.first; },
+        [](const std::pair<std::size_t, std::size_t>& e) { return e.second; });
+
+    std::vector<std::size_t> comp(n, ~0ULL);
+    std::vector<std::size_t> stack;
+    std::size_t num_components = 0;
+
+    for (std::size_t v = 0; v < n; v++) {
+        if (comp[v] != ~0ULL) continue;
+        comp[v] = num_components++;
+        stack.push_back(v);
+        while (!stack.empty()) {
+            auto u = stack.back(); stack.pop_back();
+            for (auto j = adj_begin[u]; j < adj_end[u]; j++) {
+                auto w = adjacency[j];
+                if (comp[w] == ~0ULL) {
+                    comp[w] = comp[v];
+                    stack.push_back(w);
+                }
+            }
+        }
+    }
+
+    return comp;
+}
+
+// ---------------------------------------------------------------------------
+// construct_graph
+// ---------------------------------------------------------------------------
+
+std::tuple<std::vector<edge_t>, std::vector<point>> construct_graph(const std::vector<segment>& segments) {
+    std::vector<std::pair<box, std::size_t>> boxes(segments.size());
+    for (std::size_t i = 0; i < segments.size(); i++)
+        boxes[i] = {bg::return_envelope<box>(segments[i]), i};
+    best_clipper::uniform_grid::grid<size_t> segments_box_grid(std::move(boxes), 0);
+
+    std::vector<point> hot_pixels;
+    hot_pixels.reserve(segments.size() * 2);
+    for (const auto& seg : segments) {
+        hot_pixels.emplace_back(bg::get<0, 0>(seg), bg::get<0, 1>(seg));
+        hot_pixels.emplace_back(bg::get<1, 0>(seg), bg::get<1, 1>(seg));
+    }
+
+    for (std::size_t i = 0; i < segments.size(); i++)
+        segments_box_grid.query_intersects(boxes[i].first, [&](std::size_t j) {
+            if (auto p = get_intersection(segments[i], segments[j]))
+                hot_pixels.push_back(p.value());
+        });
+
+    std::sort(std::begin(hot_pixels), std::end(hot_pixels), [](auto p1, auto p2) {
+        return std::pair{bg::get<0>(p1), bg::get<1>(p1)} <
+               std::pair{bg::get<0>(p2), bg::get<1>(p2)};
+    });
+    auto last = std::unique(std::begin(hot_pixels), std::end(hot_pixels),
+                            [](auto p1, auto p2) { return bg::equals(p1, p2); });
+    hot_pixels.erase(last, hot_pixels.end());
+
+    std::vector<std::pair<std::size_t, std::size_t>> segment_pixel_pairs;
+    std::vector<std::size_t> last_seen(segments.size(), ~0ULL);
+    for (std::size_t i = 0; i < hot_pixels.size(); i++) {
+        int32_t x = bg::get<0>(hot_pixels[i]), y = bg::get<1>(hot_pixels[i]);
+        auto min_corner = point{x > INT32_MIN ? x - 1 : INT32_MIN, y > INT32_MIN ? y - 1 : INT32_MIN};
+        auto max_corner = point{x < INT32_MAX ? x + 1 : INT32_MAX, y < INT32_MAX ? y + 1 : INT32_MAX};
+        segments_box_grid.query_intersects(box{min_corner, max_corner}, [&](std::size_t val) {
+            if (last_seen[val] == i) return;
+            last_seen[val] = i;
+            if (is_point_on_segment(hot_pixels[i], segments[val]))
+                segment_pixel_pairs.emplace_back(val, i);
+        });
+    }
+
+    std::vector<edge_t> edges;
+    {
+        auto [segments_begin, segments_end, pixels] = bucket_sort(
+            segment_pixel_pairs, segments.size(), [](auto val) { return val.first; },
+            [](auto val) { return val.second; });
+        for (std::size_t i = 0; i < segments.size(); i++) {
+            auto pixel_begin = std::begin(pixels) + segments_begin[i], pixel_end = std::begin(pixels) + segments_end[i];
+            std::sort(pixel_begin, pixel_end, [&](auto pi, auto pj) {
+                return less_by_segment{segments[i]}(hot_pixels[pi], hot_pixels[pj]);
+            });
+            for (; pixel_begin != pixel_end - 1; pixel_begin++) edges.emplace_back(*pixel_begin, *std::next(pixel_begin));
+        }
+    }
+    return {std::move(edges), std::move(hot_pixels)};
+}
+
+// ---------------------------------------------------------------------------
+// edges_to_power
+// ---------------------------------------------------------------------------
+
+std::vector<edge_with_power_t> edges_to_power(std::vector<edge_t> edges) {
+    std::vector<edge_with_power_t> r(edges.size());
+    for (std::size_t i = 0; i < r.size(); i++) {
+        auto s = edges[i].start, e = edges[i].end;
+        if (s < e) r[i] = {s, e, 1};
+        else      r[i] = {e, s, -1};
+    }
+    return r;
+}
+
+// ---------------------------------------------------------------------------
+// unique_edges
+// ---------------------------------------------------------------------------
+
+std::vector<edge_with_power_t> unique_edges(std::vector<edge_with_power_t> edges,
+                                             std::size_t num_vertices) {
+    auto [begin_loc, end_loc, ordered] = bucket_sort(
+        std::move(edges), num_vertices,
+        [](const edge_with_power_t& e) { return e.start; },
+        [](const edge_with_power_t& e) { return e; });
+    std::vector<edge_with_power_t> result;
+    for (std::size_t i = 0; i < num_vertices; i++) {
+        auto current_begin = std::begin(ordered) + begin_loc[i], current_end = std::begin(ordered) + end_loc[i];
+        if (current_begin == current_end) continue;
+        std::sort(current_begin, current_end, [](const edge_with_power_t& a, const edge_with_power_t& b) {
+            return a.end < b.end;
+        });
+        for (auto cur = current_begin; cur != current_end; ) {
+            int sum = 0;
+            auto next = cur;
+            while (next != current_end && next->end == cur->end) {
+                sum += next->power;
+                ++next;
+            }
+            if (sum != 0)
+                result.push_back({cur->start, cur->end, sum});
+            cur = next;
+        }
+    }
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+// construct_edges_with_power
+// ---------------------------------------------------------------------------
+
+std::tuple<std::vector<point>, std::vector<edge_with_power_t>>
+construct_edges_with_power(const std::vector<segment>& segments) {
+    auto [edges, hot_pixels] = construct_graph(segments);
+    return std::tuple{std::move(hot_pixels),
+                      unique_edges(edges_to_power(std::move(edges)), hot_pixels.size())};
+}
+
+// ---------------------------------------------------------------------------
+// build_chains
+// ---------------------------------------------------------------------------
+
+chain_build_result build_chains(const std::vector<edge_with_power_t>& sorted_edges,
+                                 std::size_t node_num) {
+    std::vector<std::size_t> edge_offsets(node_num + 1, 0);
+    {
+        std::vector<std::size_t> edge_count(node_num, 0);
+        for (auto& e : sorted_edges) edge_count[e.start]++;
+        std::size_t cur = 0;
+        for (std::size_t v = 0; v < node_num; v++) { edge_offsets[v] = cur; cur += edge_count[v]; }
+        edge_offsets.back() = cur;
+    }
+
+    std::vector<std::uint32_t> out_deg(node_num), in_deg(node_num);
+    std::vector<int> out_power(node_num), in_power(node_num);
+    for (const auto& e : sorted_edges) {
+        out_deg[e.start]++; in_deg[e.end]++; out_power[e.start] = e.power; in_power[e.end] = e.power;
+    }
+
+    std::vector<bool> is_end(node_num);
+    for (std::size_t i = 0; i < node_num; i++)
+        is_end[i] = !(out_deg[i] == 1 && in_deg[i] == 1 && out_power[i] == in_power[i]);
+
+    std::vector<bool> visited(node_num), edge_used(sorted_edges.size());
+    std::vector<std::size_t> idx, off{0};
+    std::vector<int> powers;
+    std::vector<std::size_t> edge_to_chain(sorted_edges.size(), ~0ULL);
+
+    for (std::size_t i = 0; i < node_num; i++) {
+        if (!is_end[i]) continue;
+        visited[i] = true;
+        for (std::size_t j = edge_offsets[i]; j < edge_offsets[i + 1]; j++) {
+            if (edge_used[j] || sorted_edges[j].start != i) continue;
+            edge_used[j] = true; idx.push_back(i);
+            powers.push_back(sorted_edges[j].power); edge_to_chain[j] = off.size() - 1;
+            auto cur = sorted_edges[j].end;
+            while (!is_end[cur]) {
+                visited[cur] = true; idx.push_back(cur);
+                std::size_t nj = ~0ULL;
+                for (std::size_t k = edge_offsets[cur]; k < edge_offsets[cur + 1]; k++)
+                    if (!edge_used[k] && sorted_edges[k].start == cur) { nj = k; break; }
+                assert(nj != ~0ULL);
+                edge_used[nj] = true; edge_to_chain[nj] = off.size() - 1;
+                cur = sorted_edges[nj].end;
+            }
+            idx.push_back(cur); off.push_back(idx.size());
+        }
+    }
+
+    for (std::size_t i = 0; i < node_num; i++) {
+        if (visited[i]) continue;
+        std::size_t sj = ~0ULL;
+        for (std::size_t j = edge_offsets[i]; j < edge_offsets[i + 1]; j++)
+            if (!edge_used[j] && sorted_edges[j].start == i) { sj = j; break; }
+        if (sj == ~0ULL) continue;
+        visited[i] = true; edge_used[sj] = true;
+        idx.push_back(i); powers.push_back(sorted_edges[sj].power); edge_to_chain[sj] = off.size() - 1;
+        auto cur = sorted_edges[sj].end;
+        while (i != cur) {
+            visited[cur] = true; idx.push_back(cur);
+            std::size_t nj = ~0ULL;
+            for (std::size_t k = edge_offsets[cur]; k < edge_offsets[cur + 1]; k++)
+                if (!edge_used[k] && sorted_edges[k].start == cur) { nj = k; break; }
+            assert(nj != ~0ULL);
+            edge_used[nj] = true; edge_to_chain[nj] = off.size() - 1;
+            cur = sorted_edges[nj].end;
+        }
+        idx.push_back(cur); off.push_back(idx.size());
+    }
+
+    return {std::move(idx), std::move(off), std::move(powers), std::move(edge_to_chain)};
+}
+
+// ---------------------------------------------------------------------------
+// build_half_chain_graph
+// ---------------------------------------------------------------------------
+
+using hcg_tuple = std::tuple<std::vector<half_chain>, std::vector<std::size_t>,
+                             std::vector<std::size_t>, std::vector<half_chain>,
+                             std::vector<std::pair<std::size_t, std::size_t>>>;
+
+hcg_tuple build_half_chain_graph(const chain_build_result& chains,
+                                  const std::vector<point>& hot_pixels) {
+    std::size_t num_half_chains = (chains.offsets.size() - 1) * 2;
+    std::size_t num_vertices = hot_pixels.size();
+
+    std::vector<half_chain> all;
+    all.reserve(num_half_chains);
+    for (std::size_t i = 0; i < num_half_chains; i++) all.push_back({i});
+
+    auto [begin_loc, end_loc, sorted_half_chains] = bucket_sort(
+        all, num_vertices, [&](half_chain h) { return h.source_node(chains); },
+        [](half_chain h) { return h; });
+
+    for (std::size_t v = 0; v < num_vertices; v++) {
+        auto vertex_begin = begin_loc[v], vertex_end = end_loc[v];
+        if (vertex_end - vertex_begin < 2) continue;
+        std::sort(sorted_half_chains.begin() + vertex_begin, sorted_half_chains.begin() + vertex_end,
+                  [&](half_chain a, half_chain b) {
+                      return less_by_direction(hot_pixels[v],
+                                               hot_pixels[a.next_along_source(chains)],
+                                               hot_pixels[b.next_along_source(chains)]);
+                  });
+    }
+
+    std::vector<half_chain> next_half_chain(num_half_chains, {~0ULL});
+    std::vector<std::pair<std::size_t, std::size_t>> coplanar;
+
+    for (std::size_t v = 0; v < num_vertices; v++) {
+        auto vertex_begin = begin_loc[v], vertex_end = end_loc[v];
+        if (vertex_begin == vertex_end) continue;
+        assert(vertex_begin + 1 != vertex_end);
+        for (auto it = vertex_begin + 1; it < vertex_end; ++it) {
+            auto prev = sorted_half_chains[it - 1], cur = sorted_half_chains[it];
+            next_half_chain[prev.dual().id] = cur;
+            coplanar.emplace_back(cur.id, prev.dual().id);
+        }
+        auto first = sorted_half_chains[vertex_begin], last = sorted_half_chains[vertex_end - 1];
+        next_half_chain[last.dual().id] = first;
+        coplanar.emplace_back(first.id, last.dual().id);
+    }
+
+    return hcg_tuple{
+        std::move(sorted_half_chains),
+        std::vector<std::size_t>(begin_loc.begin(), begin_loc.end()),
+        std::vector<std::size_t>(end_loc.begin(), end_loc.end()),
+        std::move(next_half_chain), std::move(coplanar)};
+}
+
+// ---------------------------------------------------------------------------
+// cast_ray_minus_x
+// ---------------------------------------------------------------------------
+
+struct chain_seg {
+    int64_t x1, y1, dx, dy;
+    std::size_t half_chain_id;
+};
+
+std::vector<std::pair<std::size_t, std::size_t>> cast_ray_minus_x(
+    std::size_t v,
+    const std::vector<point>& hot_pixels,
+    const chain_build_result& chains,
+    const std::vector<half_chain>& sorted_half_chains,
+    const std::vector<std::size_t>& half_chain_begin,
+    const std::vector<std::size_t>& half_chain_end,
+    const best_clipper::uniform_grid::grid<size_t>& seg_grid,
+    const std::vector<chain_seg>& seg_data) {
+
+    auto range_begin = half_chain_begin[v], range_end = half_chain_end[v];
+    if (range_begin == range_end) return {};
+
+    // Find the half-chain at v whose right face contains the -x ray direction.
+    point vertex_point = hot_pixels[v];
+    int32_t vx = bg::get<0>(vertex_point);
+    int32_t vy = bg::get<1>(vertex_point);
+    point ray_point{vx > INT32_MIN ? vx - 1 : INT32_MIN, vy};
+    half_chain vertex_half_chain;
+    bool found = false;
+    for (auto it = range_begin; it < range_end; it++) {
+        auto h = sorted_half_chains[it];
+        auto half_chain_point = hot_pixels[h.next_along_source(chains)];
+        if (less_by_direction(vertex_point, ray_point, half_chain_point)) {
+            vertex_half_chain = h;
+            found = true;
+            break;
+        }
+    }
+    if (!found) vertex_half_chain = sorted_half_chains[range_begin];
+
+    // Cast ray in -x direction, find the nearest intersected half-chain.
+    int64_t ray_y = vy;
+    int64_t min_x = vx;
+    int64_t best_x = std::numeric_limits<int64_t>::min();
+    std::size_t hit_id = ~0ULL;
+    int64_t hit_dy = 0;
+    int64_t best_dx = 0;
+    int64_t hit_y_low = 0;
+
+    auto try_edge = [&](int64_t ix, int64_t dx, int64_t dy, int64_t y_low, std::size_t half_chain_id) {
+        if (ix >= min_x) return;
+        bool better = false;
+        if (ix > best_x) {
+            better = true;
+        } else if (ix == best_x) {
+            int sign_a = (dx ^ hit_dy) >= 0 ? 1 : -1;
+            int sign_b = (best_dx ^ dy) >= 0 ? 1 : -1;
+            bool same_sign = sign_a == sign_b;
+            uint64_t abs_a = (uint64_t)(dx >= 0 ? dx : -dx) * (uint64_t)(hit_dy >= 0 ? hit_dy : -hit_dy);
+            uint64_t abs_b = (uint64_t)(best_dx >= 0 ? best_dx : -best_dx) * (uint64_t)(dy >= 0 ? dy : -dy);
+            bool slope_gt;
+            if (!same_sign) slope_gt = sign_a > sign_b;
+            else if (sign_a > 0) slope_gt = abs_a > abs_b;
+            else slope_gt = abs_a < abs_b;
+            if (slope_gt) {
+                better = true;
+            } else if (same_sign && abs_a == abs_b) {
+                uint64_t da = ray_y - y_low;
+                uint64_t db = ray_y - hit_y_low;
+                uint64_t abs_dy = dy > 0 ? (uint64_t)dy : (uint64_t)(-dy);
+                uint64_t abs_hdy = hit_dy > 0 ? (uint64_t)hit_dy : (uint64_t)(-hit_dy);
+                if (da * abs_hdy < db * abs_dy) {
+                    better = true;
+                } else if (da * abs_hdy == db * abs_dy && abs_dy > abs_hdy) {
+                    better = true;
+                }
+            }
+        }
+        if (better) {
+            best_x = ix; best_dx = dx; hit_dy = dy; hit_id = half_chain_id;
+            hit_y_low = y_low;
+        }
+    };
+
+    auto intersect_x = [&](int64_t x1, int64_t y1, int64_t dx, int64_t dy) -> int64_t {
+        return (int64_t)(((int128_t)x1 * dy + (int128_t)(ray_y - y1) * dx) / dy);
+    };
+
+    auto query_box = box{point{INT32_MIN, (int32_t)ray_y}, point{vx, (int32_t)ray_y}};
+    seg_grid.query_intersects(query_box, [&](std::size_t idx) {
+        auto& seg = seg_data[idx];
+        int64_t y2 = seg.y1 + seg.dy;
+        if (seg.y1 <= ray_y && ray_y < y2) {
+            int64_t ix = intersect_x(seg.x1, seg.y1, seg.dx, seg.dy);
+            try_edge(ix, seg.dx, seg.dy, seg.y1, seg.half_chain_id);
+        } else if (y2 <= ray_y && ray_y < seg.y1) {
+            int64_t ix = intersect_x(seg.x1, seg.y1, seg.dx, seg.dy);
+            try_edge(ix, seg.dx, seg.dy, y2, seg.half_chain_id);
+        }
+    });
+
+    // Build the coplanar pair (RIGHT-face convention).
+    std::vector<std::pair<std::size_t, std::size_t>> ray_pairs;
+    if (hit_id != ~0ULL) {
+        std::size_t hit_side = (hit_dy > 0) ? hit_id : (hit_id ^ 1);
+        ray_pairs.emplace_back(vertex_half_chain.id, hit_side);
+    } else {
+        ray_pairs.emplace_back(vertex_half_chain.id, vertex_half_chain.id);
+    }
+    return ray_pairs;
+}
+
+// ---------------------------------------------------------------------------
+// find_exterior
+// ---------------------------------------------------------------------------
+
+using fe_tuple = std::tuple<std::vector<std::size_t>,
+                            std::vector<std::pair<std::size_t, std::size_t>>>;
+
+fe_tuple find_exterior(const chain_build_result& chains,
+                       const std::vector<point>& hot_pixels,
+                       const std::vector<half_chain>& sorted_half_chains,
+                       const std::vector<std::size_t>& half_chain_begin,
+                       const std::vector<std::size_t>& half_chain_end) {
+    std::size_t num_vertices = hot_pixels.size();
+
+    std::vector<std::pair<std::size_t, std::size_t>> vertex_edges;
+    for (auto h : sorted_half_chains)
+        vertex_edges.emplace_back(h.source_node(chains), h.target_node(chains));
+    for (std::size_t c = 0; c + 1 < chains.offsets.size(); c++) {
+        auto chain_begin_idx = chains.offsets[c], chain_end_idx = chains.offsets[c + 1];
+        for (std::size_t k = chain_begin_idx; k + 1 < chain_end_idx; k++)
+            vertex_edges.emplace_back(chains.indices[k], chains.indices[k + 1]);
+    }
+
+    auto component_id = connected_components(num_vertices, vertex_edges);
+
+    std::size_t num_components = 0;
+    for (auto c : component_id) num_components = std::max(num_components, c + 1);
+    std::vector<std::vector<std::size_t>> vertex_components(num_components);
+    for (std::size_t v = 0; v < num_vertices; v++)
+        vertex_components[component_id[v]].push_back(v);
+
+    std::vector<chain_seg> seg_data;
+    std::vector<std::pair<box, std::size_t>> seg_boxes;
+    for (auto h : sorted_half_chains) {
+        auto& idx = chains.indices;
+        auto& off = chains.offsets;
+        std::size_t ci = h.chain_id();
+        auto cbi = off[ci], cei = off[ci + 1];
+        if (h.is_forward()) {
+            for (std::size_t k = cbi; k + 1 < cei; k++) {
+                point p1 = hot_pixels[idx[k]], p2 = hot_pixels[idx[k + 1]];
+                int32_t x1 = bg::get<0>(p1), y1 = bg::get<1>(p1);
+                int32_t x2 = bg::get<0>(p2), y2 = bg::get<1>(p2);
+                seg_data.push_back({(int64_t)x1, (int64_t)y1,
+                                    (int64_t)x2 - (int64_t)x1,
+                                    (int64_t)y2 - (int64_t)y1, h.id});
+                seg_boxes.emplace_back(box{point{std::min(x1, x2), std::min(y1, y2)},
+                                            point{std::max(x1, x2), std::max(y1, y2)}},
+                                       seg_data.size() - 1);
+            }
+        } else {
+            for (std::size_t k = cei - 1; k > cbi; k--) {
+                point p1 = hot_pixels[idx[k]], p2 = hot_pixels[idx[k - 1]];
+                int32_t x1 = bg::get<0>(p1), y1 = bg::get<1>(p1);
+                int32_t x2 = bg::get<0>(p2), y2 = bg::get<1>(p2);
+                seg_data.push_back({(int64_t)x1, (int64_t)y1,
+                                    (int64_t)x2 - (int64_t)x1,
+                                    (int64_t)y2 - (int64_t)y1, h.id});
+                seg_boxes.emplace_back(box{point{std::min(x1, x2), std::min(y1, y2)},
+                                            point{std::max(x1, x2), std::max(y1, y2)}},
+                                       seg_data.size() - 1);
+            }
+        }
+    }
+    best_clipper::uniform_grid::grid<size_t> seg_grid(std::move(seg_boxes), 0);
+
+    std::vector<std::size_t> exterior_half_chains;
+    std::vector<std::pair<std::size_t, std::size_t>> ray_pairs;
+
+    for (auto& vertex_component : vertex_components) {
+        std::size_t leftmost_vertex = ~0ULL;
+        int32_t min_x = std::numeric_limits<int32_t>::max();
+        for (auto vertex : vertex_component) {
+            if (half_chain_begin[vertex] == half_chain_end[vertex]) continue;
+            int32_t x = bg::get<0>(hot_pixels[vertex]);
+            if (x < min_x) { min_x = x; leftmost_vertex = vertex; }
+        }
+        if (leftmost_vertex == ~0ULL) continue;
+
+        auto ray_pairs_result = cast_ray_minus_x(leftmost_vertex, hot_pixels, chains, sorted_half_chains, half_chain_begin, half_chain_end, seg_grid, seg_data);
+        for (auto& p : ray_pairs_result) {
+            if (p.first == p.second) {
+                exterior_half_chains.push_back(p.first);
+            }
+            ray_pairs.push_back(std::move(p));
+        }
+    }
+
+    return fe_tuple{std::move(exterior_half_chains), std::move(ray_pairs)};
+}
+
+// ---------------------------------------------------------------------------
+// compute_winding
+// ---------------------------------------------------------------------------
+
+std::vector<int> compute_winding(
+    const chain_build_result& chains,
+    const std::vector<std::pair<std::size_t, std::size_t>>& coplanar_pairs,
+    const std::vector<std::pair<std::size_t, std::size_t>>& ray_pairs,
+    const std::vector<std::size_t>& exterior_half_chains) {
+
+    std::size_t num_half_chains = (chains.offsets.size() - 1) * 2;
+
+    std::vector<edge_with_power_t> edges;
+    auto add = [&](std::size_t a, std::size_t b, int w) {
+        edges.emplace_back(a, b, w);
+        edges.emplace_back(b, a, -w);
+    };
+    for (auto [a, b] : coplanar_pairs) add(a, b, 0);
+    for (auto [a, b] : ray_pairs) add(a, b, 0);
+    for (std::size_t i = 0; i < num_half_chains; i++)
+        add(i, i ^ 1, -half_chain{i}.power(chains));
+
+    auto [adj_begin, adj_end, adjacency] = bucket_sort(
+        edges, num_half_chains,
+        [](const edge_with_power_t& e) { return e.start; },
+        [](const edge_with_power_t& e) { return std::pair{e.end, e.power}; });
+
+    constexpr int UNKNOWN = std::numeric_limits<int>::max() / 2;
+    std::vector<int> winding(num_half_chains, UNKNOWN);
+    for (auto exterior : exterior_half_chains) winding[exterior] = 0;
+
+    std::vector<std::size_t> stack(exterior_half_chains.begin(), exterior_half_chains.end());
+    while (!stack.empty()) {
+        auto u = stack.back(); stack.pop_back();
+        for (auto i = adj_begin[u]; i < adj_end[u]; i++) {
+            auto [v, diff] = adjacency[i];
+            if (winding[v] == UNKNOWN) {
+                winding[v] = winding[u] + diff;
+                stack.push_back(v);
+            }
+        }
+    }
+    return winding;
+}
+
+} // namespace best_clipper

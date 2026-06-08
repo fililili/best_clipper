@@ -1,19 +1,21 @@
 #include <gtest/gtest.h>
-#include "uint32_adaptor.hpp"
+#include "core.hpp"
+
+using namespace best_clipper;
 
 // ============================================================================
 // Rectangle union / self_or — many overlapping squares
 // ============================================================================
 
 void test_union_rectangle(int size) {
-    multi_polygon_s32 a, b;
+    multi_polygon a, b;
     for (int i = 0; i < size; i++) {
-        a.emplace_back(polygon_s32{ {{0 + 2 * i, 0 + 2 * i},
+        a.emplace_back(polygon{ {{0 + 2 * i, 0 + 2 * i},
                                  {0 + 2 * i, 2 + 2 * i},
                                  {2 + 2 * i, 2 + 2 * i},
                                  {2 + 2 * i, 0 + 2 * i},
                                  {0 + 2 * i, 0 + 2 * i}} });
-        b.emplace_back(polygon_s32{ {{1 + 2 * i, 1 + 2 * i},
+        b.emplace_back(polygon{ {{1 + 2 * i, 1 + 2 * i},
                                  {1 + 2 * i, 3 + 2 * i},
                                  {3 + 2 * i, 3 + 2 * i},
                                  {3 + 2 * i, 1 + 2 * i},
@@ -29,9 +31,9 @@ void test_union_rectangle(int size) {
 }
 
 void test_self_or_rectangle(int size) {
-    multi_polygon_s32 poly;
+    multi_polygon poly;
     for (int i = 0; i < size; i++) {
-        poly.emplace_back(polygon_s32{ {{0 + i, 0 + i},
+        poly.emplace_back(polygon{ {{0 + i, 0 + i},
                                     {0 + i, 2 + i},
                                     {2 + i, 2 + i},
                                     {2 + i, 0 + i},

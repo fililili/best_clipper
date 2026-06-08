@@ -1,3 +1,4 @@
+set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
 CPMAddPackage(
     NAME benchmark
     GITHUB_REPOSITORY google/benchmark

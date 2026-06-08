@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "uint32_adaptor.hpp"
+#include "core.hpp"
 
 using namespace best_clipper;
 

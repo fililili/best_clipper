@@ -1,6 +1,6 @@
 #pragma once
 
-/// Uniform grid spatial index for uint32_t-coordinate 2D bounding boxes.
+/// Uniform grid spatial index for int32_t-coordinate 2D bounding boxes.
 ///
 /// Divides space into fixed-size cells. Each item (box + value) is placed
 /// into every cell its box touches. Uses sparse storage — only non-empty
@@ -21,22 +21,22 @@ namespace best_clipper::uniform_grid {
 namespace detail {
 constexpr size_t THRESHOLD = 256;
 
-inline int64_t to_int(uint32_t v) { return (int64_t)v; }
+inline int64_t to_int(int32_t v) { return (int64_t)v; }
 
 inline int64_t cell_key(int64_t cx, int64_t cy, int64_t x_cells) {
     return cy * x_cells + cx;
 }
 }  // namespace detail
 
-template <typename Value, int64_t CellSize = 2>
+template <typename Value>
 struct grid {
-    using box = bg::model::box<bg::model::d2::point_xy<uint32_t>>;
+    using box = bg::model::box<bg::model::d2::point_xy<int32_t>>;
 
-    grid() : _min_x(0), _min_y(0), _x_cells(0), _y_cells(0) {}
+    grid(int64_t cell_size = 2) : _min_x(0), _min_y(0), _x_cells(0), _y_cells(0), _cell_size(cell_size) {}
 
-    /// Build from [ (box, value), ... ]
+    /// Build from [ (box, value), ... ]. Pass cell_size=0 to auto-compute.
     template <typename Range>
-    explicit grid(Range&& items) {
+    explicit grid(Range&& items, int64_t cell_size = 2) : _cell_size(cell_size) {
         auto n = items.size();
         _values.reserve(n);
         _boxes.reserve(n);
@@ -63,18 +63,25 @@ struct grid {
         }
         _min_x = min_x;
         _min_y = min_y;
-        _x_cells = (max_x - min_x) / CellSize + 1;
-        _y_cells = (max_y - min_y) / CellSize + 1;
+        if (_cell_size == 0) {
+            int64_t dx = max_x - min_x;
+            int64_t dy = max_y - min_y;
+            int64_t cells_per_dim = (int64_t)std::sqrt((double)n);
+            if (cells_per_dim < 1) cells_per_dim = 1;
+            _cell_size = std::max((int64_t)1, std::max(dx, dy) / cells_per_dim);
+        }
+        _x_cells = (max_x - min_x) / _cell_size + 1;
+        _y_cells = (max_y - min_y) / _cell_size + 1;
 
         // Assign items to cells: collect (cell_key, item_index) pairs, sort, group
         std::vector<std::pair<int64_t, size_t>> cell_pairs;
         cell_pairs.reserve(_boxes.size() * 4);  // rough estimate
         for (size_t i = 0; i < _boxes.size(); i++) {
             auto& b = _boxes[i];
-            int64_t cx1 = (detail::to_int(bg::get<0, 0>(b)) - min_x) / CellSize;
-            int64_t cy1 = (detail::to_int(bg::get<0, 1>(b)) - min_y) / CellSize;
-            int64_t cx2 = (detail::to_int(bg::get<1, 0>(b)) - min_x) / CellSize;
-            int64_t cy2 = (detail::to_int(bg::get<1, 1>(b)) - min_y) / CellSize;
+            int64_t cx1 = (detail::to_int(bg::get<0, 0>(b)) - min_x) / _cell_size;
+            int64_t cy1 = (detail::to_int(bg::get<0, 1>(b)) - min_y) / _cell_size;
+            int64_t cx2 = (detail::to_int(bg::get<1, 0>(b)) - min_x) / _cell_size;
+            int64_t cy2 = (detail::to_int(bg::get<1, 1>(b)) - min_y) / _cell_size;
             if (cx1 < 0) cx1 = 0; if (cy1 < 0) cy1 = 0;
             if (cx2 >= _x_cells) cx2 = _x_cells - 1;
             if (cy2 >= _y_cells) cy2 = _y_cells - 1;
@@ -122,7 +129,7 @@ struct grid {
 private:
     std::vector<box> _boxes;
     std::vector<Value> _values;
-    int64_t _min_x, _min_y, _x_cells, _y_cells;
+    int64_t _min_x, _min_y, _x_cells, _y_cells, _cell_size;
     std::vector<int64_t> _cell_keys;     // sorted cell key per non-empty cell
     std::vector<size_t> _cell_begins;    // begin offset per cell (+1 sentinel)
     std::vector<size_t> _cell_items;     // flat item indices
@@ -150,10 +157,10 @@ private:
         }
 
         // Grid mode
-        int64_t cx1 = (qx0 - _min_x) / CellSize;
-        int64_t cy1 = (qy0 - _min_y) / CellSize;
-        int64_t cx2 = (qx1 - _min_x) / CellSize;
-        int64_t cy2 = (qy1 - _min_y) / CellSize;
+        int64_t cx1 = (qx0 - _min_x) / _cell_size;
+        int64_t cy1 = (qy0 - _min_y) / _cell_size;
+        int64_t cx2 = (qx1 - _min_x) / _cell_size;
+        int64_t cy2 = (qy1 - _min_y) / _cell_size;
         if (cx1 < 0) cx1 = 0; if (cy1 < 0) cy1 = 0;
         if (cx2 >= _x_cells) cx2 = _x_cells - 1;
         if (cy2 >= _y_cells) cy2 = _y_cells - 1;

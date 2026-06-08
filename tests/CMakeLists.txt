@@ -49,3 +49,8 @@ add_executable(test_uniform_grid test_uniform_grid.cpp)
 target_compile_features(test_uniform_grid PRIVATE cxx_std_20)
 target_link_libraries(test_uniform_grid PRIVATE best_clipper_core GTest::gtest_main)
 add_test(NAME _test_uniform_grid COMMAND test_uniform_grid)
+
+set_tests_properties(
+    _test_union _test_union_rect _test_intersection _test_xor
+    _test_difference _test_connected_components _test_manhattan _test_uniform_grid
+    PROPERTIES LABELS "unit")

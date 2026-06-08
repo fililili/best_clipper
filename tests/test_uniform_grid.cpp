@@ -3,7 +3,7 @@
 #include "uniform_grid.hpp"
 
 namespace bg = boost::geometry;
-using point = bg::model::d2::point_xy<uint32_t>;
+using point = bg::model::d2::point_xy<int32_t>;
 using box = bg::model::box<point>;
 using best_clipper::uniform_grid::grid;
 
@@ -74,7 +74,7 @@ TEST(UniformGrid, LargeGridThousands) {
     std::vector<std::pair<box, size_t>> items;
     items.reserve(2000);
     for (size_t i = 0; i < 2000; i++) {
-        uint32_t x = (uint32_t)(2 * i);
+        int32_t x = (int32_t)(2 * i);
         items.push_back({{point{x, x}, point{x + 2, x + 2}}, i});
     }
     grid<size_t> g(std::move(items));
@@ -91,10 +91,10 @@ TEST(UniformGrid, LargeGridWithAdjacentPairs) {
     size_t n = 1000;
     items.reserve(n * 2);
     for (size_t i = 0; i < n; i++) {
-        items.push_back({{point{0 + 2 * (uint32_t)i, 0 + 2 * (uint32_t)i},
-                          point{2 + 2 * (uint32_t)i, 2 + 2 * (uint32_t)i}}, i * 2});
-        items.push_back({{point{1 + 2 * (uint32_t)i, 1 + 2 * (uint32_t)i},
-                          point{3 + 2 * (uint32_t)i, 3 + 2 * (uint32_t)i}}, i * 2 + 1});
+        items.push_back({{point{0 + 2 * (int32_t)i, 0 + 2 * (int32_t)i},
+                          point{2 + 2 * (int32_t)i, 2 + 2 * (int32_t)i}}, i * 2});
+        items.push_back({{point{1 + 2 * (int32_t)i, 1 + 2 * (int32_t)i},
+                          point{3 + 2 * (int32_t)i, 3 + 2 * (int32_t)i}}, i * 2 + 1});
     }
     grid<size_t> g(std::move(items));
 
@@ -102,8 +102,8 @@ TEST(UniformGrid, LargeGridWithAdjacentPairs) {
     for (size_t i = 0; i < n; i++) {
         int count = 0;
         g.query_intersects(
-            box{point{1 + 2 * (uint32_t)i, 1 + 2 * (uint32_t)i},
-                point{2 + 2 * (uint32_t)i, 2 + 2 * (uint32_t)i}},
+            box{point{1 + 2 * (int32_t)i, 1 + 2 * (int32_t)i},
+                point{2 + 2 * (int32_t)i, 2 + 2 * (int32_t)i}},
             [&](size_t) { count++; });
         EXPECT_GE(count, 2);  // at least both squares in the pair
     }
@@ -144,7 +144,7 @@ TEST(UniformGrid, QueryLargerThanData) {
 
 TEST(UniformGrid, HighCoordinateValues) {
     // Coordinates near INT32_MAX (after biasing, these are near the uint32 mid-range)
-    uint32_t base = 0x80000000;
+    int32_t base = 0;
     std::vector<box> boxes = {
         {point{base + 0, base + 0}, point{base + 10, base + 10}},
         {point{base + 5, base + 5}, point{base + 15, base + 15}},

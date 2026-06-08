@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
-#include "uint32_adaptor.hpp"
+#include "core.hpp"
+
+using namespace best_clipper;
 
 // ============================================================================
 // Intersection tests — verify against known WKT
@@ -7,7 +9,7 @@
 
 void test_intersection(const std::string& a_wkt, const std::string& b_wkt,
                        const std::string& expected_wkt) {
-    multi_polygon_s32 a, b, expected;
+    multi_polygon a, b, expected;
     bg::read_wkt(a_wkt, a);     ASSERT_TRUE(bg::is_valid(a));
     bg::read_wkt(b_wkt, b);     ASSERT_TRUE(bg::is_valid(b));
     bg::read_wkt(expected_wkt, expected);

@@ -1,5 +1,7 @@
 #include <benchmark/benchmark.h>
-#include "uint32_adaptor.hpp"
+#include "core.hpp"
+
+using namespace best_clipper;
 #include <clipper2/clipper.h>
 
 #include <random>
@@ -17,10 +19,10 @@ std::mt19937 rng(42);
 constexpr int kSides = 11;
 constexpr int32_t kExtent = 1000;
 
-polygon_s32 gen_poly(int32_t cx, int32_t cy, int32_t radius,
+polygon gen_poly(int32_t cx, int32_t cy, int32_t radius,
                      std::mt19937& rng) {
     std::uniform_int_distribution<int32_t> jitter(-2, 2);
-    polygon_s32 poly;
+    polygon poly;
     auto& outer = poly.outer();
     for (int j = 0; j < kSides; j++) {
         double a = 2.0 * 3.141592653589793 * j / kSides;
@@ -35,7 +37,7 @@ polygon_s32 gen_poly(int32_t cx, int32_t cy, int32_t radius,
 }
 
 struct RandPolygons {
-    multi_polygon_s32 polys;
+    multi_polygon polys;
 
     // Generate n random 11-gons uniformly in [0, kExtent]².
     // Radius 8..20, jitter ±2. Polygons may overlap at high n.
@@ -51,7 +53,7 @@ struct RandPolygons {
 // Non-overlapping variant: places polygons on a jittered grid so each
 // multi_polygon is strictly valid (no within-set overlap).
 struct RandPolygonsGrid {
-    multi_polygon_s32 polys;
+    multi_polygon polys;
 
     // n polygons placed on a grid with spacing = 100, jitter ±15 in x/y.
     // Max polygon extent = 20+2 = 22, so min separation = 100-30-44 = 26 > 0.
@@ -71,7 +73,7 @@ struct RandPolygonsGrid {
     }
 };
 
-Clipper2Lib::Paths64 to_paths64(const multi_polygon_s32& mp) {
+Clipper2Lib::Paths64 to_paths64(const multi_polygon& mp) {
     Clipper2Lib::Paths64 paths;
     for (const auto& poly : mp) {
         Clipper2Lib::Path64 outer;
@@ -104,7 +106,7 @@ struct CmpUnionFixture : benchmark::Fixture {
         paths_b = to_paths64(b);
         cached_n = n;
     }
-    multi_polygon_s32 a, b;
+    multi_polygon a, b;
     Clipper2Lib::Paths64 paths_a, paths_b;
     int cached_n = 0;
 };
@@ -136,7 +138,7 @@ struct CmpIntersectionFixture : benchmark::Fixture {
         paths_b = to_paths64(b);
         cached_n = n;
     }
-    multi_polygon_s32 a, b;
+    multi_polygon a, b;
     Clipper2Lib::Paths64 paths_a, paths_b;
     int cached_n = 0;
 };
@@ -166,7 +168,7 @@ struct CmpXorFixture : benchmark::Fixture {
         paths_b = to_paths64(b);
         cached_n = n;
     }
-    multi_polygon_s32 a, b;
+    multi_polygon a, b;
     Clipper2Lib::Paths64 paths_a, paths_b;
     int cached_n = 0;
 };
@@ -196,7 +198,7 @@ struct CmpDifferenceFixture : benchmark::Fixture {
         paths_b = to_paths64(b);
         cached_n = n;
     }
-    multi_polygon_s32 a, b;
+    multi_polygon a, b;
     Clipper2Lib::Paths64 paths_a, paths_b;
     int cached_n = 0;
 };
@@ -224,7 +226,7 @@ struct CmpSelfOrFixture : benchmark::Fixture {
         paths = to_paths64(poly);
         cached_n = n;
     }
-    multi_polygon_s32 poly;
+    multi_polygon poly;
     Clipper2Lib::Paths64 paths;
     int cached_n = 0;
 };
