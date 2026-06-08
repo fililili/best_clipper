@@ -74,6 +74,7 @@ std::tuple<std::vector<edge_t>, std::vector<point>> construct_graph(const std::v
 
     for (std::size_t i = 0; i < segments.size(); i++)
         segments_box_grid.query_intersects(boxes[i].first, [&](std::size_t j) {
+            if (i <= j) return;
             if (auto p = get_intersection(segments[i], segments[j]))
                 hot_pixels.push_back(p.value());
         });
@@ -168,9 +169,16 @@ std::vector<edge_with_power_t> unique_edges(std::vector<edge_with_power_t> edges
 
 std::tuple<std::vector<point>, std::vector<edge_with_power_t>>
 construct_edges_with_power(const std::vector<segment>& segments) {
+    auto t0 = std::chrono::high_resolution_clock::now();
     auto [edges, hot_pixels] = construct_graph(segments);
-    return std::tuple{std::move(hot_pixels),
-                      unique_edges(edges_to_power(std::move(edges)), hot_pixels.size())};
+    auto t1 = std::chrono::high_resolution_clock::now();
+    auto r = std::tuple{std::move(hot_pixels),
+                        unique_edges(edges_to_power(std::move(edges)), hot_pixels.size())};
+    auto t2 = std::chrono::high_resolution_clock::now();
+    auto ms = [](auto d) { return std::chrono::duration<double, std::milli>(d).count(); };
+    std::fprintf(stderr, "  [edges] graph=%.1fms dedup=%.1fms (hp=%zu)\n",
+        ms(t1 - t0), ms(t2 - t1), std::get<0>(r).size());
+    return r;
 }
 
 // ---------------------------------------------------------------------------
@@ -439,13 +447,19 @@ fe_tuple find_exterior(const chain_build_result& chains,
             vertex_edges.emplace_back(chains.indices[k], chains.indices[k + 1]);
     }
 
+    auto t_cc0 = std::chrono::high_resolution_clock::now();
     auto component_id = connected_components(num_vertices, vertex_edges);
+    auto t_cc1 = std::chrono::high_resolution_clock::now();
 
     std::size_t num_components = 0;
     for (auto c : component_id) num_components = std::max(num_components, c + 1);
     std::vector<std::vector<std::size_t>> vertex_components(num_components);
     for (std::size_t v = 0; v < num_vertices; v++)
         vertex_components[component_id[v]].push_back(v);
+    auto t_group = std::chrono::high_resolution_clock::now();
+    auto ms = [](auto d) { return std::chrono::duration<double, std::milli>(d).count(); };
+    std::fprintf(stderr, "  [exterior] cc=%.1fms group=%.1fms (n=%zu m=%zu comps=%zu)\n",
+        ms(t_cc1 - t_cc0), ms(t_group - t_cc1), num_vertices, vertex_edges.size(), num_components);
 
     std::vector<chain_seg> seg_data;
     std::vector<std::pair<box, std::size_t>> seg_boxes;

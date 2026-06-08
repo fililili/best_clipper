@@ -49,14 +49,23 @@ inline bool less_by_direction(point source, point target1, point target2) {
 
 struct less_by_segment {
     bool operator()(point p1, point p2) const {
+        // Fast path for axis-aligned segments
+        int32_t dxs = bg::get<1, 0>(s) - bg::get<0, 0>(s);
+        int32_t dys = bg::get<1, 1>(s) - bg::get<0, 1>(s);
+        if (dys == 0)
+            return dxs > 0 ? bg::get<0>(p1) < bg::get<0>(p2)
+                           : bg::get<0>(p1) > bg::get<0>(p2);
+        if (dxs == 0)
+            return dys > 0 ? bg::get<1>(p1) < bg::get<1>(p2)
+                           : bg::get<1>(p1) > bg::get<1>(p2);
+
         int64_t dxp = (int64_t)bg::get<0>(p2) - (int64_t)bg::get<0>(p1);
         int64_t dyp = (int64_t)bg::get<1>(p2) - (int64_t)bg::get<1>(p1);
-        int64_t dxs = (int64_t)bg::get<1, 0>(s) - (int64_t)bg::get<0, 0>(s);
-        int64_t dys = (int64_t)bg::get<1, 1>(s) - (int64_t)bg::get<0, 1>(s);
-        int sign_a = (dxp ^ dxs) >= 0 ? 1 : -1;
-        int sign_b = (dyp ^ dys) >= 0 ? 1 : -1;
-        uint64_t abs_a = (uint64_t)(dxp >= 0 ? dxp : -dxp) * (uint64_t)(dxs >= 0 ? dxs : -dxs);
-        uint64_t abs_b = (uint64_t)(dyp >= 0 ? dyp : -dyp) * (uint64_t)(dys >= 0 ? dys : -dys);
+        int64_t dxs64 = dxs, dys64 = dys;
+        int sign_a = (dxp ^ dxs64) >= 0 ? 1 : -1;
+        int sign_b = (dyp ^ dys64) >= 0 ? 1 : -1;
+        uint64_t abs_a = (uint64_t)(dxp >= 0 ? dxp : -dxp) * (uint64_t)(dxs64 >= 0 ? dxs64 : -dxs64);
+        uint64_t abs_b = (uint64_t)(dyp >= 0 ? dyp : -dyp) * (uint64_t)(dys64 >= 0 ? dys64 : -dys64);
         if (sign_a == sign_b) return sign_a > 0;
         return sign_a > 0 ? abs_a > abs_b : abs_a < abs_b;
     }
@@ -82,6 +91,20 @@ inline std::optional<point> get_intersection(segment s1, segment s2) {
     int64_t x4 = bg::get<1, 0>(s2), y4 = bg::get<1, 1>(s2);
     int64_t dx1 = x2 - x1, dy1 = y2 - y1;
     int64_t dx2 = x4 - x3, dy2 = y4 - y3;
+
+    // Fast path: axis-aligned segments — no int128 needed.
+    if (dx1 == 0 && dy2 == 0) {
+        // s1 vertical, s2 horizontal → intersection at (x1, y3)
+        if (x1 <= std::min(x3, x4) || x1 >= std::max(x3, x4)) return {};
+        if (y3 <= std::min(y1, y2) || y3 >= std::max(y1, y2)) return {};
+        return point{(int32_t)x1, (int32_t)y3};
+    }
+    if (dy1 == 0 && dx2 == 0) {
+        // s1 horizontal, s2 vertical → intersection at (x3, y1)
+        if (x3 <= std::min(x1, x2) || x3 >= std::max(x1, x2)) return {};
+        if (y1 <= std::min(y3, y4) || y1 >= std::max(y3, y4)) return {};
+        return point{(int32_t)x3, (int32_t)y1};
+    }
 
     if (cross_eq(dx1, dy1, dx2, dy2)) return {};
 
