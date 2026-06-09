@@ -8,16 +8,12 @@ using box = bg::model::box<point>;
 using best_clipper::uniform_grid::grid;
 
 // Helper: build grid from vector of boxes
-template <typename BoxVec>
-static auto build_grid(BoxVec&& boxes) {
-    std::vector<std::pair<box, size_t>> items(boxes.size());
-    for (size_t i = 0; i < boxes.size(); i++)
-        items[i] = {boxes[i], i};
-    return grid(items, 0);
+static auto build_grid(std::vector<box> boxes) {
+    return grid(std::move(boxes));
 }
 
 TEST(UniformGrid, Empty) {
-    grid g(2);
+    grid g;
     box q{point{0, 0}, point{100, 100}};
     int count = 0;
     g.query_intersects(q, [&](size_t) { count++; });
@@ -72,13 +68,13 @@ TEST(UniformGrid, TwoOverlapping) {
 }
 
 TEST(UniformGrid, LargeGridThousands) {
-    std::vector<std::pair<box, size_t>> items;
+    std::vector<box> items;
     items.reserve(2000);
     for (size_t i = 0; i < 2000; i++) {
         int32_t x = (int32_t)(2 * i);
-        items.push_back({{point{x, x}, point{x + 2, x + 2}}, i});
+        items.push_back({point{x, x}, point{x + 2, x + 2}});
     }
-    grid g(items, 0);
+    grid g(items);
 
     int count = 0;
     g.query_intersects(box{point{5, 5}, point{6, 6}}, [&](size_t) { count++; });
@@ -86,16 +82,16 @@ TEST(UniformGrid, LargeGridThousands) {
 }
 
 TEST(UniformGrid, LargeGridWithAdjacentPairs) {
-    std::vector<std::pair<box, size_t>> items;
+    std::vector<box> items;
     size_t n = 1000;
     items.reserve(n * 2);
     for (size_t i = 0; i < n; i++) {
-        items.push_back({{point{0 + 2 * (int32_t)i, 0 + 2 * (int32_t)i},
-                          point{2 + 2 * (int32_t)i, 2 + 2 * (int32_t)i}}, i * 2});
-        items.push_back({{point{1 + 2 * (int32_t)i, 1 + 2 * (int32_t)i},
-                          point{3 + 2 * (int32_t)i, 3 + 2 * (int32_t)i}}, i * 2 + 1});
+        items.push_back({point{0 + 2 * (int32_t)i, 0 + 2 * (int32_t)i},
+                         point{2 + 2 * (int32_t)i, 2 + 2 * (int32_t)i}});
+        items.push_back({point{1 + 2 * (int32_t)i, 1 + 2 * (int32_t)i},
+                         point{3 + 2 * (int32_t)i, 3 + 2 * (int32_t)i}});
     }
-    grid g(items, 0);
+    grid g(items);
 
     for (size_t i = 0; i < n; i++) {
         int count = 0;

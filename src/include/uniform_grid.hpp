@@ -20,41 +20,33 @@ struct grid {
     using box = bg::model::box<bg::model::d2::point_xy<int32_t>>;
 
     grid() : _min_x(0), _min_y(0), _x_cells(0), _y_cells(0), _cell_size(0) {}
-    explicit grid(int32_t cell_size) : _min_x(0), _min_y(0), _x_cells(0), _y_cells(0), _cell_size(cell_size) {}
-
-    /// Build from [ (box, index), ... ]. Pass cell_size=0 to auto-compute.
-    explicit grid(const std::vector<std::pair<box, std::size_t>>& items, int32_t cell_size = 0)
-        : _cell_size(cell_size) {
+    /// Build from boxes. Item index = position in the vector.
+    explicit grid(const std::vector<box>& items) {
         auto n = items.size();
         if (n == 0) return;
 
-        // Compute bounds (skip invalid boxes)
         int32_t min_x = INT32_MAX, min_y = INT32_MAX, max_x = INT32_MIN, max_y = INT32_MIN;
-        for (auto& [b, v] : items) {
+        for (auto& b : items) {
             auto x0 = bg::get<0, 0>(b), y0 = bg::get<0, 1>(b);
             auto x1 = bg::get<1, 0>(b), y1 = bg::get<1, 1>(b);
-            if (x0 > x1 || y0 > y1) continue;
             if (x0 < min_x) min_x = x0; if (y0 < min_y) min_y = y0;
             if (x1 > max_x) max_x = x1; if (y1 > max_y) max_y = y1;
         }
         _min_x = min_x;
         _min_y = min_y;
-        if (_cell_size == 0) {
-            int32_t dx = max_x - min_x;
-            int32_t dy = max_y - min_y;
-            int32_t cells_per_dim = (int32_t)std::sqrt((double)n);
-            if (cells_per_dim < 1) cells_per_dim = 1;
-            _cell_size = std::max((int32_t)1, std::max(dx, dy) / cells_per_dim);
-        }
+        int32_t dx = max_x - min_x;
+        int32_t dy = max_y - min_y;
+        int32_t cells_per_dim = (int32_t)std::sqrt((double)n);
+        if (cells_per_dim < 1) cells_per_dim = 1;
+        _cell_size = std::max((int32_t)1, std::max(dx, dy) / cells_per_dim);
         _x_cells = (max_x - min_x) / _cell_size + 1;
         _y_cells = (max_y - min_y) / _cell_size + 1;
         size_t num_cells = (size_t)(_x_cells * _y_cells);
 
-        // Collect (cell_index, item_index) pairs
         std::vector<std::pair<size_t, size_t>> cell_pairs;
         cell_pairs.reserve(n * 4);
         for (size_t i = 0; i < n; i++) {
-            auto& b = items[i].first;
+            auto& b = items[i];
             int32_t bx0 = bg::get<0, 0>(b), bx1 = bg::get<1, 0>(b);
             int32_t by0 = bg::get<0, 1>(b), by1 = bg::get<1, 1>(b);
             if (bx0 > bx1 || by0 > by1) continue;
@@ -70,7 +62,6 @@ struct grid {
                     cell_pairs.emplace_back((size_t)(cy * _x_cells + cx), i);
         }
 
-        // Counting sort by cell index
         std::vector<size_t> cell_counts(num_cells, 0);
         for (auto& [cell, item] : cell_pairs)
             cell_counts[cell]++;
@@ -81,9 +72,8 @@ struct grid {
 
         _cell_items.resize(cell_pairs.size());
         auto cursors = begins;
-        for (auto& [cell, item] : cell_pairs) {
+        for (auto& [cell, item] : cell_pairs)
             _cell_items[cursors[cell]++] = item;
-        }
 
         _cell_begins = std::move(begins);
     }
