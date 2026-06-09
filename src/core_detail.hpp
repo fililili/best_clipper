@@ -55,18 +55,14 @@ struct less_by_segment {
         , dy(bg::get<1, 1>(s) - bg::get<0, 1>(s)) {}
 
     bool operator()(point p1, point p2) const {
-        if (dx > 0) {
-            if (bg::get<0>(p1) != bg::get<0>(p2))
-                return bg::get<0>(p1) < bg::get<0>(p2);
-        } else if (dx < 0) {
-            if (bg::get<0>(p1) != bg::get<0>(p2))
-                return bg::get<0>(p1) > bg::get<0>(p2);
-        } else {
-            return dy > 0 ? bg::get<1>(p1) < bg::get<1>(p2)
-                          : bg::get<1>(p1) > bg::get<1>(p2);
+        auto x1 = bg::get<0>(p1), x2 = bg::get<0>(p2);
+        if (dx != 0) {
+            if (x1 != x2) return dx > 0 ? x1 < x2 : x1 > x2;
+            auto y1 = bg::get<1>(p1), y2 = bg::get<1>(p2);
+            return dy >= 0 ? y1 < y2 : y1 > y2;
         }
-        return dy >= 0 ? bg::get<1>(p1) < bg::get<1>(p2)
-                       : bg::get<1>(p1) > bg::get<1>(p2);
+        auto y1 = bg::get<1>(p1), y2 = bg::get<1>(p2);
+        return dy > 0 ? y1 < y2 : y1 > y2;
     }
 };
 
