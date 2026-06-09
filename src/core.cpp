@@ -20,36 +20,29 @@ std::vector<std::size_t> connected_components(
     std::size_t n,
     const std::vector<std::pair<std::size_t, std::size_t>>& edges) {
 
-    std::vector<std::pair<std::size_t, std::size_t>> all_edges;
-    all_edges.reserve(edges.size() * 2);
+    std::vector<std::size_t> parent(n);
+    for (std::size_t i = 0; i < n; i++) parent[i] = i;
+
+    auto find = [&](std::size_t x) {
+        while (parent[x] != x) {
+            parent[x] = parent[parent[x]];
+            x = parent[x];
+        }
+        return x;
+    };
+
     for (auto [a, b] : edges) {
-        all_edges.emplace_back(a, b);
-        all_edges.emplace_back(b, a);
+        auto ra = find(a), rb = find(b);
+        if (ra != rb) parent[ra] = rb;
     }
 
-    auto [adj_begin, adj_end, adjacency] = bucket_sort(
-        all_edges, n,
-        [](const std::pair<std::size_t, std::size_t>& e) { return e.first; },
-        [](const std::pair<std::size_t, std::size_t>& e) { return e.second; });
-
-    std::vector<std::size_t> comp(n, ~0ULL);
-    std::vector<std::size_t> stack;
+    std::vector<std::size_t> comp(n);
+    std::vector<std::size_t> root_to_id(n, ~0ULL);
     std::size_t num_components = 0;
-
     for (std::size_t v = 0; v < n; v++) {
-        if (comp[v] != ~0ULL) continue;
-        comp[v] = num_components++;
-        stack.push_back(v);
-        while (!stack.empty()) {
-            auto u = stack.back(); stack.pop_back();
-            for (auto j = adj_begin[u]; j < adj_end[u]; j++) {
-                auto w = adjacency[j];
-                if (comp[w] == ~0ULL) {
-                    comp[w] = comp[v];
-                    stack.push_back(w);
-                }
-            }
-        }
+        auto r = find(v);
+        if (root_to_id[r] == ~0ULL) root_to_id[r] = num_components++;
+        comp[v] = root_to_id[r];
     }
 
     return comp;
@@ -318,7 +311,7 @@ hcg_tuple build_half_chain_graph(const chain_build_result& chains,
 
 struct chain_seg {
     int64_t x1, y1, dx, dy;
-    std::size_t half_chain_id;
+    std::size_t fwd_hc, rev_hc;
 };
 
 std::vector<std::pair<std::size_t, std::size_t>> cast_ray_minus_x(
@@ -406,10 +399,10 @@ std::vector<std::pair<std::size_t, std::size_t>> cast_ray_minus_x(
         int64_t y2 = seg.y1 + seg.dy;
         if (seg.y1 <= ray_y && ray_y < y2) {
             int64_t ix = intersect_x(seg.x1, seg.y1, seg.dx, seg.dy);
-            try_edge(ix, seg.dx, seg.dy, seg.y1, seg.half_chain_id);
+            try_edge(ix, seg.dx, seg.dy, seg.y1, seg.fwd_hc);
         } else if (y2 <= ray_y && ray_y < seg.y1) {
             int64_t ix = intersect_x(seg.x1, seg.y1, seg.dx, seg.dy);
-            try_edge(ix, seg.dx, seg.dy, y2, seg.half_chain_id);
+            try_edge(ix, -seg.dx, -seg.dy, y2, seg.rev_hc);
         }
     });
 
@@ -461,40 +454,32 @@ fe_tuple find_exterior(const chain_build_result& chains,
     std::fprintf(stderr, "  [exterior] cc=%.1fms group=%.1fms (n=%zu m=%zu comps=%zu)\n",
         ms(t_cc1 - t_cc0), ms(t_group - t_cc1), num_vertices, vertex_edges.size(), num_components);
 
+    auto t_data0 = std::chrono::high_resolution_clock::now();
     std::vector<chain_seg> seg_data;
     std::vector<std::pair<box, std::size_t>> seg_boxes;
-    for (auto h : sorted_half_chains) {
-        auto& idx = chains.indices;
-        auto& off = chains.offsets;
-        std::size_t ci = h.chain_id();
-        auto cbi = off[ci], cei = off[ci + 1];
-        if (h.is_forward()) {
-            for (std::size_t k = cbi; k + 1 < cei; k++) {
-                point p1 = hot_pixels[idx[k]], p2 = hot_pixels[idx[k + 1]];
-                int32_t x1 = bg::get<0>(p1), y1 = bg::get<1>(p1);
-                int32_t x2 = bg::get<0>(p2), y2 = bg::get<1>(p2);
-                seg_data.push_back({(int64_t)x1, (int64_t)y1,
-                                    (int64_t)x2 - (int64_t)x1,
-                                    (int64_t)y2 - (int64_t)y1, h.id});
-                seg_boxes.emplace_back(box{point{std::min(x1, x2), std::min(y1, y2)},
-                                            point{std::max(x1, x2), std::max(y1, y2)}},
-                                       seg_data.size() - 1);
-            }
-        } else {
-            for (std::size_t k = cei - 1; k > cbi; k--) {
-                point p1 = hot_pixels[idx[k]], p2 = hot_pixels[idx[k - 1]];
-                int32_t x1 = bg::get<0>(p1), y1 = bg::get<1>(p1);
-                int32_t x2 = bg::get<0>(p2), y2 = bg::get<1>(p2);
-                seg_data.push_back({(int64_t)x1, (int64_t)y1,
-                                    (int64_t)x2 - (int64_t)x1,
-                                    (int64_t)y2 - (int64_t)y1, h.id});
-                seg_boxes.emplace_back(box{point{std::min(x1, x2), std::min(y1, y2)},
-                                            point{std::max(x1, x2), std::max(y1, y2)}},
-                                       seg_data.size() - 1);
-            }
+    size_t total_edges = 0;
+    for (size_t ci = 0; ci + 1 < chains.offsets.size(); ci++)
+        total_edges += chains.offsets[ci + 1] - chains.offsets[ci] - 1;
+    seg_data.reserve(total_edges);
+    seg_boxes.reserve(total_edges);
+    for (size_t ci = 0; ci + 1 < chains.offsets.size(); ci++) {
+        auto cbi = chains.offsets[ci], cei = chains.offsets[ci + 1];
+        for (size_t k = cbi; k + 1 < cei; k++) {
+            point p1 = hot_pixels[chains.indices[k]];
+            point p2 = hot_pixels[chains.indices[k + 1]];
+            int32_t x1 = bg::get<0>(p1), y1 = bg::get<1>(p1);
+            int32_t x2 = bg::get<0>(p2), y2 = bg::get<1>(p2);
+            seg_data.push_back({(int64_t)x1, (int64_t)y1,
+                                (int64_t)x2 - (int64_t)x1,
+                                (int64_t)y2 - (int64_t)y1,
+                                2 * ci, 2 * ci + 1});
+            seg_boxes.emplace_back(box{point{std::min(x1, x2), std::min(y1, y2)},
+                                        point{std::max(x1, x2), std::max(y1, y2)}},
+                                   seg_data.size() - 1);
         }
     }
     best_clipper::uniform_grid::grid<size_t> seg_grid(std::move(seg_boxes), 0);
+    auto t_data1 = std::chrono::high_resolution_clock::now();
 
     std::vector<std::size_t> exterior_half_chains;
     std::vector<std::pair<std::size_t, std::size_t>> ray_pairs;
@@ -518,6 +503,9 @@ fe_tuple find_exterior(const chain_build_result& chains,
         }
     }
 
+    auto t_rays = std::chrono::high_resolution_clock::now();
+    std::fprintf(stderr, "  [exterior] data=%.1fms grid=%.1fms rays=%.1fms\n",
+        ms(t_data0 - t_group), ms(t_data1 - t_data0), ms(t_rays - t_data1));
     return fe_tuple{std::move(exterior_half_chains), std::move(ray_pairs)};
 }
 
@@ -531,22 +519,29 @@ std::vector<int> compute_winding(
     const std::vector<std::pair<std::size_t, std::size_t>>& ray_pairs,
     const std::vector<std::size_t>& exterior_half_chains) {
 
+    auto t0 = std::chrono::high_resolution_clock::now();
     std::size_t num_half_chains = (chains.offsets.size() - 1) * 2;
 
+    // Build adjacency for coplanar + ray edges only.
+    // Dual edges (i ↔ i^1) handled explicitly in DFS to avoid
+    // bloating the adjacency by 2×num_half_chains entries.
     std::vector<edge_with_power_t> edges;
-    auto add = [&](std::size_t a, std::size_t b, int w) {
-        edges.emplace_back(a, b, w);
-        edges.emplace_back(b, a, -w);
-    };
-    for (auto [a, b] : coplanar_pairs) add(a, b, 0);
-    for (auto [a, b] : ray_pairs) add(a, b, 0);
-    for (std::size_t i = 0; i < num_half_chains; i++)
-        add(i, i ^ 1, -half_chain{i}.power(chains));
+    edges.reserve((coplanar_pairs.size() + ray_pairs.size()) * 2);
+    for (auto [a, b] : coplanar_pairs) {
+        edges.emplace_back(a, b, 0);
+        edges.emplace_back(b, a, 0);
+    }
+    for (auto [a, b] : ray_pairs) {
+        edges.emplace_back(a, b, 0);
+        edges.emplace_back(b, a, 0);
+    }
+    auto t1 = std::chrono::high_resolution_clock::now();
 
     auto [adj_begin, adj_end, adjacency] = bucket_sort(
         edges, num_half_chains,
         [](const edge_with_power_t& e) { return e.start; },
         [](const edge_with_power_t& e) { return std::pair{e.end, e.power}; });
+    auto t2 = std::chrono::high_resolution_clock::now();
 
     constexpr int UNKNOWN = std::numeric_limits<int>::max() / 2;
     std::vector<int> winding(num_half_chains, UNKNOWN);
@@ -555,14 +550,24 @@ std::vector<int> compute_winding(
     std::vector<std::size_t> stack(exterior_half_chains.begin(), exterior_half_chains.end());
     while (!stack.empty()) {
         auto u = stack.back(); stack.pop_back();
-        for (auto i = adj_begin[u]; i < adj_end[u]; i++) {
-            auto [v, diff] = adjacency[i];
+        for (auto j = adj_begin[u]; j < adj_end[u]; j++) {
+            auto [v, diff] = adjacency[j];
             if (winding[v] == UNKNOWN) {
                 winding[v] = winding[u] + diff;
                 stack.push_back(v);
             }
         }
+        // Dual edge: i ↔ i^1 with winding difference = -power of i
+        auto dual = u ^ 1;
+        if (winding[dual] == UNKNOWN) {
+            winding[dual] = winding[u] - half_chain{u}.power(chains);
+            stack.push_back(dual);
+        }
     }
+    auto t3 = std::chrono::high_resolution_clock::now();
+    auto ms = [](auto d) { return std::chrono::duration<double, std::milli>(d).count(); };
+    std::fprintf(stderr, "  [winding] build=%.1fms sort=%.1fms dfs=%.1fms (hc=%zu)\n",
+        ms(t1 - t0), ms(t2 - t1), ms(t3 - t2), num_half_chains);
     return winding;
 }
 
