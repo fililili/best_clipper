@@ -48,28 +48,26 @@ inline bool less_by_direction(point source, point target1, point target2) {
 }
 
 struct less_by_segment {
-    bool operator()(point p1, point p2) const {
-        // Fast path for axis-aligned segments
-        int32_t dxs = bg::get<1, 0>(s) - bg::get<0, 0>(s);
-        int32_t dys = bg::get<1, 1>(s) - bg::get<0, 1>(s);
-        if (dys == 0)
-            return dxs > 0 ? bg::get<0>(p1) < bg::get<0>(p2)
-                           : bg::get<0>(p1) > bg::get<0>(p2);
-        if (dxs == 0)
-            return dys > 0 ? bg::get<1>(p1) < bg::get<1>(p2)
-                           : bg::get<1>(p1) > bg::get<1>(p2);
+    int32_t dx, dy;
 
-        int64_t dxp = (int64_t)bg::get<0>(p2) - (int64_t)bg::get<0>(p1);
-        int64_t dyp = (int64_t)bg::get<1>(p2) - (int64_t)bg::get<1>(p1);
-        int64_t dxs64 = dxs, dys64 = dys;
-        int sign_a = (dxp ^ dxs64) >= 0 ? 1 : -1;
-        int sign_b = (dyp ^ dys64) >= 0 ? 1 : -1;
-        uint64_t abs_a = (uint64_t)(dxp >= 0 ? dxp : -dxp) * (uint64_t)(dxs64 >= 0 ? dxs64 : -dxs64);
-        uint64_t abs_b = (uint64_t)(dyp >= 0 ? dyp : -dyp) * (uint64_t)(dys64 >= 0 ? dys64 : -dys64);
-        if (sign_a == sign_b) return sign_a > 0;
-        return sign_a > 0 ? abs_a > abs_b : abs_a < abs_b;
+    less_by_segment(const segment& s)
+        : dx(bg::get<1, 0>(s) - bg::get<0, 0>(s))
+        , dy(bg::get<1, 1>(s) - bg::get<0, 1>(s)) {}
+
+    bool operator()(point p1, point p2) const {
+        if (dx > 0) {
+            if (bg::get<0>(p1) != bg::get<0>(p2))
+                return bg::get<0>(p1) < bg::get<0>(p2);
+        } else if (dx < 0) {
+            if (bg::get<0>(p1) != bg::get<0>(p2))
+                return bg::get<0>(p1) > bg::get<0>(p2);
+        } else {
+            return dy > 0 ? bg::get<1>(p1) < bg::get<1>(p2)
+                          : bg::get<1>(p1) > bg::get<1>(p2);
+        }
+        return dy >= 0 ? bg::get<1>(p1) < bg::get<1>(p2)
+                       : bg::get<1>(p1) > bg::get<1>(p2);
     }
-    segment s;
 };
 
 inline int128_t cross_i128(int64_t dx1, int64_t dy1, int64_t dx2, int64_t dy2) {
