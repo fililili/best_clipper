@@ -62,14 +62,14 @@ BENCHMARK_DEFINE_F(RectUnionFixture, BestClipper)(benchmark::State& state) {
         benchmark::DoNotOptimize(add(a, b));
 }
 BENCHMARK_REGISTER_F(RectUnionFixture, BestClipper)
-    ->Arg(10)->Arg(100)->Arg(1000)->Arg(10000);
+    ->Arg(10)->Arg(100)->Arg(1000)->Arg(10000)->Arg(100000);
 
 BENCHMARK_DEFINE_F(RectUnionFixture, Clipper2)(benchmark::State& state) {
     for (auto _ : state)
         benchmark::DoNotOptimize(Clipper2Lib::Union(paths_a, paths_b, Clipper2Lib::FillRule::NonZero));
 }
 BENCHMARK_REGISTER_F(RectUnionFixture, Clipper2)
-    ->Arg(10)->Arg(100)->Arg(1000)->Arg(10000);
+    ->Arg(10)->Arg(100)->Arg(1000)->Arg(10000)->Arg(100000);
 
 // ============================================================================
 // Self-union: N random rectangles, uniform in plane
@@ -96,13 +96,13 @@ BENCHMARK_DEFINE_F(RectSelfOrFixture, BestClipper)(benchmark::State& state) {
         benchmark::DoNotOptimize(self_or(poly));
 }
 BENCHMARK_REGISTER_F(RectSelfOrFixture, BestClipper)
-    ->Arg(10)->Arg(100)->Arg(1000)->Arg(10000);
+    ->Arg(10)->Arg(100)->Arg(1000)->Arg(10000)->Arg(100000);
 
 BENCHMARK_DEFINE_F(RectSelfOrFixture, Clipper2)(benchmark::State& state) {
     for (auto _ : state)
         benchmark::DoNotOptimize(Clipper2Lib::Union(paths, Clipper2Lib::FillRule::NonZero));
 }
 BENCHMARK_REGISTER_F(RectSelfOrFixture, Clipper2)
-    ->Arg(10)->Arg(100)->Arg(1000)->Arg(10000);
+    ->Arg(10)->Arg(100)->Arg(1000)->Arg(10000)->Arg(100000);
 
 BENCHMARK_MAIN();

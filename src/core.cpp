@@ -52,25 +52,42 @@ std::vector<std::size_t> connected_components(
 // construct_graph
 // ---------------------------------------------------------------------------
 
-std::tuple<std::vector<edge_t>, std::vector<point>> construct_graph(const std::vector<segment>& segments) {
-    std::vector<std::pair<box, std::size_t>> boxes(segments.size());
-    for (std::size_t i = 0; i < segments.size(); i++)
-        boxes[i] = {bg::return_envelope<box>(segments[i]), i};
-    best_clipper::uniform_grid::grid<size_t> segments_box_grid(std::move(boxes), 0);
+std::tuple<std::vector<edge_t>, std::vector<point>>
+construct_graph(const std::vector<point>& points, const std::vector<std::size_t>& offsets) {
+    auto seg_ranges = offsets;
+    seg_ranges.insert(seg_ranges.begin(), 0);
 
-    std::vector<point> hot_pixels;
-    hot_pixels.reserve(segments.size() * 2);
-    for (const auto& seg : segments) {
-        hot_pixels.emplace_back(bg::get<0, 0>(seg), bg::get<0, 1>(seg));
-        hot_pixels.emplace_back(bg::get<1, 0>(seg), bg::get<1, 1>(seg));
+    // Build grid: point index i is the segment (points[i], points[i+1]).
+    // Offset segments get an invalid bbox so the grid skips them naturally.
+    std::vector<std::pair<box, std::size_t>> boxes;
+    boxes.reserve(points.size() - 1);
+    for (std::size_t k = 0; k < seg_ranges.size(); k++) {
+        std::size_t start = seg_ranges[k] + (k > 0);
+        std::size_t end = k + 1 < seg_ranges.size() ? seg_ranges[k + 1] : points.size() - 1;
+        for (std::size_t i = start; i < end; i++)
+            boxes.emplace_back(bg::return_envelope<box>(segment{points[i], points[i + 1]}), i);
+        if (k + 1 < seg_ranges.size())
+            boxes.emplace_back(box{point{1, 1}, point{0, 0}}, end);
     }
+    best_clipper::uniform_grid::grid segments_box_grid(boxes, 0);
 
-    for (std::size_t i = 0; i < segments.size(); i++)
-        segments_box_grid.query_intersects(boxes[i].first, [&](std::size_t j) {
-            if (i <= j) return;
-            if (auto p = get_intersection(segments[i], segments[j]))
-                hot_pixels.push_back(p.value());
-        });
+    // Hot pixels from all points
+    std::vector<point> hot_pixels = points;
+
+    // Find intersections between segments
+    for (std::size_t k = 0; k < seg_ranges.size(); k++) {
+        std::size_t start = seg_ranges[k] + (k > 0);
+        std::size_t end = k + 1 < seg_ranges.size() ? seg_ranges[k + 1] : points.size() - 1;
+        for (std::size_t i = start; i < end; i++) {
+            auto si = segment{points[i], points[i + 1]};
+            box box_i = bg::return_envelope<box>(si);
+            segments_box_grid.query_intersects(box_i, [&](std::size_t j) {
+                if (i <= j + 1) return; // adjacent edges share a vertex, cannot produce a new intersection
+                if (auto p = get_intersection(si, segment{points[j], points[j + 1]}))
+                    hot_pixels.push_back(p.value());
+            });
+        }
+    }
 
     std::sort(std::begin(hot_pixels), std::end(hot_pixels), [](auto p1, auto p2) {
         return std::pair{bg::get<0>(p1), bg::get<1>(p1)} <
@@ -80,31 +97,40 @@ std::tuple<std::vector<edge_t>, std::vector<point>> construct_graph(const std::v
                             [](auto p1, auto p2) { return bg::equals(p1, p2); });
     hot_pixels.erase(last, hot_pixels.end());
 
+    // Build segment-pixel pairs
     std::vector<std::pair<std::size_t, std::size_t>> segment_pixel_pairs;
-    std::vector<std::size_t> last_seen(segments.size(), ~0ULL);
-    for (std::size_t i = 0; i < hot_pixels.size(); i++) {
-        int32_t x = bg::get<0>(hot_pixels[i]), y = bg::get<1>(hot_pixels[i]);
+    std::vector<std::size_t> last_seen(points.size(), ~0ULL);
+    for (std::size_t pi = 0; pi < hot_pixels.size(); pi++) {
+        int32_t x = bg::get<0>(hot_pixels[pi]), y = bg::get<1>(hot_pixels[pi]);
         auto min_corner = point{x > INT32_MIN ? x - 1 : INT32_MIN, y > INT32_MIN ? y - 1 : INT32_MIN};
         auto max_corner = point{x < INT32_MAX ? x + 1 : INT32_MAX, y < INT32_MAX ? y + 1 : INT32_MAX};
-        segments_box_grid.query_intersects(box{min_corner, max_corner}, [&](std::size_t val) {
-            if (last_seen[val] == i) return;
-            last_seen[val] = i;
-            if (is_point_on_segment(hot_pixels[i], segments[val]))
-                segment_pixel_pairs.emplace_back(val, i);
+        segments_box_grid.query_intersects(box{min_corner, max_corner}, [&](std::size_t seg_start) {
+            if (last_seen[seg_start] == pi) return;
+            last_seen[seg_start] = pi;
+            if (is_point_on_segment(hot_pixels[pi], segment{points[seg_start], points[seg_start + 1]}))
+                segment_pixel_pairs.emplace_back(seg_start, pi);
         });
     }
 
+    // Build edges: sort pixels along each segment, connect adjacent pairs
     std::vector<edge_t> edges;
     {
         auto [segments_begin, segments_end, pixels] = bucket_sort(
-            segment_pixel_pairs, segments.size(), [](auto val) { return val.first; },
+            segment_pixel_pairs, points.size(), [](auto val) { return val.first; },
             [](auto val) { return val.second; });
-        for (std::size_t i = 0; i < segments.size(); i++) {
-            auto pixel_begin = std::begin(pixels) + segments_begin[i], pixel_end = std::begin(pixels) + segments_end[i];
-            std::sort(pixel_begin, pixel_end, [&](auto pi, auto pj) {
-                return less_by_segment{segments[i]}(hot_pixels[pi], hot_pixels[pj]);
-            });
-            for (; pixel_begin != pixel_end - 1; pixel_begin++) edges.emplace_back(*pixel_begin, *std::next(pixel_begin));
+        for (std::size_t k = 0; k < seg_ranges.size(); k++) {
+            std::size_t start = seg_ranges[k] + (k > 0);
+            std::size_t end = k + 1 < seg_ranges.size() ? seg_ranges[k + 1] : points.size() - 1;
+            for (std::size_t i = start; i < end; i++) {
+                auto pixel_begin = std::begin(pixels) + segments_begin[i],
+                     pixel_end   = std::begin(pixels) + segments_end[i];
+                auto seg = segment{points[i], points[i + 1]};
+                std::sort(pixel_begin, pixel_end, [&](auto pi, auto pj) {
+                    return less_by_segment{seg}(hot_pixels[pi], hot_pixels[pj]);
+                });
+                for (; pixel_begin != pixel_end - 1; pixel_begin++)
+                    edges.emplace_back(*pixel_begin, *std::next(pixel_begin));
+            }
         }
     }
     return {std::move(edges), std::move(hot_pixels)};
@@ -161,9 +187,9 @@ std::vector<edge_with_power_t> unique_edges(std::vector<edge_with_power_t> edges
 // ---------------------------------------------------------------------------
 
 std::tuple<std::vector<point>, std::vector<edge_with_power_t>>
-construct_edges_with_power(const std::vector<segment>& segments) {
+construct_edges_with_power(const std::vector<point>& points, const std::vector<std::size_t>& offsets) {
     auto t0 = std::chrono::high_resolution_clock::now();
-    auto [edges, hot_pixels] = construct_graph(segments);
+    auto [edges, hot_pixels] = construct_graph(points, offsets);
     auto t1 = std::chrono::high_resolution_clock::now();
     auto r = std::tuple{std::move(hot_pixels),
                         unique_edges(edges_to_power(std::move(edges)), hot_pixels.size())};
@@ -321,7 +347,7 @@ std::vector<std::pair<std::size_t, std::size_t>> cast_ray_minus_x(
     const std::vector<half_chain>& sorted_half_chains,
     const std::vector<std::size_t>& half_chain_begin,
     const std::vector<std::size_t>& half_chain_end,
-    const best_clipper::uniform_grid::grid<size_t>& seg_grid,
+    const best_clipper::uniform_grid::grid& seg_grid,
     const std::vector<chain_seg>& seg_data) {
 
     auto range_begin = half_chain_begin[v], range_end = half_chain_end[v];
@@ -478,7 +504,7 @@ fe_tuple find_exterior(const chain_build_result& chains,
                                    seg_data.size() - 1);
         }
     }
-    best_clipper::uniform_grid::grid<size_t> seg_grid(std::move(seg_boxes), 0);
+    best_clipper::uniform_grid::grid seg_grid(seg_boxes, 0);
     auto t_data1 = std::chrono::high_resolution_clock::now();
 
     std::vector<std::size_t> exterior_half_chains;

@@ -91,7 +91,7 @@ struct half_chain {
 // ---------------------------------------------------------------------------
 
 std::tuple<std::vector<point>, std::vector<edge_with_power_t>>
-construct_edges_with_power(const std::vector<segment>& segments);
+construct_edges_with_power(const std::vector<point>& points, const std::vector<std::size_t>& offsets);
 
 // ---------------------------------------------------------------------------
 // Chains
@@ -281,11 +281,11 @@ inline multi_polygon build_output(const chain_build_result& chains,
 // Main pipeline
 // ---------------------------------------------------------------------------
 
-inline auto run_pipeline(std::vector<segment> segments, auto filter) {
+inline auto run_pipeline(std::vector<point> points, std::vector<std::size_t> offsets, auto filter) {
     using clock = std::chrono::high_resolution_clock;
     auto t0 = clock::now();
 
-    auto [hot_pixels, sorted_edges] = construct_edges_with_power(std::move(segments));
+    auto [hot_pixels, sorted_edges] = construct_edges_with_power(points, offsets);
     auto t1 = clock::now();
 
     auto chains = build_chains(sorted_edges, hot_pixels.size());
@@ -319,42 +319,72 @@ inline auto run_pipeline(std::vector<segment> segments, auto filter) {
 // Public API
 // ---------------------------------------------------------------------------
 
-inline auto collect_segments(auto... polygons) {
-    std::vector<segment> segments;
-    ((bg::for_each_segment(polygons, [&](const auto& seg) {
-        segment s;
-        bg::set<0, 0>(s, bg::get<0, 0>(seg)); bg::set<0, 1>(s, bg::get<0, 1>(seg));
-        bg::set<1, 0>(s, bg::get<1, 0>(seg)); bg::set<1, 1>(s, bg::get<1, 1>(seg));
-        segments.emplace_back(s);
-    })), ...);
-    return segments;
+inline auto collect_segments(auto... mp_list) {
+    std::vector<point> points;
+    std::vector<std::size_t> offsets;
+
+    auto add_ring = [&](const auto& ring) {
+        if (ring.empty()) return;
+        if (!points.empty())
+            offsets.push_back(points.size() - 1);
+        for (const auto& pt : ring)
+            points.push_back(pt);
+    };
+
+    auto add_mp = [&](const auto& mp) {
+        for (const auto& poly : mp) {
+            add_ring(poly.outer());
+            for (const auto& inner : poly.inners())
+                add_ring(inner);
+        }
+    };
+
+    (add_mp(mp_list), ...);
+
+    return std::pair{std::move(points), std::move(offsets)};
 }
 
 inline auto add(const auto& polygons1, const auto& polygons2) {
-    return run_pipeline(collect_segments(polygons1, polygons2), [](int w) { return w > 0; });
+    auto [points, offsets] = collect_segments(polygons1, polygons2);
+    return run_pipeline(std::move(points), std::move(offsets), [](int w) { return w > 0; });
 }
 
 inline auto intersection(const auto& polygons1, const auto& polygons2) {
-    return run_pipeline(collect_segments(polygons1, polygons2), [](int w) { return w > 1; });
+    auto [points, offsets] = collect_segments(polygons1, polygons2);
+    return run_pipeline(std::move(points), std::move(offsets), [](int w) { return w > 1; });
 }
 
 inline auto self_or(auto r) {
-    return run_pipeline(collect_segments(r), [](int w) { return w > 0; });
+    auto [points, offsets] = collect_segments(r);
+    return run_pipeline(std::move(points), std::move(offsets), [](int w) { return w > 0; });
 }
 
 inline auto xor_(const auto& polygons1, const auto& polygons2) {
-    return run_pipeline(collect_segments(polygons1, polygons2), [](int w) { return w == 1; });
+    auto [points, offsets] = collect_segments(polygons1, polygons2);
+    return run_pipeline(std::move(points), std::move(offsets), [](int w) { return w == 1; });
 }
 
 inline auto difference(const auto& polygons1, const auto& polygons2) {
-    auto segments = collect_segments(polygons1);
-    bg::for_each_segment(polygons2, [&](const auto& seg) {
-        segment s;
-        bg::set<0, 0>(s, bg::get<1, 0>(seg)); bg::set<0, 1>(s, bg::get<1, 1>(seg));
-        bg::set<1, 0>(s, bg::get<0, 0>(seg)); bg::set<1, 1>(s, bg::get<0, 1>(seg));
-        segments.emplace_back(s);
-    });
-    return run_pipeline(std::move(segments), [](int w) { return w > 0; });
+    auto [points, offsets] = collect_segments(polygons1);
+
+    auto add_mp_rev = [&](const auto& mp) {
+        for (const auto& poly : mp) {
+            auto add_ring_rev = [&](const auto& ring) {
+                if (ring.empty()) return;
+                if (!points.empty())
+                    offsets.push_back(points.size() - 1);
+                points.push_back(ring[0]);
+                for (int i = (int)ring.size() - 2; i >= 0; i--)
+                    points.push_back(ring[i]);
+            };
+            add_ring_rev(poly.outer());
+            for (const auto& inner : poly.inners())
+                add_ring_rev(inner);
+        }
+    };
+    add_mp_rev(polygons2);
+
+    return run_pipeline(std::move(points), std::move(offsets), [](int w) { return w > 0; });
 }
 
 } // namespace best_clipper
