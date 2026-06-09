@@ -100,13 +100,45 @@ construct_graph(const std::vector<point>& points, const std::vector<std::size_t>
         }
     }
 
-    std::sort(std::begin(hot_pixels), std::end(hot_pixels), [](auto p1, auto p2) {
-        return std::pair{bg::get<0>(p1), bg::get<1>(p1)} <
-               std::pair{bg::get<0>(p2), bg::get<1>(p2)};
-    });
-    auto last = std::unique(std::begin(hot_pixels), std::end(hot_pixels),
-                            [](auto p1, auto p2) { return bg::equals(p1, p2); });
-    hot_pixels.erase(last, hot_pixels.end());
+    // Dedup hot_pixels: group by grid cell, sort within cell, then unique.
+    // Better cache locality than global sort since spatially-close points
+    // (which are more likely to be duplicates) fall in the same cell.
+    {
+        auto& g = segments_box_grid;
+        std::size_t num_cells = (std::size_t)(g._x_cells * g._y_cells);
+        std::vector<std::size_t> pixel_cell(hot_pixels.size());
+        for (std::size_t pi = 0; pi < hot_pixels.size(); pi++) {
+            auto& p = hot_pixels[pi];
+            pixel_cell[pi] = (std::size_t)(((bg::get<1>(p) - g._min_y) / g._cell_size) * g._x_cells
+                                          + (bg::get<0>(p) - g._min_x) / g._cell_size);
+        }
+        std::vector<std::size_t> cell_counts(num_cells, 0);
+        for (auto c : pixel_cell) cell_counts[c]++;
+        std::vector<std::size_t> begins(num_cells + 1, 0);
+        for (std::size_t c = 0; c < num_cells; c++)
+            begins[c + 1] = begins[c] + cell_counts[c];
+        std::vector<std::size_t> cell_items(hot_pixels.size());
+        auto cursors = begins;
+        for (std::size_t pi = 0; pi < hot_pixels.size(); pi++)
+            cell_items[cursors[pixel_cell[pi]]++] = pi;
+        std::vector<point> unique;
+        unique.reserve(hot_pixels.size());
+        for (std::size_t c = 0; c < num_cells; c++) {
+            auto b = begins[c], e = begins[c + 1];
+            if (b == e) continue;
+            std::sort(cell_items.begin() + b, cell_items.begin() + e,
+                [&](std::size_t a, std::size_t b) {
+                    return std::pair{bg::get<0>(hot_pixels[a]), bg::get<1>(hot_pixels[a])} <
+                           std::pair{bg::get<0>(hot_pixels[b]), bg::get<1>(hot_pixels[b])};
+                });
+            for (auto it = cell_items.begin() + b; it != cell_items.begin() + e; ++it) {
+                if (it == cell_items.begin() + b ||
+                    !bg::equals(hot_pixels[*it], hot_pixels[*(it - 1)]))
+                    unique.push_back(hot_pixels[*it]);
+            }
+        }
+        hot_pixels = std::move(unique);
+    }
 
     // Build segment-pixel pairs
     std::vector<std::pair<std::size_t, std::size_t>> segment_pixel_pairs;
