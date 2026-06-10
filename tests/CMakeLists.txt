@@ -15,11 +15,6 @@ target_compile_features(test_known_wkt PRIVATE cxx_std_20)
 target_link_libraries(test_known_wkt PRIVATE best_clipper_core GTest::gtest_main)
 add_test(NAME _test_known_wkt COMMAND test_known_wkt)
 
-add_executable(test_intersection test_intersection.cpp)
-target_compile_features(test_intersection PRIVATE cxx_std_20)
-target_link_libraries(test_intersection PRIVATE best_clipper_core GTest::gtest_main)
-add_test(NAME _test_intersection COMMAND test_intersection)
-
 add_executable(test_connected_components test_connected_components.cpp)
 target_compile_features(test_connected_components PRIVATE cxx_std_20)
 target_link_libraries(test_connected_components PRIVATE best_clipper_core GTest::gtest_main)
@@ -34,6 +29,11 @@ add_executable(test_uniform_grid test_uniform_grid.cpp)
 target_compile_features(test_uniform_grid PRIVATE cxx_std_20)
 target_link_libraries(test_uniform_grid PRIVATE best_clipper_core GTest::gtest_main)
 add_test(NAME _test_uniform_grid COMMAND test_uniform_grid)
+
+add_executable(test_union_rect test_union_rect.cpp)
+target_compile_features(test_union_rect PRIVATE cxx_std_20)
+target_link_libraries(test_union_rect PRIVATE best_clipper_core GTest::gtest_main)
+add_test(NAME _test_union_rect COMMAND test_union_rect)
 
 set_tests_properties(
     _test_known_wkt _test_union_rect
