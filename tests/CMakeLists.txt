@@ -10,30 +10,10 @@ else()
     message(FATAL_ERROR "GTest::gtest_main target not found!")
 endif()
 
-add_executable(test_union test_union.cpp)
-target_compile_features(test_union PRIVATE cxx_std_20)
-target_link_libraries(test_union PRIVATE best_clipper_core GTest::gtest_main)
-add_test(NAME _test_union COMMAND test_union)
-
-add_executable(test_union_rect test_union_rect.cpp)
-target_compile_features(test_union_rect PRIVATE cxx_std_20)
-target_link_libraries(test_union_rect PRIVATE best_clipper_core GTest::gtest_main)
-add_test(NAME _test_union_rect COMMAND test_union_rect)
-
-add_executable(test_intersection test_intersection.cpp)
-target_compile_features(test_intersection PRIVATE cxx_std_20)
-target_link_libraries(test_intersection PRIVATE best_clipper_core GTest::gtest_main)
-add_test(NAME _test_intersection COMMAND test_intersection)
-
-add_executable(test_xor test_xor.cpp)
-target_compile_features(test_xor PRIVATE cxx_std_20)
-target_link_libraries(test_xor PRIVATE best_clipper_core GTest::gtest_main)
-add_test(NAME _test_xor COMMAND test_xor)
-
-add_executable(test_difference test_difference.cpp)
-target_compile_features(test_difference PRIVATE cxx_std_20)
-target_link_libraries(test_difference PRIVATE best_clipper_core GTest::gtest_main)
-add_test(NAME _test_difference COMMAND test_difference)
+add_executable(test_known_wkt test_known_wkt.cpp)
+target_compile_features(test_known_wkt PRIVATE cxx_std_20)
+target_link_libraries(test_known_wkt PRIVATE best_clipper_core GTest::gtest_main)
+add_test(NAME _test_known_wkt COMMAND test_known_wkt)
 
 add_executable(test_connected_components test_connected_components.cpp)
 target_compile_features(test_connected_components PRIVATE cxx_std_20)
@@ -50,7 +30,12 @@ target_compile_features(test_uniform_grid PRIVATE cxx_std_20)
 target_link_libraries(test_uniform_grid PRIVATE best_clipper_core GTest::gtest_main)
 add_test(NAME _test_uniform_grid COMMAND test_uniform_grid)
 
+add_executable(test_union_rect test_union_rect.cpp)
+target_compile_features(test_union_rect PRIVATE cxx_std_20)
+target_link_libraries(test_union_rect PRIVATE best_clipper_core GTest::gtest_main)
+add_test(NAME _test_union_rect COMMAND test_union_rect)
+
 set_tests_properties(
-    _test_union _test_union_rect _test_intersection _test_xor
-    _test_difference _test_connected_components _test_manhattan _test_uniform_grid
+    _test_known_wkt _test_union_rect
+    _test_connected_components _test_manhattan _test_uniform_grid
     PROPERTIES LABELS "unit")
