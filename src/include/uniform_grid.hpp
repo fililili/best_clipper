@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <utility>
 #include <vector>
+#include <cmath>
 
 #include <boost/geometry.hpp>
 
