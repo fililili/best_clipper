@@ -143,184 +143,125 @@ std::vector<int> compute_winding(
 // ---------------------------------------------------------------------------
 // Build output polygons (filter → cancel → rebuild next → trace rings)
 // ---------------------------------------------------------------------------
-inline multi_polygon build_output(
-    const chain_build_result& chains,
-    const std::vector<point>& hot_pixels,
-    std::vector<half_chain> next_half_chain,
-    const std::vector<int>& winding,
-    std::vector<std::pair<std::size_t, std::size_t>> exteral_coface_pairs,
-    auto filter_fn)
-{
+
+inline multi_polygon build_output(const chain_build_result& chains,
+                                   const std::vector<point>& hot_pixels,
+                                   std::vector<half_chain> next_half_chain,
+                                   const std::vector<int>& winding,
+                                   const std::vector<std::pair<std::size_t, std::size_t>>& coplanar_pairs,
+                                   const std::vector<std::pair<std::size_t, std::size_t>>& ray_pairs,
+                                   auto filter_fn) {
     using clock = std::chrono::high_resolution_clock;
     auto t0 = clock::now();
-
     std::size_t num_half_chains = (chains.offsets.size() - 1) * 2;
     std::size_t num_chains = chains.offsets.size() - 1;
 
-    // ----------------------------
-    // 1. filter + dual cancellation
-    // ----------------------------
+    // Filter half-chains by winding number
     std::vector<bool> survive(num_half_chains);
     for (std::size_t i = 0; i < num_half_chains; i++)
         survive[i] = filter_fn(winding[i]);
 
-    for (std::size_t i = 0; i < num_chains; i++) {
-        std::size_t f = 2 * i, r = 2 * i + 1;
-        if (survive[f] && survive[r]) {
-            survive[f] = survive[r] = false;
-            exteral_coface_pairs.emplace_back(f, r);
-        }
+    // Dual cancellation: both fwd and rev survive → both dead
+    std::vector<bool> dead(num_half_chains, false);
+    for (std::size_t chain_idx = 0; chain_idx < num_chains; chain_idx++) {
+        std::size_t forward_id = 2 * chain_idx, reverse_id = 2 * chain_idx + 1;
+        if (survive[forward_id] && survive[reverse_id])
+            dead[forward_id] = dead[reverse_id] = true;
     }
 
-    // 修正 next_half_chain
+    // Update next_half_chain via indirection: for each surviving half-chain whose next
+    // points to a dead half-chain, follow next_half_chain[dead.dual()] until a live
+    // half-chain is found. Terminates because at least one half-chain per vertex cycle
+    // survives (not all faces can be cancelled).
     for (std::size_t i = 0; i < num_half_chains; i++) {
-        if (!survive[i]) continue;
-        while (!survive[next_half_chain[i].id])
-            next_half_chain[i] =
-                next_half_chain[next_half_chain[i].dual().id];
+        if (!survive[i] || dead[i]) continue;
+        while (dead[next_half_chain[i].id])
+            next_half_chain[i] = next_half_chain[next_half_chain[i].dual().id];
     }
-
     auto t1 = clock::now();
 
-    // ----------------------------
-    // 2. trace rings（核心变化）
-    // ----------------------------
-    std::vector<bool> visited(num_half_chains, false);
-    std::vector<std::size_t> hc_to_ring(num_half_chains, (size_t)-1);
-    std::vector<ring> rings;
-
-    for (std::size_t i = 0; i < num_half_chains; i++) {
-
-        if (!survive[i] || visited[i]) continue;
-
-        std::size_t ring_id = rings.size();
-        ring current_ring;
-
-        std::size_t start = i;
-        std::size_t cur = i;
-
-        do {
-            visited[cur] = true;
-            hc_to_ring[cur] = ring_id;
-
-            auto h = half_chain{cur};
-            auto chain_idx = h.chain_id();
-            auto begin = chains.offsets[chain_idx];
-            auto end   = chains.offsets[chain_idx + 1];
-
-            if (h.is_forward()) {
-                for (std::size_t k = begin; k < end - 1; k++)
-                    current_ring.push_back(hot_pixels[chains.indices[k]]);
-            } else {
-                for (std::size_t k = end - 1; k > begin; k--)
-                    current_ring.push_back(hot_pixels[chains.indices[k]]);
-            }
-
-            cur = next_half_chain[cur].id;
-
-        } while (cur != start);
-
-        if (!current_ring.empty())
-            current_ring.push_back(current_ring.front());
-
-        rings.push_back(std::move(current_ring));
+    // Build connected components: coplanar + ray + dual cancellation → same face
+    std::vector<std::pair<std::size_t, std::size_t>> face_edges;
+    face_edges.reserve(coplanar_pairs.size() + ray_pairs.size() + num_chains);
+    face_edges.insert(face_edges.end(), coplanar_pairs.begin(), coplanar_pairs.end());
+    face_edges.insert(face_edges.end(), ray_pairs.begin(), ray_pairs.end());
+    for (std::size_t chain_idx = 0; chain_idx < num_chains; chain_idx++) {
+        std::size_t forward_id = 2 * chain_idx, reverse_id = 2 * chain_idx + 1;
+        if (dead[forward_id]) face_edges.emplace_back(forward_id, reverse_id);
     }
-
+    auto component_id = connected_components(num_half_chains, face_edges);
     auto t2 = clock::now();
 
-    // ----------------------------
-    // 3. ring-level connected components
-    // ----------------------------
-    std::vector<std::pair<std::size_t, std::size_t>> ring_edges;
-    ring_edges.reserve(exteral_coface_pairs.size());
+    // Group surviving non-dead half-chains by face
+    std::vector<std::pair<std::size_t, std::size_t>> half_chain_to_face;
+    for (std::size_t i = 0; i < num_half_chains; i++)
+        if (!dead[i] && survive[i])
+            half_chain_to_face.emplace_back(component_id[i], i);
 
-    for (auto [a, b] : exteral_coface_pairs) {
-        std::size_t ra = hc_to_ring[a];
-        std::size_t rb = hc_to_ring[b];
-
-        if (ra != (size_t)-1 && rb != (size_t)-1 && ra != rb)
-            ring_edges.emplace_back(ra, rb);
-    }
-
-    auto component_id = connected_components(rings.size(), ring_edges);
-
+    std::size_t num_faces = 0;
+    for (auto c : component_id) num_faces = std::max(num_faces, c + 1);
+    auto [existed_half_chains_begin, existed_half_chains_end, existed_half_chains] = bucket_sort(
+        half_chain_to_face, num_faces,
+        [](const std::pair<std::size_t, std::size_t>& p) { return p.first; },
+        [](const std::pair<std::size_t, std::size_t>& p) { return p.second; });
     auto t3 = clock::now();
 
-    // ----------------------------
-    // 4. bucket: ring → polygon
-    // ----------------------------
-    std::vector<std::pair<std::size_t, std::size_t>> ring_to_poly;
-    for (std::size_t i = 0; i < rings.size(); i++)
-        ring_to_poly.emplace_back(component_id[i], i);
-
-    std::size_t num_polygons = 0;
-    for (auto c : component_id)
-        num_polygons = std::max(num_polygons, c + 1);
-
-    auto [poly_begin, poly_end, poly_data] = bucket_sort(
-        ring_to_poly,
-        num_polygons,
-        [](const auto& p) { return p.first; },
-        [](const auto& p) { return p.second; });
-
-    auto t4 = clock::now();
-
-    // ----------------------------
-    // 5. build polygons
-    // ----------------------------
+    // For each face, trace its half-chains into a polygon
     multi_polygon result;
+    std::vector<bool> done(num_half_chains, false);
+    for (std::size_t f = 0; f < num_faces; f++) {
+        std::vector<ring> rings;
 
-    for (std::size_t pid = 0; pid < num_polygons; pid++) {
+        for (std::size_t j = existed_half_chains_begin[f]; j < existed_half_chains_end[f]; j++) {
+            ring current_ring;
+            std::size_t current_id = existed_half_chains[j];
+            if (done[current_id]) continue;
+            do {
+                auto h = half_chain{current_id};
+                auto chain_idx = h.chain_id();
+                auto chain_begin = chains.offsets[chain_idx], chain_end = chains.offsets[chain_idx + 1];
+                if (h.is_forward()) {
+                    for (std::size_t k = chain_begin; k < chain_end - 1; k++)
+                        current_ring.push_back(hot_pixels[chains.indices[k]]);
+                } else {
+                    for (std::size_t k = chain_end - 1; k > chain_begin; k--)
+                        current_ring.push_back(hot_pixels[chains.indices[k]]);
+                }
+                done[current_id] = true;
+                current_id = next_half_chain[current_id].id;
+            } while (current_id != existed_half_chains[j]);
 
-        auto begin = poly_begin[pid];
-        auto end   = poly_end[pid];
+            if (!current_ring.empty()) current_ring.push_back(current_ring.front());
+            rings.push_back(std::move(current_ring));
+        }
 
-        if (begin == end) continue;
+        if (rings.empty()) continue;
 
-        // 找 outer（最左点）
-        std::size_t outer_idx = poly_data[begin];
-        int32_t min_x = std::numeric_limits<int32_t>::max();
-
-        for (std::size_t i = begin; i < end; i++) {
-            auto rid = poly_data[i];
-
-            for (auto const& p : rings[rid]) {
-                int32_t x = bg::get<0>(p);
-                if (x < min_x) {
-                    min_x = x;
-                    outer_idx = rid;
+        std::size_t outer_index = 0;
+        {
+            int32_t min_x = std::numeric_limits<int32_t>::max();
+            for (std::size_t ring_index = 0; ring_index < rings.size(); ring_index++) {
+                for (const auto& point_value : rings[ring_index]) {
+                    int32_t x = bg::get<0>(point_value);
+                    if (x < min_x) { min_x = x; outer_index = ring_index; }
                 }
             }
         }
 
-        polygon poly;
-        poly.outer() = std::move(rings[outer_idx]);
-
-        for (std::size_t i = begin; i < end; i++) {
-            auto rid = poly_data[i];
-            if (rid == outer_idx) continue;
-            if (!rings[rid].empty())
-                poly.inners().push_back(std::move(rings[rid]));
+        polygon polygon_result;
+        polygon_result.outer() = std::move(rings[outer_index]);
+        for (std::size_t ring_index = 0; ring_index < rings.size(); ring_index++) {
+            if (ring_index == outer_index || rings[ring_index].empty()) continue;
+            polygon_result.inners().push_back(std::move(rings[ring_index]));
         }
 
-        result.push_back(std::move(poly));
+        result.push_back(std::move(polygon_result));
     }
 
-    auto t5 = clock::now();
-
-    auto ms = [](auto d) {
-        return std::chrono::duration<double, std::milli>(d).count();
-    };
-
-    std::fprintf(stderr,
-        "  [output] filter=%.1fms trace=%.1fms cc=%.1fms bucket=%.1fms build=%.1fms (rings=%zu)\n",
-        ms(t1 - t0),
-        ms(t2 - t1),
-        ms(t3 - t2),
-        ms(t4 - t3),
-        ms(t5 - t4),
-        rings.size());
-
+    auto t4 = clock::now();
+    auto ms = [](auto d) { return std::chrono::duration<double, std::milli>(d).count(); };
+    std::fprintf(stderr, "  [output] filter=%.1fms cc=%.1fms bucket=%.1fms trace=%.1fms (faces=%zu)\n",
+        ms(t1 - t0), ms(t2 - t1), ms(t3 - t2), ms(t4 - t3), num_faces);
     return result;
 }
 
@@ -350,7 +291,7 @@ inline auto run_pipeline(std::vector<point> points, std::vector<std::size_t> off
     auto t5 = clock::now();
 
     auto result = build_output(chains, hot_pixels, std::move(next_half_chain),
-                               winding, std::move(ray_pairs), filter);
+                               winding, coplanar, ray_pairs, filter);
     auto t6 = clock::now();
 
     auto ms = [](auto d) { return std::chrono::duration<double, std::milli>(d).count(); };

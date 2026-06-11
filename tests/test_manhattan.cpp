@@ -611,7 +611,7 @@ TEST(ManhattanLarge, RectWith100Holes) {
 
     EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
     EXPECT_TRUE(bg::is_valid(expected));
-    EXPECT_DOUBLE_EQ(bg::area(result), bg::area(expected));
+    EXPECT_DOUBLE_EQ(bg::area(result), bg::area(expected)) << "result: " << bg::wkt(result);
 }
 
 TEST(ManhattanLarge, RectWith20Holes) {
