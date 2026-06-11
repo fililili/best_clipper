@@ -148,7 +148,6 @@ inline multi_polygon build_output(
     const std::vector<point>& hot_pixels,
     std::vector<half_chain> next_half_chain,
     const std::vector<int>& winding,
-    const std::vector<std::pair<std::size_t, std::size_t>>& coplanar_pairs,
     const std::vector<std::pair<std::size_t, std::size_t>>& ray_pairs,
     auto filter_fn)
 {
@@ -165,16 +164,15 @@ inline multi_polygon build_output(
     for (std::size_t i = 0; i < num_half_chains; i++)
         survive[i] = filter_fn(winding[i]);
 
-    std::vector<bool> dead(num_half_chains, false);
     for (std::size_t i = 0; i < num_chains; i++) {
         std::size_t f = 2 * i, r = 2 * i + 1;
         if (survive[f] && survive[r])
-            dead[f] = dead[r] = true;
+            survive[f] = survive[r] = false;
     }
 
     // 修正 next_half_chain
     for (std::size_t i = 0; i < num_half_chains; i++) {
-        if (!survive[i] || dead[i]) continue;
+        if (!survive[i]) continue;
         while (dead[next_half_chain[i].id])
             next_half_chain[i] =
                 next_half_chain[next_half_chain[i].dual().id];
@@ -191,7 +189,7 @@ inline multi_polygon build_output(
 
     for (std::size_t i = 0; i < num_half_chains; i++) {
 
-        if (!survive[i] || dead[i] || visited[i]) continue;
+        if (!survive[i] || visited[i]) continue;
 
         std::size_t ring_id = rings.size();
         ring current_ring;
@@ -232,9 +230,9 @@ inline multi_polygon build_output(
     // 3. ring-level connected components
     // ----------------------------
     std::vector<std::pair<std::size_t, std::size_t>> ring_edges;
-    ring_edges.reserve(coplanar_pairs.size());
+    ring_edges.reserve(ray_pairs.size());
 
-    for (auto [a, b] : coplanar_pairs) {
+    for (auto [a, b] : ray_pairs) {
         std::size_t ra = hc_to_ring[a];
         std::size_t rb = hc_to_ring[b];
 
@@ -350,7 +348,7 @@ inline auto run_pipeline(std::vector<point> points, std::vector<std::size_t> off
     auto t5 = clock::now();
 
     auto result = build_output(chains, hot_pixels, std::move(next_half_chain),
-                               winding, coplanar, ray_pairs, filter);
+                               winding, ray_pairs, filter);
     auto t6 = clock::now();
 
     auto ms = [](auto d) { return std::chrono::duration<double, std::milli>(d).count(); };

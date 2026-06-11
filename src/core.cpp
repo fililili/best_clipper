@@ -379,18 +379,16 @@ hcg_tuple build_half_chain_graph(const chain_build_result& chains,
         for (auto it = vertex_begin + 1; it < vertex_end; ++it) {
             auto prev = sorted_half_chains[it - 1], cur = sorted_half_chains[it];
             next_half_chain[prev.dual().id] = cur;
-            coplanar.emplace_back(cur.id, prev.dual().id);
         }
         auto first = sorted_half_chains[vertex_begin], last = sorted_half_chains[vertex_end - 1];
         next_half_chain[last.dual().id] = first;
-        coplanar.emplace_back(first.id, last.dual().id);
     }
 
     return hcg_tuple{
         std::move(sorted_half_chains),
         std::vector<std::size_t>(begin_loc.begin(), begin_loc.end()),
         std::vector<std::size_t>(end_loc.begin(), end_loc.end()),
-        std::move(next_half_chain), std::move(coplanar)};
+        std::move(next_half_chain)};
 }
 
 // ---------------------------------------------------------------------------
