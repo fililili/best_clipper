@@ -115,45 +115,42 @@ inline multi_polygon build_output(const chain_build_result& chains,
 
     // Filter half-chains by winding number
     std::vector<bool> survive(num_half_chains);
-    for (std::size_t i = 0; i < num_half_chains; i++)
-        survive[i] = filter_fn(winding[i]);
-
-    // Dual cancellation: both fwd and rev survive → both dead
-    std::vector<bool> dead(num_half_chains, false);
-    for (std::size_t chain_idx = 0; chain_idx < num_chains; chain_idx++) {
-        std::size_t forward_id = 2 * chain_idx, reverse_id = 2 * chain_idx + 1;
-        if (survive[forward_id] && survive[reverse_id])
-            dead[forward_id] = dead[reverse_id] = true;
-    }
-
-    // Update next_half_chain via indirection: for each surviving half-chain whose next
-    // points to a dead half-chain, follow next_half_chain[dead.dual()] until a live
-    // half-chain is found. Terminates because at least one half-chain per vertex cycle
-    // survives (not all faces can be cancelled).
     for (std::size_t i = 0; i < num_half_chains; i++) {
-        if (!survive[i] || dead[i]) continue;
-        while (dead[next_half_chain[i].id])
-            next_half_chain[i] = next_half_chain[next_half_chain[i].dual().id];
+        survive[i] = filter_fn(winding[i]);
     }
-    auto t1 = clock::now();
 
     // Build connected components: coplanar + ray + dual cancellation → same face
     std::vector<std::pair<std::size_t, std::size_t>> face_edges;
     face_edges.reserve(coplanar_pairs.size() + ray_pairs.size() + num_chains);
     face_edges.insert(face_edges.end(), coplanar_pairs.begin(), coplanar_pairs.end());
     face_edges.insert(face_edges.end(), ray_pairs.begin(), ray_pairs.end());
+
+    std::vector<bool> dead(num_half_chains, false);
     for (std::size_t chain_idx = 0; chain_idx < num_chains; chain_idx++) {
         std::size_t forward_id = 2 * chain_idx, reverse_id = 2 * chain_idx + 1;
-        if (dead[forward_id]) face_edges.emplace_back(forward_id, reverse_id);
+        if (survive[forward_id] && survive[reverse_id]) {
+            survive[forward_id] = survive[reverse_id] = false;
+            face_edges.emplace_back(forward_id, reverse_id);
+        }
     }
+
+    for (std::size_t i = 0; i < num_half_chains; i++) {
+        if (!survive[i]) continue;
+        while (!survive[next_half_chain[i].id]) {
+            next_half_chain[i] = next_half_chain[next_half_chain[i].dual().id];
+        }
+    }
+    auto t1 = clock::now();
+
     auto component_id = connected_components(num_half_chains, face_edges);
     auto t2 = clock::now();
 
-    // Group surviving non-dead half-chains by face
     std::vector<std::pair<std::size_t, std::size_t>> half_chain_to_face;
-    for (std::size_t i = 0; i < num_half_chains; i++)
-        if (!dead[i] && survive[i])
+    for (std::size_t i = 0; i < num_half_chains; i++) {
+        if (survive[i]) {
             half_chain_to_face.emplace_back(component_id[i], i);
+        }
+    }
 
     std::size_t num_faces = 0;
     for (auto c : component_id) num_faces = std::max(num_faces, c + 1);
