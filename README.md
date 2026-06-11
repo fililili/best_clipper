@@ -124,7 +124,6 @@ Complexity: O(n log n) for snap rounding (dominated by spatial index queries), O
 ## Dependencies
 
 - **Boost.Geometry**: rtree for spatial indexing, polygon validity, WKT I/O
-- **Boost.Container**: flat_map for sorted associative containers
 - **C++20**: `std::exclusive_scan`, abbreviated function templates
 
 ## Build

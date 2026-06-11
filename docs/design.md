@@ -65,7 +65,6 @@ A weighted graph on half-chain IDs is built: coplanar/ray pairs (weight 0) and d
 ## Dependencies
 
 - **Boost.Geometry**: rtree for spatial indexing, segment/polygon model types
-- **Boost.Container**: flat_map for sorted associative containers
 - **C++20**: `std::exclusive_scan`, abbreviated function templates
 
 ## References

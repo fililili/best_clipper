@@ -1,18 +1,18 @@
 cmake_minimum_required(VERSION 3.29)
 project(best_clipper)
 
-if(MSVC)
-    add_compile_options("/utf-8")
+if(NOT DEFINED CPM_SOURCE_CACHE)
+  set(CPM_SOURCE_CACHE "$ENV{HOME}/.cache/cpm" CACHE PATH "CPM cache directory")
 endif()
-
-set(CPM_SOURCE_CACHE "${CMAKE_CURRENT_SOURCE_DIR}/.." CACHE PATH "CPM local packages directory")
-set(CPM_DEBUG 1)
 include(cmake/CPM.cmake)
 
 CPMAddPackage(
     NAME boost
     GITHUB_REPOSITORY boostorg/boost
     GIT_TAG boost-1.90.0
+    OPTIONS
+        "BOOST_ENABLE_CMAKE ON"
+        "BOOST_INCLUDE_LIBRARIES geometry"
 )
 get_property(targets DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY BUILDSYSTEM_TARGETS)
 message(STATUS "Available targets: ${targets}")
@@ -22,14 +22,6 @@ if(TARGET Boost::geometry)
 else()
     message(FATAL_ERROR "Boost::geometry target not found!")
 endif()
-
-if(TARGET Boost::container)
-    message(STATUS "Boost::container target found")
-else()
-    message(FATAL_ERROR "Boost::container target not found!")
-endif()
-
-
 
 add_subdirectory(src)
 enable_testing()
