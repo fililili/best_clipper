@@ -13,6 +13,7 @@ CPMAddPackage(
     OPTIONS
         "BOOST_ENABLE_CMAKE ON"
         "BOOST_INCLUDE_LIBRARIES geometry"
+    EXCLUDE_FROM_ALL YES
 )
 get_property(targets DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY BUILDSYSTEM_TARGETS)
 message(STATUS "Available targets: ${targets}")

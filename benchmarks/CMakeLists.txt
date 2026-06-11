@@ -3,6 +3,7 @@ CPMAddPackage(
     NAME benchmark
     GITHUB_REPOSITORY google/benchmark
     GIT_TAG v1.9.5
+    EXCLUDE_FROM_ALL YES
 )
 if(TARGET benchmark::benchmark)
     message(STATUS "benchmark::benchmark target found")

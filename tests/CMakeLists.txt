@@ -2,6 +2,7 @@ CPMAddPackage(
     NAME googletest
     GITHUB_REPOSITORY google/googletest
     GIT_TAG v1.17.0
+    EXCLUDE_FROM_ALL YES
 )
 
 if(TARGET GTest::gtest_main)
