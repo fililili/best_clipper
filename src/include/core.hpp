@@ -168,7 +168,7 @@ inline multi_polygon build_output(
         std::size_t f = 2 * i, r = 2 * i + 1;
         if (survive[f] && survive[r]) {
             survive[f] = survive[r] = false;
-            exteral_coface_pairs.push_back(f, r);
+            exteral_coface_pairs.emplace_back(f, r);
         }
     }
 
