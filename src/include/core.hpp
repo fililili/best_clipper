@@ -175,7 +175,7 @@ inline multi_polygon build_output(
     // 修正 next_half_chain
     for (std::size_t i = 0; i < num_half_chains; i++) {
         if (!survive[i]) continue;
-        while (dead[next_half_chain[i].id])
+        while (!survive[next_half_chain[i].id])
             next_half_chain[i] =
                 next_half_chain[next_half_chain[i].dual().id];
     }
