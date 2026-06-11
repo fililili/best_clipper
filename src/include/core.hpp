@@ -232,9 +232,9 @@ inline multi_polygon build_output(
     // 3. ring-level connected components
     // ----------------------------
     std::vector<std::pair<std::size_t, std::size_t>> ring_edges;
-    ring_edges.reserve(ray_pairs.size());
+    ring_edges.reserve(exteral_coface_pairs.size());
 
-    for (auto [a, b] : ray_pairs) {
+    for (auto [a, b] : exteral_coface_pairs) {
         std::size_t ra = hc_to_ring[a];
         std::size_t rb = hc_to_ring[b];
 
