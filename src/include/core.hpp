@@ -148,7 +148,7 @@ inline multi_polygon build_output(
     const std::vector<point>& hot_pixels,
     std::vector<half_chain> next_half_chain,
     const std::vector<int>& winding,
-    const std::vector<std::pair<std::size_t, std::size_t>>& ray_pairs,
+    std::vector<std::pair<std::size_t, std::size_t>> exteral_coface_pairs,
     auto filter_fn)
 {
     using clock = std::chrono::high_resolution_clock;
@@ -166,8 +166,10 @@ inline multi_polygon build_output(
 
     for (std::size_t i = 0; i < num_chains; i++) {
         std::size_t f = 2 * i, r = 2 * i + 1;
-        if (survive[f] && survive[r])
+        if (survive[f] && survive[r]) {
             survive[f] = survive[r] = false;
+            exteral_coface_pairs.push_back(f, r);
+        }
     }
 
     // 修正 next_half_chain
@@ -348,7 +350,7 @@ inline auto run_pipeline(std::vector<point> points, std::vector<std::size_t> off
     auto t5 = clock::now();
 
     auto result = build_output(chains, hot_pixels, std::move(next_half_chain),
-                               winding, ray_pairs, filter);
+                               winding, std::move(ray_pairs), filter);
     auto t6 = clock::now();
 
     auto ms = [](auto d) { return std::chrono::duration<double, std::milli>(d).count(); };
