@@ -1,4 +1,4 @@
-add_library(best_clipper_core core.cpp)
+add_library(best_clipper_core core.cpp graph_helper.cpp)
 
 target_include_directories(best_clipper_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
