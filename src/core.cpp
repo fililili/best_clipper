@@ -1,5 +1,5 @@
 #include "include/core.hpp"
-#include "core_detail.hpp"
+#include "snap_rounding_helper.hpp"
 #include "include/uniform_grid.hpp"
 
 #include <algorithm>

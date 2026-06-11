@@ -11,18 +11,7 @@
 #include <numeric>
 #include <vector>
 
-#ifdef _MSC_VER
-#include <boost/multiprecision/cpp_int.hpp>
-#endif
-
 namespace best_clipper {
-
-#ifdef _MSC_VER
-using int128_t = boost::multiprecision::int128_t;
-#else
-using int128_t = __int128;
-#endif
-
 
 struct chain_build_result {
     std::vector<std::size_t> indices, offsets;
