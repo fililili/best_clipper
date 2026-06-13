@@ -3,6 +3,7 @@
 #include "include/snap_rounding_helper.hpp"
 
 #include <algorithm>
+#include <array>
 #include <utility>
 #include <vector>
 
@@ -26,15 +27,62 @@ hcg_tuple build_half_chain_graph(const chain_build_result &chains,
 
   for (std::size_t v = 0; v < num_vertices; v++) {
     auto vertex_begin = begin_loc[v], vertex_end = end_loc[v];
-    if (vertex_end - vertex_begin < 2)
+    auto n = vertex_end - vertex_begin;
+    if (n < 2)
       continue;
-    std::sort(sorted_half_chains.begin() + vertex_begin,
-              sorted_half_chains.begin() + vertex_end,
-              [&](half_chain a, half_chain b) {
-                return less_by_direction(
-                    hot_pixels[v], hot_pixels[a.next_along_source(chains)],
-                    hot_pixels[b.next_along_source(chains)]);
-              });
+    auto begin_it = sorted_half_chains.begin() + vertex_begin;
+
+    point vpt = hot_pixels[v];
+    int32_t vx = bg::get<0>(vpt), vy = bg::get<1>(vpt);
+
+    // Bucket by octant (8 buckets, octant 0 starts at -x).
+    std::array<std::size_t, 8> bucket_cnt{};
+    std::vector<int> octants(n);
+    for (std::size_t i = 0; i < n; i++) {
+      auto h = begin_it[i];
+      auto pt = hot_pixels[h.next_along_source(chains)];
+      int64_t dx = (int64_t)bg::get<0>(pt) - vx;
+      int64_t dy = (int64_t)bg::get<1>(pt) - vy;
+      int oct;
+      if (dx <= 0) {
+        if (dy <= 0)
+          oct = (-dx >= -dy) ? 0 : 1;
+        else
+          oct = (-dx >= dy) ? 7 : 6;
+      } else {
+        if (dy <= 0)
+          oct = (dx >= -dy) ? 3 : 2;
+        else
+          oct = (dx >= dy) ? 4 : 5;
+      }
+      octants[i] = oct;
+      bucket_cnt[oct]++;
+    }
+
+    // Compute bucket start positions and scatter.
+    std::array<std::size_t, 9> bucket_pos{};
+    for (int o = 0; o < 8; o++)
+      bucket_pos[o + 1] = bucket_pos[o] + bucket_cnt[o];
+    std::vector<half_chain> temp(n);
+    auto cur_pos = bucket_pos;
+    for (std::size_t i = 0; i < n; i++)
+      temp[cur_pos[octants[i]]++] = begin_it[i];
+
+    // Sort each bucket by cross product.
+    for (int o = 0; o < 8; o++) {
+      std::sort(temp.begin() + bucket_pos[o], temp.begin() + bucket_pos[o + 1],
+                [&](half_chain a, half_chain b) {
+                  auto a_pt = hot_pixels[a.next_along_source(chains)];
+                  auto b_pt = hot_pixels[b.next_along_source(chains)];
+                  int64_t ax = (int64_t)bg::get<0>(a_pt) - vx;
+                  int64_t ay = (int64_t)bg::get<1>(a_pt) - vy;
+                  int64_t bx = (int64_t)bg::get<0>(b_pt) - vx;
+                  int64_t by = (int64_t)bg::get<1>(b_pt) - vy;
+                  return ax * by - ay * bx > 0;
+                });
+    }
+
+    std::move(temp.begin(), temp.end(), begin_it);
   }
 
   std::vector<half_chain> next_half_chain(num_half_chains, {~0ULL});

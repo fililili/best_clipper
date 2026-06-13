@@ -40,27 +40,11 @@ cast_ray_minus_x(std::size_t v, const std::vector<point> &hot_pixels,
   if (range_begin == range_end)
     return {};
 
-  // Find the half-chain at v whose right face contains the -x ray direction.
-  point vertex_point = hot_pixels[v];
-  int32_t vx = bg::get<0>(vertex_point);
-  int32_t vy = bg::get<1>(vertex_point);
-  point ray_point{vx > INT32_MIN ? vx - 1 : INT32_MIN, vy};
-  half_chain vertex_half_chain;
-  bool found = false;
-  for (auto it = range_begin; it < range_end; it++) {
-    auto h = sorted_half_chains[it];
-    auto half_chain_point = hot_pixels[h.next_along_source(chains)];
-    if (less_by_direction(vertex_point, ray_point, half_chain_point)) {
-      vertex_half_chain = h;
-      found = true;
-      break;
-    }
-  }
-  if (!found)
-    vertex_half_chain = sorted_half_chains[range_begin];
+  half_chain vertex_half_chain = sorted_half_chains[range_begin];
 
   // Cast ray in -x direction, find the nearest intersected half-chain.
-  int64_t ray_y = vy;
+  int32_t vx = bg::get<0>(hot_pixels[v]);
+  int64_t ray_y = bg::get<1>(hot_pixels[v]);
   int64_t min_x = vx;
   int64_t best_x = std::numeric_limits<int64_t>::min();
   std::size_t hit_id = ~0ULL;
