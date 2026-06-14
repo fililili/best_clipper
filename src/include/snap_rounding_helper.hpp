@@ -166,13 +166,11 @@ inline bool is_point_on_segment(point p, segment s) {
   int64_t ady = dy >= 0 ? dy : -dy;
   int64_t T = adx + ady;
   if (T == 0)
-    return x == x1 && y == y1; // zero-length segment
+    return x == x1 && y == y1;
 
-  // Condition 1: dot from start — minimizer corner
-  //   (x - sign(dx)·½, y - sign(dy)·½) ∈ Π  iff  dx ≥ 0 ∧ dy ≥ 0
   {
     int128_t dot = (int128_t)(x - x1) * dx + (int128_t)(y - y1) * dy;
-    int128_t lhs = dot + dot + T; // 2·dot + T  (≥ 0 ?)
+    int128_t lhs = dot + dot + T;
     if (dx >= 0 && dy >= 0) {
       if (lhs < 0)
         return false;
@@ -181,9 +179,6 @@ inline bool is_point_on_segment(point p, segment s) {
         return false;
     }
   }
-
-  // Condition 2: dot from end — maximizer corner
-  //   (x + sign(dx)·½, y + sign(dy)·½) ∈ Π  iff  dx ≤ 0 ∧ dy ≤ 0
   {
     int128_t dot = (int128_t)(x2 - x) * dx + (int128_t)(y2 - y) * dy;
     int128_t lhs = dot + dot + T;
@@ -195,10 +190,6 @@ inline bool is_point_on_segment(point p, segment s) {
         return false;
     }
   }
-
-  // Condition 3: cross product (perpendicular distance)
-  //   Positive extremal: (x+sign(dy)·½, y-sign(dx)·½) ∈ Π iff dx ≥ 0 ∧ dy ≤ 0
-  //   Negative extremal: (x-sign(dy)·½, y+sign(dx)·½) ∈ Π iff dx ≤ 0 ∧ dy ≥ 0
   {
     int128_t cross = (int128_t)(x - x1) * dy - (int128_t)(y - y1) * dx;
     int128_t abs2 = cross >= 0 ? cross + cross : (-cross) + (-cross);
