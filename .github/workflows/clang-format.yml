@@ -7,7 +7,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: clang-format
-        run: |
-          find . -name '*.cpp' -o -name '*.hpp' -o -name '*.h' -o -name '*.cc' -o -name '*.cxx' \
-            | xargs clang-format-18 --style=file --dry-run --Werror
+      - uses: jidicula/clang-format-action@v4
+        with:
+          clang-format-version: '18'
