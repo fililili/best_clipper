@@ -7,11 +7,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: install clang-format
-        run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq clang-format-18
-          sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-18 100
       - name: clang-format
         run: |
           find . -name '*.cpp' -o -name '*.hpp' -o -name '*.h' -o -name '*.cc' -o -name '*.cxx' \
-            | xargs clang-format --style=file --dry-run --Werror
+            | xargs clang-format-18 --style=file --dry-run --Werror
