@@ -19,16 +19,26 @@ using int128_t = boost::multiprecision::int128_t;
 using int128_t = __int128;
 #endif
 
+// Order hot pixels along a segment.  Every pixel passed to operator() lies on
+// the segment, so p = (x1 + t·dx, y1 + t·dy) for some t ∈ [0, 1].  The dot
+// product with (dx, dy) is x1·dx + y1·dy + t·(dx²+dy²) — monotonic in t.
+// Replacing (dx, dy) by their signs (sx, sy) ∈ {-1,0,1}³ gives:
+//   dot(p, (sx, sy)) = x1·sx + y1·sy + t·(|dx| + |dy|)
+// The constant offset cancels in comparison and |dx|+|dy| > 0, so the ordering
+// by t is preserved while the comparison simplifies to sign-flip arithmetic.
 struct less_by_segment {
-  int32_t dx, dy;
+  int8_t sx, sy;
 
-  less_by_segment(const segment &s)
-      : dx(bg::get<1, 0>(s) - bg::get<0, 0>(s)),
-        dy(bg::get<1, 1>(s) - bg::get<0, 1>(s)) {}
+  less_by_segment(const segment &s) {
+    auto d = bg::get<1, 0>(s) - bg::get<0, 0>(s);
+    sx = d > 0 ? 1 : d < 0 ? -1 : 0;
+    d = bg::get<1, 1>(s) - bg::get<0, 1>(s);
+    sy = d > 0 ? 1 : d < 0 ? -1 : 0;
+  }
 
   bool operator()(point p1, point p2) const {
-    int64_t d1 = (int64_t)bg::get<0>(p1) * dx + (int64_t)bg::get<1>(p1) * dy;
-    int64_t d2 = (int64_t)bg::get<0>(p2) * dx + (int64_t)bg::get<1>(p2) * dy;
+    int64_t d1 = (int64_t)bg::get<0>(p1) * sx + (int64_t)bg::get<1>(p1) * sy;
+    int64_t d2 = (int64_t)bg::get<0>(p2) * sx + (int64_t)bg::get<1>(p2) * sy;
     return d1 < d2;
   }
 };
