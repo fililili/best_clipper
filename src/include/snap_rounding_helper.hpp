@@ -27,19 +27,18 @@ using int128_t = __int128;
 // The constant offset cancels in comparison and |dx|+|dy| > 0, so the ordering
 // by t is preserved while the comparison simplifies to sign-flip arithmetic.
 struct less_by_segment {
-  int8_t sx, sy;
+  int sx, sy;
 
   less_by_segment(const segment &s) {
-    auto d = bg::get<1, 0>(s) - bg::get<0, 0>(s);
-    sx = d > 0 ? 1 : d < 0 ? -1 : 0;
+    int32_t d = bg::get<1, 0>(s) - bg::get<0, 0>(s);
+    sx = (d > 0) - (d < 0);
     d = bg::get<1, 1>(s) - bg::get<0, 1>(s);
-    sy = d > 0 ? 1 : d < 0 ? -1 : 0;
+    sy = (d > 0) - (d < 0);
   }
 
   bool operator()(point p1, point p2) const {
-    int64_t d1 = (int64_t)bg::get<0>(p1) * sx + (int64_t)bg::get<1>(p1) * sy;
-    int64_t d2 = (int64_t)bg::get<0>(p2) * sx + (int64_t)bg::get<1>(p2) * sy;
-    return d1 < d2;
+    return bg::get<0>(p1) * sx + bg::get<1>(p1) * sy <
+           bg::get<0>(p2) * sx + bg::get<1>(p2) * sy;
   }
 };
 
