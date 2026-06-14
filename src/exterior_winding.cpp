@@ -31,12 +31,11 @@ std::vector<std::pair<std::size_t, std::size_t>>
 cast_ray_minus_x(std::size_t v, const std::vector<point> &hot_pixels,
                  const chain_build_result &chains,
                  const std::vector<half_chain> &sorted_half_chains,
-                 const std::vector<std::size_t> &half_chain_begin,
-                 const std::vector<std::size_t> &half_chain_end,
+                 const std::vector<std::size_t> &half_chains,
                  const best_clipper::uniform_grid::grid &seg_grid,
                  const std::vector<chain_seg> &seg_data) {
 
-  auto range_begin = half_chain_begin[v], range_end = half_chain_end[v];
+  auto range_begin = half_chains[v], range_end = half_chains[v + 1];
   if (range_begin == range_end)
     return {};
 
@@ -134,8 +133,7 @@ cast_ray_minus_x(std::size_t v, const std::vector<point> &hot_pixels,
 fe_tuple find_exterior(const chain_build_result &chains,
                        const std::vector<point> &hot_pixels,
                        const std::vector<half_chain> &sorted_half_chains,
-                       const std::vector<std::size_t> &half_chain_begin,
-                       const std::vector<std::size_t> &half_chain_end) {
+                       const std::vector<std::size_t> &half_chains) {
   std::size_t num_vertices = hot_pixels.size();
 
   std::vector<std::pair<std::size_t, std::size_t>> vertex_edges;
@@ -198,7 +196,7 @@ fe_tuple find_exterior(const chain_build_result &chains,
     std::size_t leftmost_vertex = ~0ULL;
     int32_t min_x = std::numeric_limits<int32_t>::max();
     for (auto vertex : vertex_component) {
-      if (half_chain_begin[vertex] == half_chain_end[vertex])
+      if (half_chains[vertex] == half_chains[vertex + 1])
         continue;
       int32_t x = bg::get<0>(hot_pixels[vertex]);
       if (x < min_x) {
@@ -209,9 +207,9 @@ fe_tuple find_exterior(const chain_build_result &chains,
     if (leftmost_vertex == ~0ULL)
       continue;
 
-    auto ray_pairs_result = cast_ray_minus_x(
-        leftmost_vertex, hot_pixels, chains, sorted_half_chains,
-        half_chain_begin, half_chain_end, seg_grid, seg_data);
+    auto ray_pairs_result =
+        cast_ray_minus_x(leftmost_vertex, hot_pixels, chains,
+                         sorted_half_chains, half_chains, seg_grid, seg_data);
     for (auto &p : ray_pairs_result) {
       if (p.first == p.second) {
         exterior_half_chains.push_back(p.first);
@@ -252,7 +250,7 @@ std::vector<int> compute_winding(
   }
   auto t1 = std::chrono::high_resolution_clock::now();
 
-  auto [adj_begin, adj_end, adjacency] = bucket_sort(
+  auto [adj, adjacency] = bucket_sort(
       edges, num_half_chains,
       [](const edge_with_power_t &e) { return e.start; },
       [](const edge_with_power_t &e) { return std::pair{e.end, e.power}; });
@@ -268,7 +266,7 @@ std::vector<int> compute_winding(
   while (!stack.empty()) {
     auto u = stack.back();
     stack.pop_back();
-    for (auto j = adj_begin[u]; j < adj_end[u]; j++) {
+    for (auto j = adj[u]; j < adj[u + 1]; j++) {
       auto [v, diff] = adjacency[j];
       if (winding[v] == UNKNOWN) {
         winding[v] = winding[u] + diff;

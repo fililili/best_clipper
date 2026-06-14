@@ -38,7 +38,7 @@ struct half_chain {
 };
 
 using hcg_tuple = std::tuple<std::vector<half_chain>, std::vector<std::size_t>,
-                             std::vector<std::size_t>, std::vector<half_chain>,
+                             std::vector<half_chain>,
                              std::vector<std::pair<std::size_t, std::size_t>>>;
 
 hcg_tuple build_half_chain_graph(const chain_build_result &chains,

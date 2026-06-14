@@ -55,14 +55,10 @@ multi_polygon build_output(
   std::size_t num_faces = 0;
   for (auto c : component_id)
     num_faces = std::max(num_faces, c + 1);
-  auto [existed_half_chains_begin, existed_half_chains_end,
-        existed_half_chains] =
-      bucket_sort(
-          half_chain_to_face, num_faces,
-          [](const std::pair<std::size_t, std::size_t> &p) { return p.first; },
-          [](const std::pair<std::size_t, std::size_t> &p) {
-            return p.second;
-          });
+  auto [face_chains, existed_half_chains] = bucket_sort(
+      half_chain_to_face, num_faces,
+      [](const std::pair<std::size_t, std::size_t> &p) { return p.first; },
+      [](const std::pair<std::size_t, std::size_t> &p) { return p.second; });
   auto t3 = clock::now();
 
   // For each face, trace its half-chains into a polygon
@@ -71,8 +67,7 @@ multi_polygon build_output(
   for (std::size_t f = 0; f < num_faces; f++) {
     std::vector<ring> rings;
 
-    for (std::size_t j = existed_half_chains_begin[f];
-         j < existed_half_chains_end[f]; j++) {
+    for (std::size_t j = face_chains[f]; j < face_chains[f + 1]; j++) {
       ring current_ring;
       std::size_t current_id = existed_half_chains[j];
       if (done[current_id])

@@ -21,12 +21,12 @@ hcg_tuple build_half_chain_graph(const chain_build_result &chains,
   for (std::size_t i = 0; i < num_half_chains; i++)
     all.push_back({i});
 
-  auto [begin_loc, end_loc, sorted_half_chains] = bucket_sort(
+  auto [locs, sorted_half_chains] = bucket_sort(
       all, num_vertices, [&](half_chain h) { return h.source_node(chains); },
       [](half_chain h) { return h; });
 
   for (std::size_t v = 0; v < num_vertices; v++) {
-    auto vertex_begin = begin_loc[v], vertex_end = end_loc[v];
+    auto vertex_begin = locs[v], vertex_end = locs[v + 1];
     auto n = vertex_end - vertex_begin;
     if (n < 2)
       continue;
@@ -89,7 +89,7 @@ hcg_tuple build_half_chain_graph(const chain_build_result &chains,
   std::vector<std::pair<std::size_t, std::size_t>> coplanar;
 
   for (std::size_t v = 0; v < num_vertices; v++) {
-    auto vertex_begin = begin_loc[v], vertex_end = end_loc[v];
+    auto vertex_begin = locs[v], vertex_end = locs[v + 1];
     if (vertex_begin == vertex_end)
       continue;
     for (auto it = vertex_begin + 1; it < vertex_end; ++it) {
@@ -103,9 +103,7 @@ hcg_tuple build_half_chain_graph(const chain_build_result &chains,
     coplanar.emplace_back(first.id, last.dual().id);
   }
 
-  return hcg_tuple{std::move(sorted_half_chains),
-                   std::vector<std::size_t>(begin_loc.begin(), begin_loc.end()),
-                   std::vector<std::size_t>(end_loc.begin(), end_loc.end()),
+  return hcg_tuple{std::move(sorted_half_chains), std::move(locs),
                    std::move(next_half_chain), std::move(coplanar)};
 }
 
