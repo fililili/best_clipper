@@ -7,6 +7,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: jidicula/clang-format-action@v4
-        with:
-          clang-format-version: '18'
+      - name: clang-format
+        run: |
+          sudo apt-get update -qq
+          CLANG=$(apt-cache search clang-format | grep -oP 'clang-format-\d+' | sort -Vr | head -1)
+          sudo apt-get install -y -qq "$CLANG"
+          find . -name '*.cpp' -o -name '*.hpp' -o -name '*.h' -o -name '*.cc' -o -name '*.cxx' \
+            | xargs "$CLANG" -i --style=LLVM
+          git diff --exit-code
