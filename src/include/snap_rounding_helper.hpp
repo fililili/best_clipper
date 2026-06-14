@@ -27,15 +27,9 @@ struct less_by_segment {
         dy(bg::get<1, 1>(s) - bg::get<0, 1>(s)) {}
 
   bool operator()(point p1, point p2) const {
-    auto x1 = bg::get<0>(p1), x2 = bg::get<0>(p2);
-    if (dx != 0) {
-      if (x1 != x2)
-        return dx > 0 ? x1 < x2 : x1 > x2;
-      auto y1 = bg::get<1>(p1), y2 = bg::get<1>(p2);
-      return dy >= 0 ? y1 < y2 : y1 > y2;
-    }
-    auto y1 = bg::get<1>(p1), y2 = bg::get<1>(p2);
-    return dy > 0 ? y1 < y2 : y1 > y2;
+    int64_t d1 = (int64_t)bg::get<0>(p1) * dx + (int64_t)bg::get<1>(p1) * dy;
+    int64_t d2 = (int64_t)bg::get<0>(p2) * dx + (int64_t)bg::get<1>(p2) * dy;
+    return d1 < d2;
   }
 };
 
