@@ -92,7 +92,6 @@ hcg_tuple build_half_chain_graph(const chain_build_result &chains,
     auto vertex_begin = begin_loc[v], vertex_end = end_loc[v];
     if (vertex_begin == vertex_end)
       continue;
-    assert(vertex_begin + 1 != vertex_end);
     for (auto it = vertex_begin + 1; it < vertex_end; ++it) {
       auto prev = sorted_half_chains[it - 1], cur = sorted_half_chains[it];
       next_half_chain[prev.dual().id] = cur;

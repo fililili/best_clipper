@@ -1,7 +1,6 @@
 #include "include/graph_helper.hpp"
 
 #include <cassert>
-#include <cstdint>
 
 namespace best_clipper {
 
@@ -70,9 +69,10 @@ build_chains(const std::vector<edge_with_power_t> &sorted_edges,
   }
 
   std::vector<bool> is_end(node_num);
-  for (std::size_t i = 0; i < node_num; i++)
+  for (std::size_t i = 0; i < node_num; i++) {
     is_end[i] =
         !(out_deg[i] == 1 && in_deg[i] == 1 && out_power[i] == in_power[i]);
+  }
 
   std::vector<bool> visited(node_num), edge_used(sorted_edges.size());
   std::vector<std::size_t> idx, off{0};

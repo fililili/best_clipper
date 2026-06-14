@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cstdio>
 #include <limits>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -16,10 +17,11 @@ namespace best_clipper {
 namespace bg = boost::geometry;
 
 // ---------------------------------------------------------------------------
-// construct_graph
+// construct_graph — returns edges, hot_pixels, and segment_pixel_pairs
 // ---------------------------------------------------------------------------
 
-std::tuple<std::vector<edge_t>, std::vector<point>>
+std::tuple<std::vector<edge_t>, std::vector<point>,
+           std::vector<std::pair<std::size_t, std::size_t>>>
 construct_graph(const std::vector<point> &points,
                 const std::vector<std::size_t> &offsets) {
   // Build grid: point index i is the segment (points[i], points[i+1]).
@@ -178,7 +180,8 @@ construct_graph(const std::vector<point> &points,
         edges.emplace_back(*pixel_begin, *std::next(pixel_begin));
     }
   }
-  return {std::move(edges), std::move(hot_pixels)};
+  return {std::move(edges), std::move(hot_pixels),
+          std::move(segment_pixel_pairs)};
 }
 
 // ---------------------------------------------------------------------------
@@ -240,10 +243,22 @@ std::tuple<std::vector<point>, chain_build_result>
 build_chains_from_input(const std::vector<point> &points,
                         const std::vector<std::size_t> &offsets) {
   auto t0 = std::chrono::high_resolution_clock::now();
-  auto [edges, hot_pixels] = construct_graph(points, offsets);
+  auto [edges, hot_pixels, seg_pixel_pairs] = construct_graph(points, offsets);
   auto t1 = std::chrono::high_resolution_clock::now();
-  auto sorted_edges =
-      unique_edges(edges_to_power(std::move(edges)), hot_pixels.size());
+
+  auto powered = edges_to_power(std::move(edges));
+
+#ifndef NDEBUG
+  {
+    std::vector<int> balance(hot_pixels.size());
+    for (const auto &e : powered)
+      balance[e.start] += e.power, balance[e.end] -= e.power;
+    for (std::size_t v = 0; v < hot_pixels.size(); v++)
+      assert(balance[v] == 0);
+  }
+#endif
+
+  auto sorted_edges = unique_edges(std::move(powered), hot_pixels.size());
   auto t2 = std::chrono::high_resolution_clock::now();
 
   auto chains = build_chains(sorted_edges, hot_pixels.size());
