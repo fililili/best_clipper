@@ -27,33 +27,18 @@ struct chain_seg {
 // cast_ray_minus_x
 // ---------------------------------------------------------------------------
 
-std::vector<std::pair<std::size_t, std::size_t>>
-cast_ray_minus_x(std::size_t v, const std::vector<point> &hot_pixels,
-                 const chain_build_result &chains,
-                 const std::vector<half_chain> &sorted_half_chains,
-                 const std::vector<std::size_t> &half_chains,
-                 const best_clipper::uniform_grid::grid &seg_grid,
-                 const std::vector<chain_seg> &seg_data) {
-
-  auto range_begin = half_chains[v], range_end = half_chains[v + 1];
-  if (range_begin == range_end)
-    return {};
-
-  half_chain vertex_half_chain = sorted_half_chains[range_begin];
-
-  // Cast ray in -x direction, find the nearest intersected half-chain.
-  int32_t vx = bg::get<0>(hot_pixels[v]);
-  int64_t ray_y = bg::get<1>(hot_pixels[v]);
-  int64_t min_x = vx;
+std::size_t cast_ray_minus_x(int32_t vx, int64_t ray_y,
+                             const best_clipper::uniform_grid::grid &seg_grid,
+                             const std::vector<chain_seg> &seg_data) {
   int64_t best_x = std::numeric_limits<int64_t>::min();
-  std::size_t hit_id = ~0ULL;
+  std::size_t hit_id = (std::size_t)-1;
   int64_t hit_dy = 0;
   int64_t best_dx = 0;
   int64_t hit_y_low = 0;
 
   auto try_edge = [&](int64_t ix, int64_t dx, int64_t dy, int64_t y_low,
                       std::size_t half_chain_id) {
-    if (ix >= min_x)
+    if (ix >= vx)
       return;
     bool better = false;
     if (ix > best_x) {
@@ -66,14 +51,8 @@ cast_ray_minus_x(std::size_t v, const std::vector<point> &hot_pixels,
                        (uint64_t)(hit_dy >= 0 ? hit_dy : -hit_dy);
       uint64_t abs_b = (uint64_t)(best_dx >= 0 ? best_dx : -best_dx) *
                        (uint64_t)(dy >= 0 ? dy : -dy);
-      bool slope_gt;
-      if (!same_sign)
-        slope_gt = sign_a > sign_b;
-      else if (sign_a > 0)
-        slope_gt = abs_a > abs_b;
-      else
-        slope_gt = abs_a < abs_b;
-      if (slope_gt) {
+      if (same_sign ? (sign_a > 0 ? abs_a > abs_b : abs_a < abs_b)
+                    : sign_a > sign_b) {
         better = true;
       } else if (same_sign && abs_a == abs_b) {
         uint64_t da = ray_y - y_low;
@@ -115,15 +94,9 @@ cast_ray_minus_x(std::size_t v, const std::vector<point> &hot_pixels,
     }
   });
 
-  // Build the coplanar pair (RIGHT-face convention).
-  std::vector<std::pair<std::size_t, std::size_t>> ray_pairs;
-  if (hit_id != ~0ULL) {
-    std::size_t hit_side = (hit_dy > 0) ? hit_id : (hit_id ^ 1);
-    ray_pairs.emplace_back(vertex_half_chain.id, hit_side);
-  } else {
-    ray_pairs.emplace_back(vertex_half_chain.id, vertex_half_chain.id);
-  }
-  return ray_pairs;
+  if (hit_id != (std::size_t)-1)
+    return (hit_dy > 0) ? hit_id : (hit_id ^ 1);
+  return (std::size_t)-1;
 }
 
 // ---------------------------------------------------------------------------
@@ -193,28 +166,28 @@ fe_tuple find_exterior(const chain_build_result &chains,
   std::vector<std::pair<std::size_t, std::size_t>> ray_pairs;
 
   for (auto &vertex_component : vertex_components) {
-    std::size_t leftmost_vertex = ~0ULL;
+    std::size_t leftmost_vertex = ~0ULL, first_hc_vertex = ~0ULL;
     int32_t min_x = std::numeric_limits<int32_t>::max();
     for (auto vertex : vertex_component) {
-      if (half_chains[vertex] == half_chains[vertex + 1])
-        continue;
       int32_t x = bg::get<0>(hot_pixels[vertex]);
       if (x < min_x) {
         min_x = x;
         leftmost_vertex = vertex;
       }
+      if (first_hc_vertex == ~0ULL &&
+          half_chains[vertex] < half_chains[vertex + 1])
+        first_hc_vertex = vertex;
     }
-    if (leftmost_vertex == ~0ULL)
+    if (first_hc_vertex == ~0ULL)
       continue;
+    auto first_hc = sorted_half_chains[half_chains[first_hc_vertex]].id;
 
-    auto ray_pairs_result =
-        cast_ray_minus_x(leftmost_vertex, hot_pixels, chains,
-                         sorted_half_chains, half_chains, seg_grid, seg_data);
-    for (auto &p : ray_pairs_result) {
-      if (p.first == p.second) {
-        exterior_half_chains.push_back(p.first);
-      }
-      ray_pairs.push_back(std::move(p));
+    int32_t ray_y = bg::get<1>(hot_pixels[leftmost_vertex]);
+    auto hit = cast_ray_minus_x(min_x, ray_y, seg_grid, seg_data);
+    if (hit == (std::size_t)-1) {
+      exterior_half_chains.push_back(first_hc);
+    } else {
+      ray_pairs.emplace_back(first_hc, hit);
     }
   }
 
