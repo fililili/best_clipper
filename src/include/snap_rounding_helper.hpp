@@ -19,38 +19,6 @@ using int128_t = boost::multiprecision::int128_t;
 using int128_t = __int128;
 #endif
 
-inline bool product_gt(uint64_t a, uint64_t b, uint64_t c, uint64_t d) {
-  return a * b > c * d;
-}
-
-inline bool less_by_direction(point source, point target1, point target2) {
-  int64_t dx1 = (int64_t)bg::get<0>(target1) - (int64_t)bg::get<0>(source);
-  int64_t dy1 = (int64_t)bg::get<1>(target1) - (int64_t)bg::get<1>(source);
-  int64_t dx2 = (int64_t)bg::get<0>(target2) - (int64_t)bg::get<0>(source);
-  int64_t dy2 = (int64_t)bg::get<1>(target2) - (int64_t)bg::get<1>(source);
-
-  auto quadrant = [](int64_t dx, int64_t dy) {
-    if (dx > 0 && dy >= 0)
-      return 0;
-    if (dx <= 0 && dy > 0)
-      return 1;
-    if (dx < 0 && dy <= 0)
-      return 2;
-    return 3;
-  };
-  int q1 = quadrant(dx1, dy1), q2 = quadrant(dx2, dy2);
-  if (q1 != q2)
-    return q1 < q2;
-
-  uint64_t ux1 = dx1 >= 0 ? (uint64_t)dx1 : (uint64_t)(-dx1);
-  uint64_t uy1 = dy1 >= 0 ? (uint64_t)dy1 : (uint64_t)(-dy1);
-  uint64_t ux2 = dx2 >= 0 ? (uint64_t)dx2 : (uint64_t)(-dx2);
-  uint64_t uy2 = dy2 >= 0 ? (uint64_t)dy2 : (uint64_t)(-dy2);
-  bool cross_positive = (q1 % 2 == 0) ? product_gt(ux1, uy2, uy1, ux2)
-                                      : product_gt(uy1, ux2, ux1, uy2);
-  return cross_positive;
-}
-
 struct less_by_segment {
   int32_t dx, dy;
 
