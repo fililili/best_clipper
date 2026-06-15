@@ -6,23 +6,21 @@ A C++20 library for polygon boolean operations (union, intersection, XOR, etc.) 
 
 ### 1. Glocal Snap Rounding with Spatial Index
 
-Global snap rounding is a technique to convert arbitrary-precision geometric arrangements into integer-grid representations while preserving topological correctness. Global means it will take every segments into consideration when snaping. The theoretical foundation comes from:
+Global snap rounding is a technique to convert arbitrary-precision geometric arrangements into integer-grid representations while preserving topological correctness. Global means it will take **every** segments into consideration when snaping every**one** point. And the snap will not cross any segment, or call it topo inconsistency. The theoretical foundation comes from:
 
 > **Guibas, L. J., & Marimont, D. H. (1998).** *Rounding Arrangements Dynamically.* International Journal of Computational Geometry & Applications, Vol. 8, No. 2, pp. 157-176.
 
-The key idea: all segment endpoints and intersection points are treated as **hot pixels** (integer grid points). Every segment is then "snapped" to pass through these hot pixels, producing a planar subdivision that is topologically equivalent to the true arrangement. A valid snap rounding guarantees:
-
-- No two segments cross between grid lines without an intermediate hot pixel
-- No segment passes closer than half a pixel to a hot pixel without passing through it
-- The resulting planar graph is a valid subdivision of the plane
+The key idea: all segment endpoints and intersection points are treated as **hot pixels** (integer grid points). Every segment is then "snapped" to passed hot pixels.
 
 Unlike the original paper which handles dynamic (online) insertion, this library processes all segments in batch (offline). Instead of a dynamic rounding structure, a **spatial index tree** (uniform grid now) is used to accelerate segment-intersection and point-on-segment queries. All geometric computations use **strict integer arithmetic** — no floating point inaccuracy.
 
 Pipeline for snap rounding:
-1. Find all segment-segment intersection points, snapped to integer grid (hot pixels)
-2. For each original segment, find all hot pixels lying on it
-3. Split each segment into sub-segments between consecutive hot pixels
-4. merge sub-segments and build chains.
+1. Find all segment-segment intersection points, snapped to integer as hot pixels
+2. All endpoint of segment is hot pixels, too.
+3. sort and unique hot pixels.
+4. For each original segment, find all hot pixels lying on it
+5. Split each segment into sub-segments between consecutive hot pixels
+6. merge sub-segments and build chains.
 
 ### 2. Winding Number
 
@@ -55,9 +53,9 @@ For a valid multipolygon, even interior point's winding number is 1. Therefore, 
 | OR (union) | w > 0 |
 | AND (intersection) | w > 1 |
 | XOR | w == 1 |
-| A - B | w = w_A - w_B > 0 |
+| A - B | w = w_A + (-1) * w_B > 0 |
 
-At current, we use **Boost.Geometry multipolygon set**. For boost, outer ring match CW, so every half-edge belongs to the face on its right. In the future, we will support CCW, too. For multipolygon that has CCW outer ring, every half-edge belongs to the face on its left. PS: we said left and right for half edge that is from down to up.
+At current, we use **Boost.Geometry multipolygon set**. For boost, outer ring match CW, so every half-edge belongs to the face on its right. In the future, we will support CCW, too. For multipolygon that has CCW outer ring, every half-edge belongs to the face on its left. (we said left and right for half edge that is from down to up.)
 A face is contained by many half chains. And we can find the **next half chains** by sorting half chains that has same start point.
 However, same face have many rings, we can find them by ray cast. **Ray cast** can also check whether a half chain is belong to the exterior face whose winding number is always zero.
 By **Dual half chain**, **next half chain**, **Ray cast pair half chain** and **Ray cast exterior half chain**, we can use DFS to calculte the winding number of every half chain and then filter them.
