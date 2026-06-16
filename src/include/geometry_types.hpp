@@ -5,7 +5,8 @@
 namespace best_clipper {
 
 namespace bg = boost::geometry;
-using point = bg::model::d2::point_xy<int32_t>;
+using coordinate_type = int32_t;
+using point = bg::model::d2::point_xy<coordinate_type>;
 using segment = bg::model::segment<point>;
 using box = bg::model::box<point>;
 using ring = bg::model::ring<point>;

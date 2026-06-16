@@ -9,7 +9,6 @@ namespace best_clipper {
 struct chain_build_result {
   std::vector<std::size_t> indices, offsets;
   std::vector<int> powers;
-  std::vector<std::size_t> edge_to_chain;
 };
 
 std::tuple<std::vector<point>, chain_build_result>

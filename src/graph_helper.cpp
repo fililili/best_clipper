@@ -77,7 +77,6 @@ build_chains(const std::vector<edge_with_power_t> &sorted_edges,
   std::vector<bool> visited(node_num), edge_used(sorted_edges.size());
   std::vector<std::size_t> idx, off{0};
   std::vector<int> powers;
-  std::vector<std::size_t> edge_to_chain(sorted_edges.size(), ~0ULL);
 
   for (std::size_t i = 0; i < node_num; i++) {
     if (!is_end[i])
@@ -89,7 +88,6 @@ build_chains(const std::vector<edge_with_power_t> &sorted_edges,
       edge_used[j] = true;
       idx.push_back(i);
       powers.push_back(sorted_edges[j].power);
-      edge_to_chain[j] = off.size() - 1;
       auto cur = sorted_edges[j].end;
       while (!is_end[cur]) {
         visited[cur] = true;
@@ -102,7 +100,6 @@ build_chains(const std::vector<edge_with_power_t> &sorted_edges,
           }
         assert(nj != ~0ULL);
         edge_used[nj] = true;
-        edge_to_chain[nj] = off.size() - 1;
         cur = sorted_edges[nj].end;
       }
       idx.push_back(cur);
@@ -125,7 +122,6 @@ build_chains(const std::vector<edge_with_power_t> &sorted_edges,
     edge_used[sj] = true;
     idx.push_back(i);
     powers.push_back(sorted_edges[sj].power);
-    edge_to_chain[sj] = off.size() - 1;
     auto cur = sorted_edges[sj].end;
     while (i != cur) {
       visited[cur] = true;
@@ -138,15 +134,13 @@ build_chains(const std::vector<edge_with_power_t> &sorted_edges,
         }
       assert(nj != ~0ULL);
       edge_used[nj] = true;
-      edge_to_chain[nj] = off.size() - 1;
       cur = sorted_edges[nj].end;
     }
     idx.push_back(cur);
     off.push_back(idx.size());
   }
 
-  return {std::move(idx), std::move(off), std::move(powers),
-          std::move(edge_to_chain)};
+  return {std::move(idx), std::move(off), std::move(powers)};
 }
 
 } // namespace best_clipper
