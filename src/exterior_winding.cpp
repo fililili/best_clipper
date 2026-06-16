@@ -93,45 +93,44 @@ find_exterior(const chain_build_result &chains,
               const std::vector<point> &hot_pixels,
               const std::vector<half_chain> &sorted_half_chains,
               const std::vector<std::size_t> &sorted_half_chains_offsets) {
-  std::size_t num_vertices = hot_pixels.size();
-
-  std::vector<std::pair<std::size_t, std::size_t>> vertex_edges;
-  for (std::size_t c = 0; c + 1 < chains.offsets.size(); c++) {
-    auto chain_begin_idx = chains.offsets[c],
-         chain_end_idx = chains.offsets[c + 1];
-    for (std::size_t k = chain_begin_idx; k + 1 < chain_end_idx; k++)
-      vertex_edges.emplace_back(chains.indices[k], chains.indices[k + 1]);
+  std::vector<std::pair<std::size_t, std::size_t>> chain_connected_edges;
+  for (std::size_t i = 0; i < sorted_half_chains_offsets.size() - 1; ++i) {
+    auto begin_idx = sorted_half_chains_offsets[i],
+         end_idx = sorted_half_chains_offsets[i + 1];
+    for (auto k = begin_idx + 1; k < end_idx; ++k) {
+      chain_connected_edges.emplace_back(sorted_half_chains[begin_idx].chain_id(),
+                                         sorted_half_chains[k].chain_id());
+    }
   }
-
-  auto component_ids = connected_components(num_vertices, vertex_edges);
-
+  auto chain_component_ids =
+      connected_components(chains.offsets.size() - 1, chain_connected_edges);
   std::size_t num_components = 0;
-  for (auto c : component_ids)
-    num_components = std::max(num_components, c + 1);
+  for (auto c : chain_component_ids) {
+    num_components = std::max(num_components, c);
+  }
+  num_components += 1;
 
   std::vector<size_t> leftmost_vertexes(num_components);
   std::vector<coordinate_type> min_xs(num_components,
                                       std::numeric_limits<int32_t>::max());
-  for (std::size_t vertex = 0; vertex < component_ids.size(); ++vertex) {
-    auto x = bg::get<0>(hot_pixels[vertex]);
-    auto component_id = component_ids[vertex];
-
-    if (!(sorted_half_chains_offsets[vertex] <
-          sorted_half_chains_offsets[vertex + 1])) {
-      continue;
+  //std::vector<std::size_t> indexes(num_components);
+  for (std::size_t chain_id = 0; chain_id < chains.offsets.size() - 1;
+       ++chain_id) {
+    auto component_id = chain_component_ids[chain_id];
+    auto chain_begin_idx = chains.offsets[chain_id],
+         chain_end_idx = chains.offsets[chain_id + 1];
+    for (std::size_t k = chain_begin_idx; k < chain_end_idx - 1; k++) {
+      auto vertex = chains.indices[k];
+      auto x = bg::get<0>(hot_pixels[vertex]);
+      if (!(sorted_half_chains_offsets[vertex] <
+            sorted_half_chains_offsets[vertex + 1])) {
+        continue; //to do, will expand chain length, then we need support mid hot pixels
+      }
+      if (x < min_xs[component_id]) {
+        min_xs[component_id] = x;
+        leftmost_vertexes[component_id] = vertex;
+      }
     }
-    if (x < min_xs[component_id]) {
-      min_xs[component_id] = x;
-      leftmost_vertexes[component_id] = vertex;
-    }
-  }
-
-  std::vector<std::pair<std::size_t, std::size_t>> chain_edges;
-  for (std::size_t c = 0; c + 1 < chains.offsets.size(); c++) {
-    auto chain_begin_idx = chains.offsets[c],
-         chain_end_idx = chains.offsets[c + 1];
-    for (std::size_t k = chain_begin_idx; k + 1 < chain_end_idx; k++)
-      vertex_edges.emplace_back(chains.indices[k], chains.indices[k + 1]);
   }
 
   std::vector<chain_seg> seg_data;
