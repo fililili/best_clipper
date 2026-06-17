@@ -39,12 +39,12 @@ void test_union(const std::string &a_wkt, const std::string &b_wkt,
       << "Expected: " << bg::wkt(expected);
 }
 
-void test_self_or(const std::string &a_wkt, const std::string &expected_wkt) {
+void test_robust_self_or(const std::string &a_wkt, const std::string &expected_wkt) {
   multi_polygon a, expected;
   bg::read_wkt(a_wkt, a);
   bg::read_wkt(expected_wkt, expected);
   ASSERT_TRUE(bg::is_valid(expected));
-  auto result = self_or(a);
+  auto result = robust_self_or(a);
   EXPECT_TRUE(bg::is_valid(result));
   EXPECT_TRUE(bg::equals(result, expected))
       << "Result:   " << bg::wkt(result) << "\n"
@@ -110,7 +110,7 @@ TEST(CoreTest, DiagonalSnapRounding) {
                     "MULTIPOLYGON(((4 2,4 6,12 6,12 2,4 2)))",
                     "MULTIPOLYGON(((8 2,4 2,4 4,8 4,8 2)))");
 
-  test_self_or("MULTIPOLYGON(((0 3,3 6,6 3,3 0,0 3)),"
+  test_robust_self_or("MULTIPOLYGON(((0 3,3 6,6 3,3 0,0 3)),"
                "((3 3,6 6,9 3,6 0,3 3)))",
                "MULTIPOLYGON(((4 1,3 0,0 3,3 6,4 4,6 6,9 3,6 0,4 1)))");
 }

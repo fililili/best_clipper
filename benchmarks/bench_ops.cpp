@@ -109,7 +109,7 @@ struct RectSelfOrFixture : benchmark::Fixture {
 
 BENCHMARK_DEFINE_F(RectSelfOrFixture, BestClipper)(benchmark::State &state) {
   for (auto _ : state)
-    benchmark::DoNotOptimize(self_or(poly));
+    benchmark::DoNotOptimize(robust_self_or(poly));
 }
 BENCHMARK_REGISTER_F(RectSelfOrFixture, BestClipper)
     ->Arg(10)

@@ -251,7 +251,7 @@ struct CmpSelfOrFixture : benchmark::Fixture {
 BENCHMARK_DEFINE_F(CmpSelfOrFixture,
                    BestClipper_SelfOr)(benchmark::State &state) {
   for (auto _ : state)
-    benchmark::DoNotOptimize(self_or(poly));
+    benchmark::DoNotOptimize(robust_self_or(poly));
 }
 BENCHMARK_REGISTER_F(CmpSelfOrFixture, BestClipper_SelfOr) CMP_SELFOR_ARGS;
 BENCHMARK_DEFINE_F(CmpSelfOrFixture, Clipper2_SelfOr)(benchmark::State &state) {

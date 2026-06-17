@@ -32,7 +32,7 @@ std::vector<std::size_t> connected_components(
     std::size_t n,
     const std::vector<std::pair<std::size_t, std::size_t>> &edges);
 
-chain_build_result
+chain_group
 build_chains(const std::vector<edge_with_power_t> &sorted_edges,
              std::size_t node_num);
 

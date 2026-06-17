@@ -22,7 +22,7 @@ The winding number (绕数) of a face is computed using the residue theorem. For
 - **Intersection**: faces with winding number > 1 survive
 - **XOR**: faces with winding number == 1 survive
 - **Difference (A - B)**: reverse B's segments, then faces with winding number > 0 survive
-- **Self-union** (`self_or`): union of a polygon with itself, resolves self-intersections
+- **Self-union** (`robust_self_or`): union of a polygon with itself, resolves self-intersections
 
 ### Chain-based Face Traversal
 

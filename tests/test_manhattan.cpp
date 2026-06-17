@@ -246,7 +246,7 @@ TEST(ManhattanUnion, LShaped) {
     q.outer() = make_rect(0, 2, 2, 5);
     a.push_back(p);
     a.push_back(q);
-    a = self_or(a); // make it a valid L-shape
+    a = robust_self_or(a); // make it a valid L-shape
   }
   multi_polygon b;
   b.push_back(make_rect_poly(3, 0, 6, 3));
@@ -267,7 +267,7 @@ TEST(ManhattanUnion, CrossShape) {
   multi_polygon a;
   a.push_back(make_rect_poly(3, 0, 5, 10));
   a.push_back(make_rect_poly(0, 3, 8, 5));
-  a = self_or(a);
+  a = robust_self_or(a);
   multi_polygon b;
   b.push_back(make_rect_poly(2, 2, 6, 6));
   ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
@@ -292,8 +292,8 @@ TEST(ManhattanUnion, ManyOverlappingSquares) {
     b.push_back(make_rect_poly(i * 2 + 1, i * 2 - 1, i * 2 + 4, i * 2 + 2));
   // a and b each contain internally-overlapping squares — multi_polygon
   // validity requires non-overlapping polygons, skip input validity check
-  a = self_or(a);
-  b = self_or(b);
+  a = robust_self_or(a);
+  b = robust_self_or(b);
   ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
   ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 
@@ -448,7 +448,7 @@ TEST(ManhattanSelfOr, TwoOverlappingRects) {
   // a has overlapping parts – input itself may not be valid as multi_polygon
   // because bg considers overlapping polygons in multi_polygon invalid
 
-  auto result = self_or(a);
+  auto result = robust_self_or(a);
 
   EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
   EXPECT_DOUBLE_EQ(bg::area(result), 17.0); // 9+9-1(overlap) = 17
@@ -460,7 +460,7 @@ TEST(ManhattanSelfOr, DisjointRects) {
   a.push_back(make_rect_poly(4, 4, 6, 6));
   ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
 
-  auto result = self_or(a);
+  auto result = robust_self_or(a);
 
   EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
   EXPECT_DOUBLE_EQ(bg::area(result), 8.0);
@@ -473,7 +473,7 @@ TEST(ManhattanSelfOr, NestedRect) {
   a.push_back(make_rect_poly(2, 2, 5, 5));
   // overlapping — input invalid as multi_polygon per bg convention
 
-  auto result = self_or(a);
+  auto result = robust_self_or(a);
 
   EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
   EXPECT_DOUBLE_EQ(bg::area(result), 100.0);
@@ -487,7 +487,7 @@ TEST(ManhattanSelfOr, ThreeOverlapping) {
   a.push_back(make_rect_poly(1, 2, 4, 6));
   // overlapping — input invalid as multi_polygon per bg convention
 
-  auto result = self_or(a);
+  auto result = robust_self_or(a);
 
   EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
 }
@@ -498,9 +498,9 @@ TEST(ManhattanSelfOr, LShapedSelfOr) {
   a.push_back(make_rect_poly(0, 2, 2, 5));
   // edge-touching inputs — bg considers overlapping/touching multi_polygon
   // invalid
-  ASSERT_TRUE(bg::is_valid(self_or(a))) << "self-union a invalid";
+  ASSERT_TRUE(bg::is_valid(robust_self_or(a))) << "self-union a invalid";
 
-  auto result = self_or(a);
+  auto result = robust_self_or(a);
 
   EXPECT_TRUE(bg::is_valid(result)) << "result: " << bg::wkt(result);
   EXPECT_EQ(result.size(), 1u);
@@ -622,8 +622,8 @@ TEST(ManhattanEdgeCase, SharingMultipleEdges) {
   b.push_back(make_rect_poly(2, 0, 6, 2));
   b.push_back(make_rect_poly(4, 2, 6, 4));
   // edge-touching inputs — bg considers touching multi_polygon invalid
-  a = self_or(a);
-  b = self_or(b);
+  a = robust_self_or(a);
+  b = robust_self_or(b);
   ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
   ASSERT_TRUE(bg::is_valid(b)) << "b: " << bg::wkt(b);
 

@@ -135,6 +135,8 @@ struct grid {
     }
   }
 
+  // todo: support ray query to only query neareast cell
+
   int32_t _min_x = 0, _min_y = 0, _x_cells = 0, _y_cells = 0, _cell_size = 0;
   std::vector<size_t>
       _cell_begins; // dense: (x_cells * y_cells + 1) offsets into _cell_items

@@ -43,7 +43,7 @@ std::vector<std::size_t> connected_components(
 // build_chains — chain decomposition from directed edges with power
 // ---------------------------------------------------------------------------
 
-chain_build_result
+chain_group
 build_chains(const std::vector<edge_with_power_t> &sorted_edges,
              std::size_t node_num) {
   std::vector<std::size_t> edge_offsets(node_num + 1, 0);

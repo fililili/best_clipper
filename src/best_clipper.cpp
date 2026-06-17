@@ -166,7 +166,7 @@ multi_polygon difference(const multi_polygon &a, const multi_polygon &b) {
                       [](int w) { return w > 0; });
 }
 
-multi_polygon self_or(const multi_polygon &a) {
+multi_polygon robust_self_or(const multi_polygon &a) {
   auto [points, offsets] = collect_segments(a);
   return run_pipeline(std::move(points), std::move(offsets),
                       [](int w) { return w > 0; });

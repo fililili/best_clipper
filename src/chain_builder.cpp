@@ -65,6 +65,7 @@ construct_graph(const std::vector<point> &points,
                     // intersection
           if (auto p = get_intersection(si, segment{points[j], points[j + 1]}))
             hot_pixels.push_back(p.value());
+          // todo: if no more intersections are possible, we could return chains from input direclty
         });
       }
     }
@@ -223,7 +224,7 @@ unique_edges(std::vector<edge_with_power_t> edges, std::size_t num_vertices) {
 // build_chains_from_input
 // ---------------------------------------------------------------------------
 
-std::tuple<std::vector<point>, chain_build_result>
+std::tuple<std::vector<point>, chain_group>
 build_chains_from_input(const std::vector<point> &points,
                         const std::vector<std::size_t> &offsets) {
 #ifndef NDEBUG

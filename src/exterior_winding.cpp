@@ -85,7 +85,7 @@ std::size_t cast_ray_minus_x(coordinate_type vx, coordinate_type ray_y,
 }
 constexpr auto less_by_direction_neg_x_split = [](point source, point target1, point target2) {
     enum class quadrant { _3, _4, _1, _2, zero };
-    constexpr auto get_quadrant = [](int64_t dx, int64_t dy) -> quadrant {
+    constexpr auto get_quadrant = [](int32_t dx, int32_t dy) -> quadrant {
         if (dx < 0 && dy <= 0) return quadrant::_3;
         else if (dx >= 0 && dy < 0) return quadrant::_4;
         else if (dx > 0 && dy >= 0) return quadrant::_1;
@@ -93,10 +93,10 @@ constexpr auto less_by_direction_neg_x_split = [](point source, point target1, p
         return quadrant::zero;
     };
     
-    int64_t dx1 = bg::get<0>(target1) - bg::get<0>(source);
-    int64_t dy1 = bg::get<1>(target1) - bg::get<1>(source);
-    int64_t dx2 = bg::get<0>(target2) - bg::get<0>(source);
-    int64_t dy2 = bg::get<1>(target2) - bg::get<1>(source);
+    int32_t dx1 = bg::get<0>(target1) - bg::get<0>(source);
+    int32_t dy1 = bg::get<1>(target1) - bg::get<1>(source);
+    int32_t dx2 = bg::get<0>(target2) - bg::get<0>(source);
+    int32_t dy2 = bg::get<1>(target2) - bg::get<1>(source);
 
     auto q1 = get_quadrant(dx1, dy1);
     auto q2 = get_quadrant(dx2, dy2);
@@ -104,7 +104,7 @@ constexpr auto less_by_direction_neg_x_split = [](point source, point target1, p
 
     // Same quadrant: compare slopes using cross product.
     // slope1 < slope2  ⟺  cross = dy1*dx2 - dy2*dx1 < 0 in all quadrants.
-    __int128 cross = (__int128)dy1 * dx2 - (__int128)dy2 * dx1;
+    int64_t cross = (int64_t)dy1 * dx2 - (int64_t)dy2 * dx1;
     return cross < 0;
 };
 // ---------------------------------------------------------------------------
@@ -112,7 +112,7 @@ constexpr auto less_by_direction_neg_x_split = [](point source, point target1, p
 // ---------------------------------------------------------------------------
 
 fe_tuple
-find_exterior(const chain_build_result &chains,
+find_exterior(const chain_group &chains,
               const std::vector<point> &hot_pixels,
               const std::vector<half_chain> &sorted_half_chains,
               const std::vector<std::size_t> &sorted_half_chains_offsets) {
@@ -225,7 +225,7 @@ find_exterior(const chain_build_result &chains,
 // ---------------------------------------------------------------------------
 
 std::vector<int> compute_winding(
-    const chain_build_result &chains,
+    const chain_group &chains,
     const std::vector<std::pair<std::size_t, std::size_t>> &coplanar_pairs,
     const std::vector<std::pair<std::size_t, std::size_t>> &ray_pairs,
     const std::vector<std::size_t> &exterior_half_chains) {

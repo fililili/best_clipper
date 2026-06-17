@@ -11,7 +11,7 @@ namespace best_clipper {
 
 namespace bg = boost::geometry;
 
-hcg_tuple build_half_chain_graph(const chain_build_result &chains,
+hcg_tuple build_half_chain_graph(const chain_group &chains,
                                  const std::vector<point> &hot_pixels) {
   std::size_t num_half_chains = (chains.offsets.size() - 1) * 2;
   std::size_t num_vertices = hot_pixels.size();
