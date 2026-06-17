@@ -78,7 +78,7 @@ O(n log n) for snap rounding (dominated by spatial index queries), O(n) for face
 
 ## Dependencies
 
-- **Boost.Geometry**: rtree for spatial indexing, polygon validity, WKT I/O
+- **Boost.Geometry**: use boost geometry for representation and unit test (WKT I/O)
 - **clipper2**: for testing.
 
 ## Build
@@ -103,6 +103,7 @@ cd best_cliiper && mkdir build && cmake -B build
 7. figure out interger overflow risk
 8. add more practice testing
 9. sort ray query's for cache friendly
+10. define own input and output polygon type based on chain, boost geometry should only used for unit testing
 
 ## More study
 1. CUDA speed up for both graph and BVH glgo.
