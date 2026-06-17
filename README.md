@@ -101,6 +101,8 @@ cd best_cliiper && mkdir build && cmake -B build
 5. sizing support
 6. clipping linestring support (need study to define new power)
 7. figure out interger overflow risk
+8. add more practice testing
+9. sort ray query's for cache friendly
 
 ## More study
 1. CUDA speed up for both graph and BVH glgo.
