@@ -99,6 +99,9 @@ cd best_cliiper && mkdir build && cmake -B build
 3. For two dual half edge of an edge, only one half edge is possible for ray casting, so ray cast can store half edge index directly.
 4. for edge power calculation and merge, generate 1 and -1 direclty, then reomve <0.
 5. use power_2 to handle robust input.
+6. sizing support
+7. clipping linestring support (need study to define new power)
+8. figure out interger overflow risk
 
 ## More study
 1. CUDA speed up for both graph and BVH glgo.
