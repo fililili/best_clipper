@@ -97,11 +97,10 @@ cd best_cliiper && mkdir build && cmake -B build
 1. support two stage cluster, for stage 1, use bbox. And totally sperate different cluster. For stage 2, use bbox and segs, different cluster has different snap rounding and chains build logic, but share ray casting logic.
 2. support connected_component with rank.
 3. For two dual half edge of an edge, only one half edge is possible for ray casting, so ray cast can store half edge index directly.
-4. for edge power calculation and merge, generate 1 and -1 direclty, then reomve <0.
-5. use power_2 to handle robust input.
-6. sizing support
-7. clipping linestring support (need study to define new power)
-8. figure out interger overflow risk
+4. use power_2 to handle robust input.
+5. sizing support
+6. clipping linestring support (need study to define new power)
+7. figure out interger overflow risk
 
 ## More study
 1. CUDA speed up for both graph and BVH glgo.
