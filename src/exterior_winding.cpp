@@ -83,7 +83,30 @@ std::size_t cast_ray_minus_x(coordinate_type vx, coordinate_type ray_y,
 
   return hit_half_chain_id;
 }
+constexpr auto less_by_direction_neg_x_split = [](point source, point target1, point target2) {
+    enum class quadrant { _3, _4, _1, _2, zero };
+    constexpr auto get_quadrant = [](int64_t dx, int64_t dy) -> quadrant {
+        if (dx < 0 && dy <= 0) return quadrant::_3;
+        else if (dx >= 0 && dy < 0) return quadrant::_4;
+        else if (dx > 0 && dy >= 0) return quadrant::_1;
+        else if (dx <= 0 && dy > 0) return quadrant::_2;
+        return quadrant::zero;
+    };
+    
+    int64_t dx1 = bg::get<0>(target1) - bg::get<0>(source);
+    int64_t dy1 = bg::get<1>(target1) - bg::get<1>(source);
+    int64_t dx2 = bg::get<0>(target2) - bg::get<0>(source);
+    int64_t dy2 = bg::get<1>(target2) - bg::get<1>(source);
 
+    auto q1 = get_quadrant(dx1, dy1);
+    auto q2 = get_quadrant(dx2, dy2);
+        if (q1 != q2) return q1 < q2;
+
+    // Same quadrant: compare slopes using cross product.
+    // slope1 < slope2  ⟺  cross = dy1*dx2 - dy2*dx1 < 0 in all quadrants.
+    __int128 cross = (__int128)dy1 * dx2 - (__int128)dy2 * dx1;
+    return cross < 0;
+};
 // ---------------------------------------------------------------------------
 // find_exterior
 // ---------------------------------------------------------------------------
@@ -109,26 +132,45 @@ find_exterior(const chain_build_result &chains,
     num_components = std::max(num_components, c);
   }
   num_components += 1;
+  // todo: if components == 0, no need to create seg_data, seg_grid. Just return one exterior_half_chain and empty ray_pairs
 
-  std::vector<size_t> leftmost_vertexes(num_components);
-  std::vector<coordinate_type> min_xs(num_components,
-                                      std::numeric_limits<int32_t>::max());
-  //std::vector<std::size_t> indexes(num_components);
-  for (std::size_t chain_id = 0; chain_id < chains.offsets.size() - 1;
-       ++chain_id) {
-    auto component_id = chain_component_ids[chain_id];
-    auto chain_begin_idx = chains.offsets[chain_id],
-         chain_end_idx = chains.offsets[chain_id + 1];
-    for (std::size_t k = chain_begin_idx; k < chain_end_idx - 1; k++) {
-      auto vertex = chains.indices[k];
-      auto x = bg::get<0>(hot_pixels[vertex]);
-      if (!(sorted_half_chains_offsets[vertex] <
-            sorted_half_chains_offsets[vertex + 1])) {
-        continue; //to do, will expand chain length, then we need support mid hot pixels
+  std::vector<point> ray_start_points(num_components);
+  std::vector<std::size_t> ray_start_half_chains(num_components);
+  {
+    std::vector<coordinate_type> min_xs(num_components,
+                                        std::numeric_limits<int32_t>::max());
+    std::vector<std::size_t> chain_ids(num_components);
+    std::vector<std::size_t> position_in_chains(num_components);
+    for (std::size_t chain_id = 0; chain_id < chains.offsets.size() - 1;
+        ++chain_id) {
+      auto component_id = chain_component_ids[chain_id];
+      auto chain_begin_idx = chains.offsets[chain_id],
+          chain_end_idx = chains.offsets[chain_id + 1];
+      for (std::size_t k = chain_begin_idx; k < chain_end_idx - 1; k++) {
+        auto vertex = chains.indices[k];
+        auto x = bg::get<0>(hot_pixels[vertex]);
+        if (x < min_xs[component_id]) {
+          min_xs[component_id] = x;
+          chain_ids[component_id] = chain_id;
+          position_in_chains[component_id] = k;
+        }
       }
-      if (x < min_xs[component_id]) {
-        min_xs[component_id] = x;
-        leftmost_vertexes[component_id] = vertex;
+    }
+    for (std::size_t component_id = 0; component_id < num_components; ++component_id) {
+      auto vertex = chains.indices[position_in_chains[component_id]];
+      ray_start_points[component_id] = hot_pixels[vertex];
+      if (sorted_half_chains_offsets[vertex] <
+          sorted_half_chains_offsets[vertex + 1]) {
+        ray_start_half_chains[component_id] =
+            sorted_half_chains[sorted_half_chains_offsets[vertex]].id;
+      } else {
+        auto prev_vertex = chains.indices[position_in_chains[component_id] - 1];
+        auto next_vertex = chains.indices[position_in_chains[component_id] + 1];
+        if (less_by_direction_neg_x_split(hot_pixels[vertex], hot_pixels[prev_vertex], hot_pixels[next_vertex])) {
+            ray_start_half_chains[component_id] = 2 * chain_ids[component_id] + 1;
+        } else {
+            ray_start_half_chains[component_id] = 2 * chain_ids[component_id];
+        }
       }
     }
   }
@@ -165,23 +207,13 @@ find_exterior(const chain_build_result &chains,
 
   for (std::size_t component_id = 0; component_id < num_components;
        ++component_id) {
-    std::size_t leftmost_vertex = leftmost_vertexes[component_id];
-    std::size_t start_hc{~0ULL};
-    if (sorted_half_chains_offsets[leftmost_vertex] <
-        sorted_half_chains_offsets[leftmost_vertex + 1]) {
-      start_hc =
-          sorted_half_chains[sorted_half_chains_offsets[leftmost_vertex]].id;
-    } else {
-      assert(false); // to do
-    }
-
-    auto min_x = bg::get<0>(hot_pixels[leftmost_vertex]);
-    int32_t ray_y = bg::get<1>(hot_pixels[leftmost_vertex]);
+    auto min_x = bg::get<0>(ray_start_points[component_id]);
+    int32_t ray_y = bg::get<1>(ray_start_points[component_id]);
     auto hit = cast_ray_minus_x(min_x, ray_y, seg_grid, seg_data);
     if (hit == (std::size_t)-1) {
-      exterior_half_chains.push_back(start_hc);
+      exterior_half_chains.push_back(ray_start_half_chains[component_id]);
     } else {
-      ray_pairs.emplace_back(start_hc, hit);
+      ray_pairs.emplace_back(ray_start_half_chains[component_id], hit);
     }
   }
 
@@ -237,7 +269,7 @@ std::vector<int> compute_winding(
       }
     }
     // Dual edge: i ↔ i^1 with winding difference = -power of i
-    auto dual = u ^ 1;
+    auto dual = half_chain{u}.dual().id;
     if (winding[dual] == UNKNOWN) {
       winding[dual] = winding[u] - half_chain{u}.power(chains);
       stack.push_back(dual);

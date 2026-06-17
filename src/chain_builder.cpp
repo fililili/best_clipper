@@ -175,13 +175,11 @@ construct_graph(const std::vector<point> &points,
 // ---------------------------------------------------------------------------
 
 std::vector<edge_with_power_t> edges_to_power(std::vector<edge_t> edges) {
-  std::vector<edge_with_power_t> r(edges.size());
-  for (std::size_t i = 0; i < r.size(); i++) {
+  std::vector<edge_with_power_t> r(edges.size() * 2);
+  for (std::size_t i = 0; i < edges.size(); i++) {
     auto s = edges[i].start, e = edges[i].end;
-    if (s < e)
-      r[i] = {s, e, 1};
-    else
-      r[i] = {e, s, -1};
+    r[2 * i] = {s, e, 1};
+    r[2 * i + 1] = {e, s, -1};
   }
   return r;
 }
@@ -213,7 +211,7 @@ unique_edges(std::vector<edge_with_power_t> edges, std::size_t num_vertices) {
         sum += next->power;
         ++next;
       }
-      if (sum != 0)
+      if (sum > 0)
         result.push_back({cur->start, cur->end, sum});
       cur = next;
     }
