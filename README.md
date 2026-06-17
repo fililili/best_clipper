@@ -81,6 +81,9 @@ O(n log n) for snap rounding (dominated by spatial index queries), O(n) for face
 - **Boost.Geometry**: use boost geometry for representation and unit test (WKT I/O)
 - **clipper2**: for testing.
 
+## Disadvantage
+Snap rounding is a global algorithm, we have to query every hot_pixels with segments. What's more, to simplify implementation, we don't remove useless hot_pixels before snap rounding. It will be time consuming. But it's acceptable because we have do query for all segments. Cache friendly algorithm and cluster will corver the time cost.
+
 ## Build
 
 ```bash
