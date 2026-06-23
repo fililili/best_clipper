@@ -157,14 +157,13 @@ construct_graph(const std::vector<point> &points,
       std::size_t rb = offsets[ri];
       std::size_t re = offsets[ri + 1];
       for (std::size_t i = rb; i + 1 < re; i++) {
-        auto pixel_begin = std::begin(pixels) + segs[i],
-             pixel_end = std::begin(pixels) + segs[i + 1];
         auto seg = segment{points[i], points[i + 1]};
-        std::sort(pixel_begin, pixel_end, [&](auto pi, auto pj) {
-          return less_by_segment(seg)(hot_pixels[pi], hot_pixels[pj]);
+        std::sort(std::begin(pixels) + segs[i], std::begin(pixels) + segs[i + 1], [&](auto pi, auto pj) {
+          return less_by_segment{seg}(hot_pixels[pi], hot_pixels[pj]);
         });
-        for (; pixel_begin != pixel_end - 1; pixel_begin++)
-          edges.emplace_back(*pixel_begin, *std::next(pixel_begin));
+        for(auto k = segs[i]; k + 1 < segs[i + 1]; ++k) {
+          edges.emplace_back(pixels[k], pixels[k + 1]);
+        }
       }
     }
   }
