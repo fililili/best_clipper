@@ -13,7 +13,7 @@ static auto build_grid(std::vector<box> boxes) {
 }
 
 TEST(UniformGrid, Empty) {
-  grid g;
+  grid g{{}};
   box q{point{0, 0}, point{100, 100}};
   int count = 0;
   g.query_intersects(q, [&](size_t) { count++; });

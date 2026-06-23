@@ -11,24 +11,37 @@
 #include <utility>
 #include <vector>
 
-#include <boost/geometry.hpp>
-
-namespace bg = boost::geometry;
+#include "geometry_types.hpp"
 
 namespace best_clipper::uniform_grid {
 
 struct grid {
-  using box = bg::model::box<bg::model::d2::point_xy<int32_t>>;
 
-  grid() : _min_x(0), _min_y(0), _x_cells(0), _y_cells(0), _cell_size(0) {}
+  std::size_t get_flat_index(coordinate_type x_cell, coordinate_type y_cell) const {
+    assert(x_cell >= 0 && x_cell < _x_cells);
+    assert(y_cell >= 0 && y_cell < _y_cells);
+    return (std::size_t)y_cell * _x_cells + x_cell;
+  }
+
+  coordinate_type cell_x(coordinate_type x) const {
+    return std::clamp(((x - _min_x) / _cell_size), (coordinate_type)0, _x_cells - 1);
+  }
+  coordinate_type cell_y(coordinate_type y) const {
+    return std::clamp(((y - _min_y) / _cell_size), (coordinate_type)0, _y_cells - 1);
+  }
+
+  std::size_t cells() {
+    return _x_cells * _y_cells;
+  }
+
   /// Build from boxes. Item index = position in the vector.
   explicit grid(const std::vector<box> &items) {
     auto n = items.size();
-    if (n == 0)
-      return;
 
-    int32_t min_x = INT32_MAX, min_y = INT32_MAX, max_x = INT32_MIN,
-            max_y = INT32_MIN;
+    coordinate_type min_x = std::numeric_limits<coordinate_type>::max();
+    coordinate_type min_y = std::numeric_limits<coordinate_type>::max();
+    coordinate_type max_x = std::numeric_limits<coordinate_type>::min();
+    coordinate_type max_y = std::numeric_limits<coordinate_type>::min();
     for (auto &b : items) {
       auto x0 = bg::get<0, 0>(b), y0 = bg::get<0, 1>(b);
       auto x1 = bg::get<1, 0>(b), y1 = bg::get<1, 1>(b);
@@ -43,39 +56,31 @@ struct grid {
     }
     _min_x = min_x;
     _min_y = min_y;
-    int32_t dx = max_x - min_x;
-    int32_t dy = max_y - min_y;
-    int32_t cells_per_dim = (int32_t)std::sqrt((double)n);
+    coordinate_type dx = max_x - min_x;
+    coordinate_type dy = max_y - min_y;
+    auto cells_per_dim = (coordinate_type)std::sqrt((double)n);
     if (cells_per_dim < 1)
       cells_per_dim = 1;
-    _cell_size = std::max((int32_t)1, std::max(dx, dy) / cells_per_dim);
+    _cell_size = std::max((coordinate_type)1, std::max(dx, dy) / cells_per_dim);
     _x_cells = (max_x - min_x) / _cell_size + 1;
     _y_cells = (max_y - min_y) / _cell_size + 1;
-    size_t num_cells = (size_t)(_x_cells * _y_cells);
+    std::size_t num_cells = _x_cells * _y_cells;
 
-    std::vector<std::pair<size_t, size_t>> cell_pairs;
+    std::vector<std::pair<std::size_t, std::size_t>> cell_pairs;
     cell_pairs.reserve(n * 4);
-    for (size_t i = 0; i < n; i++) {
+    for (std::size_t i = 0; i < n; i++) {
       auto &b = items[i];
-      int32_t bx0 = bg::get<0, 0>(b), bx1 = bg::get<1, 0>(b);
-      int32_t by0 = bg::get<0, 1>(b), by1 = bg::get<1, 1>(b);
+      coordinate_type bx0 = bg::get<0, 0>(b), bx1 = bg::get<1, 0>(b);
+      coordinate_type by0 = bg::get<0, 1>(b), by1 = bg::get<1, 1>(b);
       if (bx0 > bx1 || by0 > by1)
         continue;
-      int32_t cx1 = (bx0 - min_x) / _cell_size;
-      int32_t cy1 = (by0 - min_y) / _cell_size;
-      int32_t cx2 = (bx1 - min_x) / _cell_size;
-      int32_t cy2 = (by1 - min_y) / _cell_size;
-      if (cx1 < 0)
-        cx1 = 0;
-      if (cy1 < 0)
-        cy1 = 0;
-      if (cx2 >= _x_cells)
-        cx2 = _x_cells - 1;
-      if (cy2 >= _y_cells)
-        cy2 = _y_cells - 1;
-      for (int32_t cy = cy1; cy <= cy2; cy++)
-        for (int32_t cx = cx1; cx <= cx2; cx++)
-          cell_pairs.emplace_back((size_t)(cy * _x_cells + cx), i);
+      coordinate_type cx1 = cell_x(bx0);
+      coordinate_type cy1 = cell_y(by0);
+      coordinate_type cx2 = cell_x(bx1);
+      coordinate_type cy2 = cell_y(by1);
+      for (coordinate_type cy = cy1; cy <= cy2; cy++)
+        for (coordinate_type cx = cx1; cx <= cx2; cx++)
+          cell_pairs.emplace_back(get_flat_index(cx, cy), i);
     }
 
     std::vector<size_t> cell_counts(num_cells, 0);
@@ -96,39 +101,19 @@ struct grid {
 
   template <typename Callback>
   void query_intersects(const box &query_box, Callback &&cb) const {
-    int32_t qx0 = bg::get<0, 0>(query_box);
-    int32_t qy0 = bg::get<0, 1>(query_box);
-    int32_t qx1 = bg::get<1, 0>(query_box);
-    int32_t qy1 = bg::get<1, 1>(query_box);
+    coordinate_type qx0 = bg::get<0, 0>(query_box);
+    coordinate_type qy0 = bg::get<0, 1>(query_box);
+    coordinate_type qx1 = bg::get<1, 0>(query_box);
+    coordinate_type qy1 = bg::get<1, 1>(query_box);
 
-    if (_cell_begins.empty())
-      return;
+    coordinate_type cx1 = cell_x(qx0);
+    coordinate_type cy1 = cell_y(qy0);
+    coordinate_type cx2 = cell_x(qx1);
+    coordinate_type cy2 = cell_y(qy1);
 
-    int32_t cx1 = (qx0 - _min_x) / _cell_size;
-    int32_t cy1 = (qy0 - _min_y) / _cell_size;
-    int32_t cx2 = (qx1 - _min_x) / _cell_size;
-    int32_t cy2 = (qy1 - _min_y) / _cell_size;
-    if (cx1 < 0)
-      cx1 = 0;
-    if (cy1 < 0)
-      cy1 = 0;
-    if (cx2 >= _x_cells)
-      cx2 = _x_cells - 1;
-    if (cy2 >= _y_cells)
-      cy2 = _y_cells - 1;
-
-    if (cy1 == cy2) {
-      for (int32_t cx = cx2; cx >= cx1; cx--) {
-        size_t ci = (size_t)(cy1 * _x_cells + cx);
-        for (auto j = _cell_begins[ci]; j != _cell_begins[ci + 1]; ++j)
-          cb(_cell_items[j]);
-      }
-      return;
-    }
-
-    for (int32_t cy = cy1; cy <= cy2; cy++) {
-      for (int32_t cx = cx1; cx <= cx2; cx++) {
-        size_t ci = (size_t)(cy * _x_cells + cx);
+    for (coordinate_type cy = cy1; cy <= cy2; cy++) {
+      for (coordinate_type cx = cx1; cx <= cx2; cx++) {
+        size_t ci = get_flat_index(cx, cy);
         for (auto j = _cell_begins[ci]; j != _cell_begins[ci + 1]; ++j)
           cb(_cell_items[j]);
       }
@@ -137,9 +122,10 @@ struct grid {
 
   // todo: support ray query to only query neareast cell
 
-  int32_t _min_x = 0, _min_y = 0, _x_cells = 0, _y_cells = 0, _cell_size = 0;
-  std::vector<size_t>
-      _cell_begins; // dense: (x_cells * y_cells + 1) offsets into _cell_items
+  coordinate_type _min_x = 0, _min_y = 0, _cell_size = 0;
+  coordinate_type _x_cells = 0; // use coordinate_type because _x_cells < max_x
+  coordinate_type _y_cells = 0;
+  std::vector<size_t>  _cell_begins; // dense: (x_cells * y_cells + 1) offsets into _cell_items
   std::vector<size_t> _cell_items; // flat item indices, grouped by cell
 };
 

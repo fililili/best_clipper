@@ -73,21 +73,16 @@ construct_graph(const std::vector<point> &points,
 
   // Dedup hot_pixels: group by grid cell, sort within cell, then unique.
   {
-    auto &g = segments_box_grid;
-    std::size_t num_cells = (std::size_t)(g._x_cells * g._y_cells);
     std::vector<std::size_t> pixel_cell(hot_pixels.size());
     for (std::size_t pi = 0; pi < hot_pixels.size(); pi++) {
-      auto &p = hot_pixels[pi];
-      pixel_cell[pi] =
-          (std::size_t)(((bg::get<1>(p) - g._min_y) / g._cell_size) *
-                            g._x_cells +
-                        (bg::get<0>(p) - g._min_x) / g._cell_size);
+      pixel_cell[pi] = segments_box_grid.get_flat_index(segments_box_grid.cell_x(bg::get<0>(hot_pixels[pi])),
+                                                        segments_box_grid.cell_y(bg::get<1>(hot_pixels[pi])));
     }
-    std::vector<std::size_t> cell_counts(num_cells, 0);
+    std::vector<std::size_t> cell_counts(segments_box_grid.cells(), 0);
     for (auto c : pixel_cell)
       cell_counts[c]++;
-    std::vector<std::size_t> begins(num_cells + 1, 0);
-    for (std::size_t c = 0; c < num_cells; c++)
+    std::vector<std::size_t> begins(segments_box_grid.cells() + 1, 0);
+    for (std::size_t c = 0; c < segments_box_grid.cells(); c++)
       begins[c + 1] = begins[c] + cell_counts[c];
     std::vector<std::size_t> cell_items(hot_pixels.size());
     auto cursors = begins;
@@ -95,7 +90,7 @@ construct_graph(const std::vector<point> &points,
       cell_items[cursors[pixel_cell[pi]]++] = pi;
     std::vector<point> unique;
     unique.reserve(hot_pixels.size());
-    for (std::size_t c = 0; c < num_cells; c++) {
+    for (std::size_t c = 0; c < segments_box_grid.cells(); c++) {
       auto b = begins[c], e = begins[c + 1];
       std::sort(cell_items.begin() + b, cell_items.begin() + e,
                 [&](std::size_t a, std::size_t b) {
