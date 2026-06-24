@@ -224,9 +224,7 @@ build_chains_from_input(const std::vector<point> &points,
   for (std::size_t ri = 0; ri + 1 < offsets.size(); ri++)
     assert(bg::equals(points[offsets[ri]], points[offsets[ri + 1] - 1]));
 #endif
-  auto t0 = std::chrono::high_resolution_clock::now();
   auto [edges, hot_pixels] = construct_graph(points, offsets);
-  auto t1 = std::chrono::high_resolution_clock::now();
 
   auto sorted_edges =
       unique_edges(edges_to_power(std::move(edges)), hot_pixels.size());
@@ -240,17 +238,8 @@ build_chains_from_input(const std::vector<point> &points,
       assert(balance[v] == 0);
   }
 #endif
-  auto t2 = std::chrono::high_resolution_clock::now();
 
   auto chains = build_chains(sorted_edges, hot_pixels.size());
-
-  auto t3 = std::chrono::high_resolution_clock::now();
-  auto ms = [](auto d) {
-    return std::chrono::duration<double, std::milli>(d).count();
-  };
-  std::fprintf(stderr,
-               "  [edges] graph=%.1fms dedup=%.1fms chains=%.1fms (hp=%zu)\n",
-               ms(t1 - t0), ms(t2 - t1), ms(t3 - t2), hot_pixels.size());
 
   return std::tuple{std::move(hot_pixels), std::move(chains)};
 }

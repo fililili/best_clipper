@@ -13,8 +13,6 @@ multi_polygon build_output(
     std::vector<half_chain> next_half_chain, std::vector<bool> survive,
     const std::vector<std::pair<std::size_t, std::size_t>> &coplanar_pairs,
     const std::vector<std::pair<std::size_t, std::size_t>> &ray_pairs) {
-  using clock = std::chrono::high_resolution_clock;
-  auto t0 = clock::now();
   std::size_t num_half_chains = (chains.offsets.size() - 1) * 2;
   std::size_t num_chains = chains.offsets.size() - 1;
 
@@ -40,10 +38,8 @@ multi_polygon build_output(
       next_half_chain[i] = next_half_chain[next_half_chain[i].dual().id];
     }
   }
-  auto t1 = clock::now();
 
   auto component_id = connected_components(num_half_chains, face_edges);
-  auto t2 = clock::now();
 
   std::vector<std::pair<std::size_t, std::size_t>> half_chain_to_face;
   for (std::size_t i = 0; i < num_half_chains; i++) {
@@ -59,7 +55,6 @@ multi_polygon build_output(
       half_chain_to_face, num_faces,
       [](const std::pair<std::size_t, std::size_t> &p) { return p.first; },
       [](const std::pair<std::size_t, std::size_t> &p) { return p.second; });
-  auto t3 = clock::now();
 
   // For each face, trace its half-chains into a polygon
   multi_polygon result;
@@ -121,15 +116,6 @@ multi_polygon build_output(
 
     result.push_back(std::move(polygon_result));
   }
-
-  auto t4 = clock::now();
-  auto ms = [](auto d) {
-    return std::chrono::duration<double, std::milli>(d).count();
-  };
-  std::fprintf(stderr,
-               "  [output] cancel=%.1fms cc=%.1fms bucket=%.1fms trace=%.1fms "
-               "(faces=%zu)\n",
-               ms(t1 - t0), ms(t2 - t1), ms(t3 - t2), ms(t4 - t3), num_faces);
   return result;
 }
 

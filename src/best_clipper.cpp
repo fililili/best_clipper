@@ -101,38 +101,21 @@ inline std::vector<bool> filter_survive(const std::vector<int> &winding,
 
 inline auto run_pipeline(std::vector<point> points,
                          std::vector<std::size_t> offsets, auto filter) {
-  using clock = std::chrono::high_resolution_clock;
-  auto t0 = clock::now();
-
   auto [hot_pixels, chains] = build_chains_from_input(points, offsets);
-  auto t1 = clock::now();
 
   auto [sorted_half_chains, half_chains, next_half_chain, coplanar] =
       build_half_chain_graph(chains, hot_pixels);
-  auto t2 = clock::now();
 
   auto [exterior_half_chains, ray_pairs] =
       find_exterior(chains, hot_pixels, sorted_half_chains, half_chains);
-  auto t3 = clock::now();
 
   auto winding =
       compute_winding(chains, coplanar, ray_pairs, exterior_half_chains);
-  auto t4 = clock::now();
 
   auto survive = filter_survive(winding, filter);
 
   auto result = build_output(chains, hot_pixels, std::move(next_half_chain),
                              std::move(survive), coplanar, ray_pairs);
-  auto t5 = clock::now();
-
-  auto ms = [](auto d) {
-    return std::chrono::duration<double, std::milli>(d).count();
-  };
-  std::fprintf(stderr,
-               "[pipeline] edges=%.1fms half_graph=%.1fms exterior=%.1fms "
-               "winding=%.1fms output=%.1fms total=%.1fms\n",
-               ms(t1 - t0), ms(t2 - t1), ms(t3 - t2), ms(t4 - t3), ms(t5 - t4),
-               ms(t5 - t0));
   return result;
 }
 

@@ -24,14 +24,13 @@ polygon gen_poly(int32_t cx, int32_t cy, int32_t radius, std::mt19937 &rng) {
   polygon poly;
   auto &outer = poly.outer();
   for (int j = 0; j < kSides; j++) {
-    double a = 2.0 * std::numbers::pi * j / kSides;
+    double a = 2.0 * 3.141592653589793 * j / kSides;
     int32_t vx = cx + (int32_t)(radius * std::cos(a)) + jitter(rng);
     int32_t vy = cy + (int32_t)(radius * std::sin(a)) + jitter(rng);
     outer.push_back({vx, vy});
   }
   std::reverse(outer.begin(), outer.end()); // CW for Boost
   outer.push_back(outer.front());           // close
-  poly.outer() = std::move(outer);
   return poly;
 }
 

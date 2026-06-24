@@ -228,8 +228,6 @@ std::vector<int> compute_winding(
     const std::vector<std::pair<std::size_t, std::size_t>> &coplanar_pairs,
     const std::vector<std::pair<std::size_t, std::size_t>> &ray_pairs,
     const std::vector<std::size_t> &exterior_half_chains) {
-
-  auto t0 = std::chrono::high_resolution_clock::now();
   std::size_t num_half_chains = (chains.offsets.size() - 1) * 2;
 
   std::vector<edge_with_power_t> edges;
@@ -242,13 +240,11 @@ std::vector<int> compute_winding(
     edges.emplace_back(a, b, 0);
     edges.emplace_back(b, a, 0);
   }
-  auto t1 = std::chrono::high_resolution_clock::now();
 
   auto [adj, adjacency] = bucket_sort(
       edges, num_half_chains,
       [](const edge_with_power_t &e) { return e.start; },
       [](const edge_with_power_t &e) { return std::pair{e.end, e.power}; });
-  auto t2 = std::chrono::high_resolution_clock::now();
 
   constexpr int UNKNOWN = std::numeric_limits<int>::max() / 2;
   std::vector<int> winding(num_half_chains, UNKNOWN);
@@ -274,13 +270,6 @@ std::vector<int> compute_winding(
       stack.push_back(dual);
     }
   }
-  auto t3 = std::chrono::high_resolution_clock::now();
-  auto ms = [](auto d) {
-    return std::chrono::duration<double, std::milli>(d).count();
-  };
-  std::fprintf(stderr,
-               "  [winding] build=%.1fms sort=%.1fms dfs=%.1fms (hc=%zu)\n",
-               ms(t1 - t0), ms(t2 - t1), ms(t3 - t2), num_half_chains);
   return winding;
 }
 
