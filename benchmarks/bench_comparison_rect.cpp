@@ -47,8 +47,8 @@ struct RectUnionFixture : benchmark::Fixture {
     b.clear();
     a.reserve(n);
     b.reserve(n);
-    std::uniform_int_distribution<int32_t> pos(0, 970);
-    std::uniform_int_distribution<int32_t> sz(2, 30);
+    std::uniform_int_distribution<int32_t> pos(0, (int32_t)(7.0 * std::sqrt(n)));
+    std::uniform_int_distribution<int32_t> sz(2, 4);
     for (int i = 0; i < n; i++)
       a.push_back(make_rect(pos(rng), pos(rng), sz(rng), sz(rng)));
     for (int i = 0; i < n; i++)
@@ -95,8 +95,8 @@ struct RectSelfOrFixture : benchmark::Fixture {
       return;
     poly.clear();
     poly.reserve(n);
-    std::uniform_int_distribution<int32_t> pos(0, 970);
-    std::uniform_int_distribution<int32_t> sz(2, 30);
+    std::uniform_int_distribution<int32_t> pos(0, (int32_t)(7.0 * std::sqrt(n)));
+    std::uniform_int_distribution<int32_t> sz(2, 4);
     for (int i = 0; i < n; i++)
       poly.push_back(make_rect(pos(rng), pos(rng), sz(rng), sz(rng)));
     paths = to_paths64(poly);
@@ -116,7 +116,8 @@ BENCHMARK_REGISTER_F(RectSelfOrFixture, BestClipper)
     ->Arg(100)
     ->Arg(1000)
     ->Arg(10000)
-    ->Arg(100000);
+    ->Arg(100000)
+    ->Arg(500000);
 
 BENCHMARK_DEFINE_F(RectSelfOrFixture, Clipper2)(benchmark::State &state) {
   for (auto _ : state)
@@ -128,6 +129,7 @@ BENCHMARK_REGISTER_F(RectSelfOrFixture, Clipper2)
     ->Arg(100)
     ->Arg(1000)
     ->Arg(10000)
-    ->Arg(100000);
+    ->Arg(100000)
+    ->Arg(500000);
 
 BENCHMARK_MAIN();
