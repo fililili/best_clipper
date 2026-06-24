@@ -60,9 +60,13 @@ construct_graph(const std::vector<point> &points,
         box box_i = bg::return_envelope<box>(si);
         segments_box_grid.query_intersects(box_i, [&](std::size_t pos) {
           std::size_t j = seg_idx[pos];
-          if (i <= j + 1)
+          if (i <= j + 1) {
             return; // adjacent edges share a vertex, cannot produce a new
                     // intersection
+          }
+          if (!bbox_overlap(box_i, seg_boxes[pos])) {
+            return; // grid cell false positive
+          }
           if (auto p = get_intersection(si, segment{points[j], points[j + 1]}))
             hot_pixels.push_back(p.value());
           // todo: if no more intersections are possible, we could return chains from input direclty
@@ -117,12 +121,9 @@ construct_graph(const std::vector<point> &points,
   std::vector<std::size_t> candidates;
   for (std::size_t pi = 0; pi < hot_pixels.size(); pi++) {
     int32_t x = bg::get<0>(hot_pixels[pi]), y = bg::get<1>(hot_pixels[pi]);
-    auto min_corner = point{x > INT32_MIN ? x - 1 : INT32_MIN,
-                            y > INT32_MIN ? y - 1 : INT32_MIN};
-    auto max_corner = point{x < INT32_MAX ? x + 1 : INT32_MAX,
-                            y < INT32_MAX ? y + 1 : INT32_MAX};
+    auto query_box = box{{x-1, y-1}, {x + 1, y+ 1}};
     candidates.clear();
-    segments_box_grid.query_intersects(box{min_corner, max_corner},
+    segments_box_grid.query_intersects(query_box,
                                        [&](std::size_t pos) {
                                          std::size_t seg_start = seg_idx[pos];
                                          if (last_seen[seg_start] == pi)
