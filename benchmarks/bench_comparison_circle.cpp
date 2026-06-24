@@ -24,7 +24,7 @@ polygon gen_poly(int32_t cx, int32_t cy, int32_t radius, std::mt19937 &rng) {
   polygon poly;
   auto &outer = poly.outer();
   for (int j = 0; j < kSides; j++) {
-    double a = 2.0 * 3.141592653589793 * j / kSides;
+    double a = 2.0 * std::numbers::pi * j / kSides;
     int32_t vx = cx + (int32_t)(radius * std::cos(a)) + jitter(rng);
     int32_t vy = cy + (int32_t)(radius * std::sin(a)) + jitter(rng);
     outer.push_back({vx, vy});
@@ -257,7 +257,7 @@ BENCHMARK_REGISTER_F(CmpSelfOrFixture, BestClipper_SelfOr) CMP_SELFOR_ARGS;
 BENCHMARK_DEFINE_F(CmpSelfOrFixture, Clipper2_SelfOr)(benchmark::State &state) {
   for (auto _ : state)
     benchmark::DoNotOptimize(
-        Clipper2Lib::Union(paths, Clipper2Lib::FillRule::NonZero));
+        Clipper2Lib::Union(paths, Clipper2Lib::FillRule::Positive));
 }
 BENCHMARK_REGISTER_F(CmpSelfOrFixture, Clipper2_SelfOr) CMP_SELFOR_ARGS;
 

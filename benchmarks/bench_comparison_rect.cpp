@@ -121,7 +121,7 @@ BENCHMARK_REGISTER_F(RectSelfOrFixture, BestClipper)
 BENCHMARK_DEFINE_F(RectSelfOrFixture, Clipper2)(benchmark::State &state) {
   for (auto _ : state)
     benchmark::DoNotOptimize(
-        Clipper2Lib::Union(paths, Clipper2Lib::FillRule::NonZero));
+        Clipper2Lib::Union(paths, Clipper2Lib::FillRule::Positive));
 }
 BENCHMARK_REGISTER_F(RectSelfOrFixture, Clipper2)
     ->Arg(10)
