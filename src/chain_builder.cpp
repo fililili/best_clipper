@@ -27,9 +27,7 @@ construct_graph(const std::vector<point> &points,
   // offsets.back() = points.size() is a sentinel.  Barrier segments between
   // rings get an invalid bbox so the grid skips them naturally.
   std::vector<box> seg_boxes;
-  std::vector<std::size_t> seg_idx;
   seg_boxes.reserve(points.size() - 1);
-  seg_idx.reserve(points.size() - 1);
   {
     for (std::size_t ri = 0; ri + 1 < offsets.size(); ri++) {
       std::size_t rb = offsets[ri];
@@ -37,12 +35,8 @@ construct_graph(const std::vector<point> &points,
       for (std::size_t i = rb; i + 1 < re; i++) {
         seg_boxes.push_back(
             bg::return_envelope<box>(segment{points[i], points[i + 1]}));
-        seg_idx.push_back(i);
       }
-      if (ri + 2 < offsets.size()) {
-        seg_boxes.push_back(box{point{1, 1}, point{0, 0}});
-        seg_idx.push_back(rb);
-      }
+      seg_boxes.push_back(box{point{1, 1}, point{0, 0}});
     }
   }
   best_clipper::uniform_grid::grid segments_box_grid(seg_boxes);
@@ -58,13 +52,12 @@ construct_graph(const std::vector<point> &points,
       for (std::size_t i = rb; i + 1 < re; i++) {
         auto si = segment{points[i], points[i + 1]};
         box box_i = bg::return_envelope<box>(si);
-        segments_box_grid.query_intersects(box_i, [&](std::size_t pos) {
-          std::size_t j = seg_idx[pos];
+        segments_box_grid.query_intersects(box_i, [&](std::size_t j) {
           if (i <= j + 1) {
             return; // adjacent edges share a vertex, cannot produce a new
                     // intersection
           }
-          if (!bbox_overlap(box_i, seg_boxes[pos])) {
+          if (!bbox_overlap(box_i, seg_boxes[j])) {
             return; // grid cell false positive
           }
           if (auto p = get_intersection(si, segment{points[j], points[j + 1]}))
@@ -125,11 +118,12 @@ construct_graph(const std::vector<point> &points,
     candidates.clear();
     segments_box_grid.query_intersects(query_box,
                                        [&](std::size_t pos) {
-                                         std::size_t seg_start = seg_idx[pos];
-                                         if (last_seen[seg_start] == pi)
+                                         if (last_seen[pos] == pi)
                                            return;
-                                         last_seen[seg_start] = pi;
-                                         candidates.push_back(seg_start);
+                                         last_seen[pos] = pi;
+                                         if (!bbox_overlap(query_box, seg_boxes[pos]))
+                                           return;
+                                         candidates.push_back(pos);
                                        });
     if (candidates.size() == 2) {
       segment_pixel_pairs.emplace_back(candidates[0], pi);
