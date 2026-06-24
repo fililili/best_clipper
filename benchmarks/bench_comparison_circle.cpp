@@ -16,7 +16,7 @@ using namespace best_clipper;
 namespace {
 
 std::mt19937 rng(42);
-constexpr int kSides = 11;
+constexpr int kSides = 66;
 constexpr int32_t kExtent = 1000;
 
 polygon gen_poly(int32_t cx, int32_t cy, int32_t radius, std::mt19937 &rng) {
@@ -110,7 +110,7 @@ struct CmpUnionFixture : benchmark::Fixture {
   Clipper2Lib::Paths64 paths_a, paths_b;
   int cached_n = 0;
 };
-#define CMP_UNION_ARGS ->Arg(10)->Arg(50)->Arg(100)
+#define CMP_UNION_ARGS ->Arg(10)->Arg(50)->Arg(100)->Arg(500)->Arg(1000)
 
 BENCHMARK_DEFINE_F(CmpUnionFixture,
                    BestClipper_Union)(benchmark::State &state) {
@@ -145,7 +145,7 @@ struct CmpIntersectionFixture : benchmark::Fixture {
   Clipper2Lib::Paths64 paths_a, paths_b;
   int cached_n = 0;
 };
-#define CMP_INTER_ARGS ->Arg(10)->Arg(50)->Arg(100)
+#define CMP_INTER_ARGS ->Arg(10)->Arg(50)->Arg(100)->Arg(500)->Arg(1000)
 BENCHMARK_DEFINE_F(CmpIntersectionFixture,
                    BestClipper_Intersection)(benchmark::State &state) {
   for (auto _ : state)
@@ -181,7 +181,7 @@ struct CmpXorFixture : benchmark::Fixture {
   Clipper2Lib::Paths64 paths_a, paths_b;
   int cached_n = 0;
 };
-#define CMP_XOR_ARGS ->Arg(10)->Arg(50)->Arg(100)
+#define CMP_XOR_ARGS ->Arg(10)->Arg(50)->Arg(100)->Arg(500)->Arg(1000)
 BENCHMARK_DEFINE_F(CmpXorFixture, BestClipper_Xor)(benchmark::State &state) {
   for (auto _ : state)
     benchmark::DoNotOptimize(symmetric_difference(a, b));
@@ -213,7 +213,7 @@ struct CmpDifferenceFixture : benchmark::Fixture {
   Clipper2Lib::Paths64 paths_a, paths_b;
   int cached_n = 0;
 };
-#define CMP_DIFF_ARGS ->Arg(10)->Arg(50)->Arg(100)
+#define CMP_DIFF_ARGS ->Arg(10)->Arg(50)->Arg(100)->Arg(500)->Arg(1000)
 BENCHMARK_DEFINE_F(CmpDifferenceFixture,
                    BestClipper_Difference)(benchmark::State &state) {
   for (auto _ : state)
@@ -246,7 +246,7 @@ struct CmpSelfOrFixture : benchmark::Fixture {
   Clipper2Lib::Paths64 paths;
   int cached_n = 0;
 };
-#define CMP_SELFOR_ARGS ->Arg(10)->Arg(50)->Arg(100)
+#define CMP_SELFOR_ARGS ->Arg(10)->Arg(50)->Arg(100)->Arg(500)->Arg(1000)
 BENCHMARK_DEFINE_F(CmpSelfOrFixture,
                    BestClipper_SelfOr)(benchmark::State &state) {
   for (auto _ : state)
