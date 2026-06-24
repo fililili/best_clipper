@@ -55,7 +55,7 @@ std::size_t cast_ray_minus_x(coordinate_type vx, coordinate_type ray_y,
       };
 
   auto query_box =
-      box{point{std::numeric_limits<coordinate_type>::min(), ray_y},
+      box{point{seg_grid._min_x, ray_y},
           point{vx, ray_y}};
   seg_grid.query_intersects(query_box, [&](std::size_t idx) {
     auto &seg = seg_data[idx];
