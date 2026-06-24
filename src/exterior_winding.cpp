@@ -129,10 +129,9 @@ find_exterior(const chain_group &chains,
       connected_components(chains.offsets.size() - 1, chain_connected_edges);
   std::size_t num_components = 0;
   for (auto c : chain_component_ids) {
-    num_components = std::max(num_components, c);
+    num_components = std::max(num_components, c + 1);
   }
-  num_components += 1;
-  // todo: if components == 0, no need to create seg_data, seg_grid. Just return one exterior_half_chain and empty ray_pairs
+  // todo: if num_components == 1, no need to create seg_data, seg_grid. Just return one exterior_half_chain and empty ray_pairs
 
   std::vector<point> ray_start_points(num_components);
   std::vector<std::size_t> ray_start_half_chains(num_components);

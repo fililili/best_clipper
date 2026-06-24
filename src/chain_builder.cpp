@@ -27,7 +27,7 @@ construct_graph(const std::vector<point> &points,
   // offsets.back() = points.size() is a sentinel.  Barrier segments between
   // rings get an invalid bbox so the grid skips them naturally.
   std::vector<box> seg_boxes;
-  seg_boxes.reserve(points.size() - 1);
+  seg_boxes.reserve(points.size());
   {
     for (std::size_t ri = 0; ri + 1 < offsets.size(); ri++) {
       std::size_t rb = offsets[ri];
@@ -39,6 +39,7 @@ construct_graph(const std::vector<point> &points,
       seg_boxes.push_back(box{point{1, 1}, point{0, 0}});
     }
   }
+  assert(seg_boxes.size() == points.size());
   best_clipper::uniform_grid::grid segments_box_grid(seg_boxes);
 
   // Hot pixels from all points
@@ -216,9 +217,10 @@ unique_edges(std::vector<edge_with_power_t> edges, std::size_t num_vertices) {
 std::tuple<std::vector<point>, chain_group>
 build_chains_from_input(const std::vector<point> &points,
                         const std::vector<std::size_t> &offsets) {
+  assert(offsets.size() >= 1);
+  assert(offsets[0] == 0);
+  assert(offsets.back() == points.size());
 #ifndef NDEBUG
-  assert(offsets.size() >= 2 && offsets[0] == 0 &&
-         offsets.back() == points.size());
   for (std::size_t ri = 0; ri + 1 < offsets.size(); ri++)
     assert(bg::equals(points[offsets[ri]], points[offsets[ri + 1] - 1]));
 #endif
