@@ -119,8 +119,23 @@ struct grid {
       }
     }
   }
-
-  // todo: support ray query to only query neareast cell
+  
+  template <typename Callback>
+  void query_ray_left(coordinate_type query_x, coordinate_type query_y, Callback &&cb) const {
+    coordinate_type cx = cell_x(query_x);
+    coordinate_type cy = cell_y(query_y);
+    coordinate_type best_x_floor = std::numeric_limits<coordinate_type>::min(); 
+    // best_x_real is not interger, so we store the floor of it. best_x_real >= best_x_floor
+    for (coordinate_type current_cx = cx; current_cx != (coordinate_type)(-1); current_cx--) {
+      if (best_x_floor > _min_x + (current_cx + 1) * _cell_size) {
+        break;
+      }
+      std::size_t ci = get_flat_index(current_cx, cy);
+      for (auto j = _cell_begins[ci]; j != _cell_begins[ci + 1]; ++j) {
+        best_x_floor = cb(_cell_items[j]);
+      }
+    }
+  }
 
   coordinate_type _min_x = 0, _min_y = 0, _cell_size = 0;
   coordinate_type _x_cells = 0; // use coordinate_type because _x_cells < max_x

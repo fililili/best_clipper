@@ -54,10 +54,7 @@ std::size_t cast_ray_minus_x(coordinate_type vx, coordinate_type ray_y,
         }
       };
 
-  auto query_box =
-      box{point{seg_grid._min_x, ray_y},
-          point{vx, ray_y}};
-  seg_grid.query_intersects(query_box, [&](std::size_t idx) {
+  seg_grid.query_ray_left(vx, ray_y, [&](std::size_t idx) {
     auto &seg = seg_data[idx];
     assert(seg.y1 < seg.y2);
     if (seg.y1 <= ray_y && ray_y < seg.y2 &&
@@ -79,6 +76,9 @@ std::size_t cast_ray_minus_x(coordinate_type vx, coordinate_type ray_y,
         hit_half_chain_id = seg.half_chain_id;
       }
     }
+    return std::min(best_hit_x1, best_hit_x2);
+    // we want to return best_hit_x_floor that satisfied best_hit_x_real >= best_hit_x_floor, 
+    // and best_hit_x_real >= min(best_hit_x1, best_hit_x2), so use min(best_hit_x1, best_hit_x2) as the return value
   });
 
   return hit_half_chain_id;
