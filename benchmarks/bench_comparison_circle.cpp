@@ -20,7 +20,7 @@ constexpr int kSides = 66;
 constexpr int32_t kExtent = 1000;
 
 polygon gen_poly(int32_t cx, int32_t cy, int32_t radius, std::mt19937 &rng) {
-  std::uniform_int_distribution<int32_t> jitter(-2, 2);
+  std::uniform_int_distribution<int32_t> jitter(-20, 2);
   polygon poly;
   auto &outer = poly.outer();
   for (int j = 0; j < kSides; j++) {
@@ -42,7 +42,7 @@ struct RandPolygons {
   explicit RandPolygons(int n) {
     polys.reserve(n);
     std::uniform_int_distribution<int32_t> center(60, kExtent - 60);
-    std::uniform_int_distribution<int32_t> radius_dist(8, 20);
+    std::uniform_int_distribution<int32_t> radius_dist(68, 80);
     for (int i = 0; i < n; i++)
       polys.push_back(
           gen_poly(center(rng), center(rng), radius_dist(rng), rng));
@@ -61,8 +61,8 @@ struct RandPolygonsGrid {
     rng.seed(seed);
     polys.reserve(n);
     int cols = (int)std::ceil(std::sqrt((double)n));
-    std::uniform_int_distribution<int32_t> jitter(-15, 15);
-    std::uniform_int_distribution<int32_t> radius_dist(8, 20);
+    std::uniform_int_distribution<int32_t> jitter(-2, 2);
+    std::uniform_int_distribution<int32_t> radius_dist(68, 80);
     for (int i = 0; i < n; i++) {
       int row = i / cols, col = i % cols;
       int32_t cx = 80 + col * 90 + jitter(rng);
@@ -110,7 +110,7 @@ struct CmpUnionFixture : benchmark::Fixture {
   Clipper2Lib::Paths64 paths_a, paths_b;
   int cached_n = 0;
 };
-#define CMP_UNION_ARGS ->Arg(10)->Arg(50)->Arg(100)->Arg(500)->Arg(1000)
+#define CMP_UNION_ARGS ->Arg(10)->Arg(50)->Arg(100)->Arg(500)->Arg(1000)->Arg(10000)->Arg(20000)
 
 BENCHMARK_DEFINE_F(CmpUnionFixture,
                    BestClipper_Union)(benchmark::State &state) {
@@ -145,7 +145,7 @@ struct CmpIntersectionFixture : benchmark::Fixture {
   Clipper2Lib::Paths64 paths_a, paths_b;
   int cached_n = 0;
 };
-#define CMP_INTER_ARGS ->Arg(10)->Arg(50)->Arg(100)->Arg(500)->Arg(1000)
+#define CMP_INTER_ARGS ->Arg(10)->Arg(50)->Arg(100)->Arg(500)->Arg(1000)->Arg(10000)->Arg(20000)
 BENCHMARK_DEFINE_F(CmpIntersectionFixture,
                    BestClipper_Intersection)(benchmark::State &state) {
   for (auto _ : state)
@@ -181,7 +181,7 @@ struct CmpXorFixture : benchmark::Fixture {
   Clipper2Lib::Paths64 paths_a, paths_b;
   int cached_n = 0;
 };
-#define CMP_XOR_ARGS ->Arg(10)->Arg(50)->Arg(100)->Arg(500)->Arg(1000)
+#define CMP_XOR_ARGS ->Arg(10)->Arg(50)->Arg(100)->Arg(500)->Arg(1000)->Arg(10000)->Arg(20000)
 BENCHMARK_DEFINE_F(CmpXorFixture, BestClipper_Xor)(benchmark::State &state) {
   for (auto _ : state)
     benchmark::DoNotOptimize(symmetric_difference(a, b));
@@ -213,7 +213,7 @@ struct CmpDifferenceFixture : benchmark::Fixture {
   Clipper2Lib::Paths64 paths_a, paths_b;
   int cached_n = 0;
 };
-#define CMP_DIFF_ARGS ->Arg(10)->Arg(50)->Arg(100)->Arg(500)->Arg(1000)
+#define CMP_DIFF_ARGS ->Arg(10)->Arg(50)->Arg(100)->Arg(500)->Arg(1000)->Arg(10000)->Arg(20000)
 BENCHMARK_DEFINE_F(CmpDifferenceFixture,
                    BestClipper_Difference)(benchmark::State &state) {
   for (auto _ : state)
@@ -246,7 +246,7 @@ struct CmpSelfOrFixture : benchmark::Fixture {
   Clipper2Lib::Paths64 paths;
   int cached_n = 0;
 };
-#define CMP_SELFOR_ARGS ->Arg(10)->Arg(50)->Arg(100)->Arg(500)->Arg(1000)
+#define CMP_SELFOR_ARGS ->Arg(10)->Arg(50)->Arg(100)->Arg(500)->Arg(1000)->Arg(10000)->Arg(20000)
 BENCHMARK_DEFINE_F(CmpSelfOrFixture,
                    BestClipper_SelfOr)(benchmark::State &state) {
   for (auto _ : state)
