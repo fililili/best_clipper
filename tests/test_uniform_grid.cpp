@@ -2,15 +2,8 @@
 #include <boost/geometry.hpp>
 #include <gtest/gtest.h>
 
-namespace bg = boost::geometry;
-using point = bg::model::d2::point_xy<int32_t>;
-using box = bg::model::box<point>;
-using best_clipper::uniform_grid::grid;
-
-// Helper: build grid from vector of boxes
-static auto build_grid(std::vector<box> boxes) {
-  return grid(std::move(boxes));
-}
+using namespace best_clipper;
+using namespace best_clipper::uniform_grid;
 
 TEST(UniformGrid, Empty) {
   grid g{{}};
@@ -22,7 +15,7 @@ TEST(UniformGrid, Empty) {
 
 TEST(UniformGrid, SingleItem) {
   std::vector<box> boxes = {{point{0, 0}, point{10, 10}}};
-  auto g = build_grid(boxes);
+  auto g = grid{boxes};
 
   int count = 0;
   g.query_intersects(box{point{5, 5}, point{5, 5}}, [&](size_t i) {
@@ -32,24 +25,17 @@ TEST(UniformGrid, SingleItem) {
   EXPECT_EQ(count, 1);
 }
 
-static bool boxes_overlap(const box &a, const box &b) {
-  return !(bg::get<1, 0>(a) < bg::get<0, 0>(b) ||
-           bg::get<0, 0>(a) > bg::get<1, 0>(b) ||
-           bg::get<1, 1>(a) < bg::get<0, 1>(b) ||
-           bg::get<0, 1>(a) > bg::get<1, 1>(b));
-}
-
 TEST(UniformGrid, TwoDisjoint) {
   std::vector<box> boxes = {
       {point{0, 0}, point{10, 10}},
       {point{100, 100}, point{110, 110}},
   };
-  auto g = build_grid(boxes);
+  auto g = grid{boxes};
 
   auto q1 = box{point{5, 5}, point{15, 15}};
   int count = 0;
   g.query_intersects(q1, [&](size_t i) {
-    if (boxes_overlap(q1, boxes[i]))
+    if (bbox_overlap(q1, boxes[i]))
       count++;
   });
   EXPECT_EQ(count, 1);
@@ -57,7 +43,7 @@ TEST(UniformGrid, TwoDisjoint) {
   auto q2 = box{point{50, 50}, point{60, 60}};
   count = 0;
   g.query_intersects(q2, [&](size_t i) {
-    if (boxes_overlap(q2, boxes[i]))
+    if (bbox_overlap(q2, boxes[i]))
       count++;
   });
   EXPECT_EQ(count, 0);
@@ -68,7 +54,7 @@ TEST(UniformGrid, TwoOverlapping) {
       {point{0, 0}, point{10, 10}},
       {point{5, 5}, point{15, 15}},
   };
-  auto g = build_grid(boxes);
+  auto g = grid{boxes};
 
   int count = 0;
   g.query_intersects(box{point{8, 8}, point{12, 12}}, [&](size_t) { count++; });
@@ -112,7 +98,7 @@ TEST(UniformGrid, LargeGridWithAdjacentPairs) {
 
 TEST(UniformGrid, PointQueryTouchingCorner) {
   std::vector<box> boxes = {{point{10, 10}, point{20, 20}}};
-  auto g = build_grid(boxes);
+  auto g = grid{boxes};
 
   int count = 0;
   g.query_intersects(box{point{20, 20}, point{20, 20}},
@@ -122,12 +108,12 @@ TEST(UniformGrid, PointQueryTouchingCorner) {
 
 TEST(UniformGrid, PointQueryOutside) {
   std::vector<box> boxes = {{point{10, 10}, point{20, 20}}};
-  auto g = build_grid(boxes);
+  auto g = grid{boxes};
 
   auto q = box{point{21, 21}, point{21, 21}};
   int count = 0;
   g.query_intersects(q, [&](size_t i) {
-    if (boxes_overlap(q, boxes[i]))
+    if (bbox_overlap(q, boxes[i]))
       count++;
   });
   EXPECT_EQ(count, 0);
@@ -139,7 +125,7 @@ TEST(UniformGrid, QueryLargerThanData) {
       {point{20, 20}, point{30, 30}},
       {point{40, 40}, point{50, 50}},
   };
-  auto g = build_grid(boxes);
+  auto g = grid{boxes};
 
   int count = 0;
   g.query_intersects(box{point{0, 0}, point{100, 100}},
@@ -154,12 +140,12 @@ TEST(UniformGrid, HighCoordinateValues) {
       {point{base + 5, base + 5}, point{base + 15, base + 15}},
       {point{base + 20, base + 20}, point{base + 30, base + 30}},
   };
-  auto g = build_grid(boxes);
+  auto g = grid{boxes};
 
   auto q = box{point{base + 7, base + 7}, point{base + 12, base + 12}};
   int count = 0;
   g.query_intersects(q, [&](size_t i) {
-    if (boxes_overlap(q, boxes[i]))
+    if (bbox_overlap(q, boxes[i]))
       count++;
   });
   EXPECT_EQ(count, 2);
@@ -167,7 +153,7 @@ TEST(UniformGrid, HighCoordinateValues) {
 
 TEST(UniformGrid, QuerySmallBoxReturnsSelf) {
   std::vector<box> boxes = {{point{5, 5}, point{6, 6}}};
-  auto g = build_grid(boxes);
+  auto g = grid{boxes};
 
   int count = 0;
   g.query_intersects(boxes[0], [&](size_t) { count++; });
@@ -176,7 +162,7 @@ TEST(UniformGrid, QuerySmallBoxReturnsSelf) {
 
 TEST(UniformGrid, DegenerateBoxSinglePoint) {
   std::vector<box> boxes = {{point{42, 42}, point{42, 42}}};
-  auto g = build_grid(boxes);
+  auto g = grid{boxes};
 
   int count = 0;
   g.query_intersects(box{point{42, 42}, point{42, 42}},

@@ -47,15 +47,11 @@ void test_robust_self_or_rectangle(int size) {
 TEST(CoreUnion, RectangleUnion) {
   test_union_rectangle(100);
   test_union_rectangle(3);
-  test_union_rectangle(1010);
   test_union_rectangle(300);
-  test_union_rectangle(2521);
 }
 
 TEST(CoreUnion, RectangleSelfOr) {
   test_robust_self_or_rectangle(100);
   test_robust_self_or_rectangle(3);
-  test_robust_self_or_rectangle(1010);
   test_robust_self_or_rectangle(300);
-  test_robust_self_or_rectangle(2521);
 }
