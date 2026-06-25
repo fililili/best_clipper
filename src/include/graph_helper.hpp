@@ -1,10 +1,10 @@
 #pragma once
-#include "chain_builder.hpp"
 
 #include <numeric>
 #include <tuple>
 #include <utility>
 #include <vector>
+#include "graph_types.hpp"
 
 namespace best_clipper {
 
@@ -32,8 +32,8 @@ std::vector<std::size_t> connected_components(
     std::size_t n,
     const std::vector<std::pair<std::size_t, std::size_t>> &edges);
 
-chain_group
+std::tuple<std::vector<std::size_t>, std::vector<std::size_t>, std::vector<int>>
 build_chains(const std::vector<edge_with_power_t> &sorted_edges,
-             std::size_t node_num, const std::vector<point>& points);
+             std::size_t node_num);
 
 } // namespace best_clipper

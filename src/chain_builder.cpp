@@ -238,8 +238,8 @@ build_chains_from_input(const std::vector<point> &points,
       assert(balance[v] == 0);
   }
 #endif
-
-  return build_chains(sorted_edges, hot_pixels.size(), hot_pixels);
+  auto [chain_indexes, chain_offsets, chain_powers] = build_chains(sorted_edges, hot_pixels.size());
+  return {std::move(hot_pixels), std::move(chain_indexes), std::move(chain_offsets), std::move(chain_powers)};
 }
 
 } // namespace best_clipper
