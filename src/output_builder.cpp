@@ -8,25 +8,26 @@
 
 namespace best_clipper {
 
-multi_polygon build_output(
-    const chain_group &chains, 
-    half_chain_relations_t half_chain_relations, std::vector<bool> survive) {
-  const std::vector<point> &hot_pixels = chains.hot_pixels;
-  auto& next_half_chain = half_chain_relations.next_half_chain;
-  const auto& exterior_half_chains = half_chain_relations.exterior_half_chains;
-  const auto& ray_pairs = half_chain_relations.ray_pairs;
+multi_polygon build_output(const chain_group &chains,
+                           half_chain_relations_t half_chain_relations,
+                           std::vector<bool> survive) {
+  auto &next_half_chain = half_chain_relations.next_half_chain;
+  const auto &exterior_half_chains = half_chain_relations.exterior_half_chains;
+  const auto &ray_pairs = half_chain_relations.ray_pairs;
 
   std::size_t num_half_chains = (chains.offsets.size() - 1) * 2;
   std::size_t num_chains = chains.offsets.size() - 1;
 
-  // Build connected components: next_half_chain + ray + dual cancellation → same face
+  // Build connected components: next_half_chain + ray + dual cancellation →
+  // same face
   std::vector<std::pair<std::size_t, std::size_t>> same_face_half_chains;
-  same_face_half_chains.reserve(next_half_chain.size() + ray_pairs.size() + num_chains);
+  same_face_half_chains.reserve(next_half_chain.size() + ray_pairs.size() +
+                                num_chains);
 
-  for(std::size_t i = 0; i < next_half_chain.size(); i++) {
+  for (std::size_t i = 0; i < next_half_chain.size(); i++) {
     same_face_half_chains.emplace_back(i, next_half_chain[i].id);
   }
-  for(auto [start, end] : ray_pairs) {
+  for (auto [start, end] : ray_pairs) {
     same_face_half_chains.emplace_back(start.id, end.id);
   }
 
@@ -46,7 +47,8 @@ multi_polygon build_output(
     }
   }
 
-  auto component_id = connected_components(num_half_chains, same_face_half_chains);
+  auto component_id =
+      connected_components(num_half_chains, same_face_half_chains);
 
   std::vector<std::pair<std::size_t, std::size_t>> half_chain_to_face;
   for (std::size_t i = 0; i < num_half_chains; i++) {
@@ -81,10 +83,10 @@ multi_polygon build_output(
              chain_end = chains.offsets[chain_idx + 1];
         if (h.is_forward()) {
           for (std::size_t k = chain_begin; k < chain_end - 1; k++)
-            current_ring.push_back(hot_pixels[chains.indices[k]]);
+            current_ring.push_back(chains.points[k]);
         } else {
           for (std::size_t k = chain_end - 1; k > chain_begin; k--)
-            current_ring.push_back(hot_pixels[chains.indices[k]]);
+            current_ring.push_back(chains.points[k]);
         }
         done[current_id] = true;
         current_id = next_half_chain[current_id].id;

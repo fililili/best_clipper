@@ -244,8 +244,12 @@ build_chains_from_input(const std::vector<point> &points,
   auto [chain_indexes, chain_offsets, chain_powers, chain_out_offsets,
         chain_out_chains, chain_in_offsets, chain_in_chains] =
       build_chains(sorted_edges, hot_pixels.size());
-  return {chain_group{std::move(hot_pixels), std::move(chain_indexes),
-                      std::move(chain_offsets), std::move(chain_powers)},
+  std::vector<point> chain_points(chain_indexes.size());
+  for (std::size_t i = 0; i < chain_indexes.size(); ++i)
+    chain_points[i] = std::move(hot_pixels[chain_indexes[i]]);
+
+  return {chain_group{std::move(chain_points), std::move(chain_offsets),
+                      std::move(chain_powers)},
           std::move(chain_out_offsets), std::move(chain_out_chains),
           std::move(chain_in_offsets), std::move(chain_in_chains)};
 }

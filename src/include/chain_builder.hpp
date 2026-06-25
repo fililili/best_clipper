@@ -7,9 +7,8 @@
 namespace best_clipper {
 
 struct chain_group {
-  // todo: store coordinates direclty
-  std::vector<point> hot_pixels;
-  std::vector<std::size_t> indices, offsets;
+  std::vector<point> points;
+  std::vector<std::size_t> offsets;
   std::vector<int> powers;
 };
 

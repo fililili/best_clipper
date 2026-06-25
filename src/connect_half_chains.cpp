@@ -19,7 +19,6 @@ void sort_bucket_half_chains(
     const std::vector<std::size_t> &bucket_half_chains_offsets) {
   std::size_t num_end_points = bucket_half_chains_offsets.size() - 1;
 
-  const std::vector<point> &hot_pixels = chains.hot_pixels;
   std::size_t num_half_chains = (chains.offsets.size() - 1) * 2;
 
   for (std::size_t v = 0; v < num_end_points; v++) {
@@ -30,7 +29,7 @@ void sort_bucket_half_chains(
       continue;
     auto begin_it = bucket_half_chains.begin() + vertex_begin;
 
-    point vpt = hot_pixels[begin_it->source_node(chains)];
+    point vpt = begin_it->source_node(chains);
     coordinate_type vx = bg::get<0>(vpt), vy = bg::get<1>(vpt);
 
     // Bucket by octant (8 buckets, octant 0 starts at -x).
@@ -38,7 +37,7 @@ void sort_bucket_half_chains(
     std::vector<int> octants(n);
     for (std::size_t i = 0; i < n; i++) {
       auto h = begin_it[i];
-      auto pt = hot_pixels[h.next_along_source(chains)];
+      auto pt = h.next_along_source(chains);
       coordinate_type dx = bg::get<0>(pt) - vx;
       coordinate_type dy = bg::get<1>(pt) - vy;
       int oct;
@@ -70,8 +69,8 @@ void sort_bucket_half_chains(
     for (int o = 0; o < 8; o++) {
       std::sort(temp.begin() + bucket_pos[o], temp.begin() + bucket_pos[o + 1],
                 [&](half_chain_t a, half_chain_t b) {
-                  auto a_pt = hot_pixels[a.next_along_source(chains)];
-                  auto b_pt = hot_pixels[b.next_along_source(chains)];
+                  auto a_pt = a.next_along_source(chains);
+                  auto b_pt = b.next_along_source(chains);
                   auto ax = bg::get<0>(a_pt) - vx;
                   auto ay = bg::get<1>(a_pt) - vy;
                   auto bx = bg::get<0>(b_pt) - vx;
@@ -227,7 +226,6 @@ constexpr auto less_by_direction_neg_x_split = [](point source, point target1,
 half_chain_relations_t build_half_chain_relations(
     const chain_group &chains, std::vector<half_chain_t> bucket_half_chains,
     const std::vector<std::size_t> &bucket_half_chains_offsets) {
-  const std::vector<point> &hot_pixels = chains.hot_pixels;
   sort_bucket_half_chains(chains, bucket_half_chains,
                           bucket_half_chains_offsets);
 
@@ -267,8 +265,7 @@ half_chain_relations_t build_half_chain_relations(
       auto chain_begin_idx = chains.offsets[chain_id],
            chain_end_idx = chains.offsets[chain_id + 1];
       for (std::size_t k = chain_begin_idx; k < chain_end_idx - 1; k++) {
-        auto vertex = chains.indices[k];
-        auto x = bg::get<0>(hot_pixels[vertex]);
+        auto x = bg::get<0>(chains.points[k]);
         if (x < min_xs[component_id]) {
           min_xs[component_id] = x;
           chain_ids[component_id] = chain_id;
@@ -291,17 +288,17 @@ half_chain_relations_t build_half_chain_relations(
     }
     for (std::size_t component_id = 0; component_id < num_components;
          ++component_id) {
-      auto vertex = chains.indices[position_in_chains[component_id]];
-      ray_start_points[component_id] = hot_pixels[vertex];
+      ray_start_points[component_id] =
+          chains.points[position_in_chains[component_id]];
       if (is_end_points[component_id]) {
         ray_start_half_chains[component_id] =
             first_half_chains[chain_ids[component_id]];
       } else {
-        auto prev_vertex = chains.indices[position_in_chains[component_id] - 1];
-        auto next_vertex = chains.indices[position_in_chains[component_id] + 1];
-        if (less_by_direction_neg_x_split(hot_pixels[vertex],
-                                          hot_pixels[prev_vertex],
-                                          hot_pixels[next_vertex])) {
+        auto prev_vertex = chains.points[position_in_chains[component_id] - 1];
+        auto next_vertex = chains.points[position_in_chains[component_id] + 1];
+        if (less_by_direction_neg_x_split(
+                chains.points[position_in_chains[component_id]], prev_vertex,
+                next_vertex)) {
           ray_start_half_chains[component_id] =
               half_chain_t{2 * chain_ids[component_id] + 1};
         } else {
@@ -322,8 +319,8 @@ half_chain_relations_t build_half_chain_relations(
   for (size_t ci = 0; ci + 1 < chains.offsets.size(); ci++) {
     auto cbi = chains.offsets[ci], cei = chains.offsets[ci + 1];
     for (size_t k = cbi; k + 1 < cei; k++) {
-      point p1 = hot_pixels[chains.indices[k]];
-      point p2 = hot_pixels[chains.indices[k + 1]];
+      point p1 = chains.points[k];
+      point p2 = chains.points[k + 1];
       auto x1 = bg::get<0>(p1), y1 = bg::get<1>(p1);
       auto x2 = bg::get<0>(p2), y2 = bg::get<1>(p2);
       auto seg_box = box{point{std::min(x1, x2), std::min(y1, y2)},
