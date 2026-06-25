@@ -37,20 +37,40 @@ std::size_t cast_ray_minus_x(coordinate_type vx, coordinate_type ray_y,
   coordinate_type best_hit_x2 = 0;
   coordinate_type best_hit_y1 = 0;
   coordinate_type best_hit_y2 = 0;
-  auto point_on_seg_right = [](coordinate_type x, coordinate_type y,
+  auto point_on_seg_order = [](coordinate_type x, coordinate_type y,
                                coordinate_type x1, coordinate_type y1,
                                coordinate_type x2, coordinate_type y2) {
-    return (x2 - x1) * (y - y1) - (y2 - y1) * (x - x1) < 0;
+    return (x2 - x1) * (y - y1) - (y2 - y1) * (x - x1) <=> 0; // <0 is right, =0 is on, >0 is left
   };
   auto none_intersect_segs_compare_by_xray =
-      [point_on_seg_right](coordinate_type x11, coordinate_type x12,
+      [point_on_seg_order](coordinate_type x11, coordinate_type x12,
                            coordinate_type y11, coordinate_type y12,
                            coordinate_type x21, coordinate_type x22,
                            coordinate_type y21, coordinate_type y22) {
         if (y11 <= y21) {
-          return point_on_seg_right(x21, y21, x11, y11, x12, y12);
+          auto primary = point_on_seg_order(x21, y21, x11, y11, x12, y12);
+          if (primary < 0) {
+            return true;
+          }
+          else if (primary > 0 ) {
+            return false;
+          }
+          else {
+            auto secondary = point_on_seg_order(x22, y22, x11, y11, x12, y12);
+            return secondary < 0;
+          }
         } else {
-          return !point_on_seg_right(x11, y11, x21, y21, x22, y22);
+          auto primary = point_on_seg_order(x11, y11, x21, y21, x22, y22);
+          if (primary > 0) {
+            return true;
+          }
+          else if (primary < 0 ) {
+            return false;
+          }
+          else {
+            auto secondary = point_on_seg_order(x12, y12, x21, y21, x22, y22);
+            return secondary > 0;
+          }
         }
       };
 
@@ -58,7 +78,7 @@ std::size_t cast_ray_minus_x(coordinate_type vx, coordinate_type ray_y,
     auto &seg = seg_data[idx];
     assert(seg.y1 < seg.y2);
     if (seg.y1 <= ray_y && ray_y < seg.y2 &&
-        point_on_seg_right(vx, ray_y, seg.x1, seg.y1, seg.x2, seg.y2)) {
+        point_on_seg_order(vx, ray_y, seg.x1, seg.y1, seg.x2, seg.y2) < 0) {
       if (!any_hit) {
         best_hit_x1 = seg.x1;
         best_hit_y1 = seg.y1;
