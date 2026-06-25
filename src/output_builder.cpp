@@ -10,8 +10,11 @@ namespace best_clipper {
 
 multi_polygon build_output(
     const chain_group &chains, const std::vector<point> &hot_pixels,
-    std::vector<half_chain> next_half_chain, std::vector<bool> survive,
-    const std::vector<std::pair<std::size_t, std::size_t>> &ray_pairs) {
+    half_chain_relations_t half_chain_relations, std::vector<bool> survive) {
+  auto& next_half_chain = half_chain_relations.next_half_chain;
+  const auto& exterior_half_chains = half_chain_relations.exterior_half_chains;
+  const auto& ray_pairs = half_chain_relations.ray_pairs;
+
   std::size_t num_half_chains = (chains.offsets.size() - 1) * 2;
   std::size_t num_chains = chains.offsets.size() - 1;
 
@@ -22,8 +25,9 @@ multi_polygon build_output(
   for(std::size_t i = 0; i < next_half_chain.size(); i++) {
     same_face_half_chains.emplace_back(i, next_half_chain[i].id);
   }
-
-  same_face_half_chains.insert(same_face_half_chains.end(), ray_pairs.begin(), ray_pairs.end());
+  for(auto [start, end] : ray_pairs) {
+    same_face_half_chains.emplace_back(start.id, end.id);
+  }
 
   for (std::size_t chain_idx = 0; chain_idx < num_chains; chain_idx++) {
     std::size_t forward_id = 2 * chain_idx, reverse_id = 2 * chain_idx + 1;

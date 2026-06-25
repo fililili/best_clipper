@@ -7,11 +7,17 @@
 
 namespace best_clipper {
 
-using fe_tuple = std::tuple<std::vector<half_chain>,
-                            std::vector<std::size_t>,
-                            std::vector<std::pair<std::size_t, std::size_t>>>;
+struct half_chain_relations_t {
+    struct ray_pair {
+        half_chain ray_start;
+        half_chain ray_hit;
+    };
+    std::vector<half_chain> next_half_chain;
+    std::vector<half_chain> exterior_half_chains;
+    std::vector<ray_pair> ray_pairs;
+};
 
-fe_tuple build_half_chain_relations(const chain_group &chains,
+half_chain_relations_t build_half_chain_relations_t(const chain_group &chains,
                        const std::vector<point> &hot_pixels,
                        std::vector<half_chain> bucket_half_chains,
                        const std::vector<std::size_t> &bucket_half_chains_offsets);

@@ -95,16 +95,15 @@ inline auto run_pipeline(std::vector<point> points,
   auto [bucket_half_chains, half_chains] =
       build_half_chain_graph(chains, hot_pixels);
 
-  auto [next_half_chain, exterior_half_chains, ray_pairs] =
-      build_half_chain_relations(chains, hot_pixels, std::move(bucket_half_chains), std::move(half_chains));
+  auto half_chain_relations =
+      build_half_chain_relations_t(chains, hot_pixels, std::move(bucket_half_chains), std::move(half_chains));
 
   auto winding =
-      compute_winding(chains, next_half_chain, ray_pairs, exterior_half_chains);
+      compute_winding(chains, half_chain_relations);
 
   auto survive = filter_survive(winding, filter);
 
-  auto result = build_output(chains, hot_pixels, std::move(next_half_chain),
-                             std::move(survive), ray_pairs);
+  auto result = build_output(chains, hot_pixels, half_chain_relations, survive);
   return result;
 }
 

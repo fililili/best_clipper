@@ -2,14 +2,13 @@
 
 #include "chain_builder.hpp"
 #include "half_chain_graph.hpp"
+#include "connect_half_chains.hpp"
 
 namespace best_clipper {
 
 std::vector<int> compute_winding(
     const chain_group &chains,
-    const std::vector<half_chain> &next_half_chain,
-    const std::vector<std::pair<std::size_t, std::size_t>> &ray_pairs,
-    const std::vector<std::size_t> &exterior_half_chains);
+    const half_chain_relations_t& half_chain_relations);
     
 inline std::vector<bool> filter_survive(const std::vector<int> &winding,
                                         auto filter_fn) {

@@ -106,20 +106,20 @@ std::vector<half_chain> build_next_chains(const std::vector<half_chain> &bucket_
 // ---------------------------------------------------------------------------
 
 struct chain_seg {
-  int32_t x1, y1, x2, y2;
-  std::size_t half_chain_id;
+  coordinate_type x1, y1, x2, y2;
+  half_chain half_chain_id;
 };
 
 // ---------------------------------------------------------------------------
 // cast_ray_minus_x
 // ---------------------------------------------------------------------------
 
-std::size_t cast_ray_minus_x(coordinate_type vx, coordinate_type ray_y,
+half_chain cast_ray_minus_x(coordinate_type vx, coordinate_type ray_y,
                              const best_clipper::uniform_grid::grid &seg_grid,
                              const std::vector<chain_seg> &seg_data) {
 
   bool any_hit = false;
-  std::size_t hit_half_chain_id = (std::size_t)-1;
+  auto hit_half_chain_id = half_chain{~0ULL};
   coordinate_type best_hit_x1 = 0;
   coordinate_type best_hit_x2 = 0;
   coordinate_type best_hit_y1 = 0;
@@ -215,11 +215,11 @@ constexpr auto less_by_direction_neg_x_split = [](point source, point target1, p
     return cross < 0;
 };
 // ---------------------------------------------------------------------------
-// build_half_chain_relations
+// build_half_chain_relations_t
 // ---------------------------------------------------------------------------
 
-fe_tuple
-build_half_chain_relations(const chain_group &chains,
+half_chain_relations_t
+build_half_chain_relations_t(const chain_group &chains,
               const std::vector<point> &hot_pixels,
               std::vector<half_chain> bucket_half_chains,
               const std::vector<std::size_t> &bucket_half_chains_offsets) {
@@ -245,7 +245,7 @@ build_half_chain_relations(const chain_group &chains,
   // todo: if num_components == 1, no need to create seg_data, seg_grid. Just return one exterior_half_chain and empty ray_pairs
 
   std::vector<point> ray_start_points(num_components);
-  std::vector<std::size_t> ray_start_half_chains(num_components);
+  std::vector<half_chain> ray_start_half_chains(num_components);
   {
     std::vector<coordinate_type> min_xs(num_components,
                                         std::numeric_limits<int32_t>::max());
@@ -272,14 +272,14 @@ build_half_chain_relations(const chain_group &chains,
       if (bucket_half_chains_offsets[vertex] <
           bucket_half_chains_offsets[vertex + 1]) {
         ray_start_half_chains[component_id] =
-            bucket_half_chains[bucket_half_chains_offsets[vertex]].id;
+            bucket_half_chains[bucket_half_chains_offsets[vertex]];
       } else {
         auto prev_vertex = chains.indices[position_in_chains[component_id] - 1];
         auto next_vertex = chains.indices[position_in_chains[component_id] + 1];
         if (less_by_direction_neg_x_split(hot_pixels[vertex], hot_pixels[prev_vertex], hot_pixels[next_vertex])) {
-            ray_start_half_chains[component_id] = 2 * chain_ids[component_id] + 1;
+            ray_start_half_chains[component_id] = half_chain{2 * chain_ids[component_id] + 1};
         } else {
-            ray_start_half_chains[component_id] = 2 * chain_ids[component_id];
+            ray_start_half_chains[component_id] = half_chain{2 * chain_ids[component_id]};
         }
       }
     }
@@ -302,32 +302,32 @@ build_half_chain_relations(const chain_group &chains,
       auto seg_box = box{point{std::min(x1, x2), std::min(y1, y2)},
                          point{std::max(x1, x2), std::max(y1, y2)}};
       if (y1 < y2) {
-        seg_data.push_back({x1, y1, x2, y2, 2 * ci});
+        seg_data.push_back({x1, y1, x2, y2, half_chain{2 * ci}});
         seg_boxes.push_back(seg_box);
       } else if (y2 < y1) {
-        seg_data.push_back({x2, y2, x1, y1, 2 * ci + 1});
+        seg_data.push_back({x2, y2, x1, y1, half_chain{2 * ci + 1}});
         seg_boxes.push_back(seg_box);
       }
     }
   }
   best_clipper::uniform_grid::grid seg_grid(seg_boxes);
 
-  std::vector<std::size_t> exterior_half_chains;
-  std::vector<std::pair<std::size_t, std::size_t>> ray_pairs;
+  std::vector<half_chain> exterior_half_chains;
+  std::vector<half_chain_relations_t::ray_pair> ray_pairs;
 
   for (std::size_t component_id = 0; component_id < num_components;
        ++component_id) {
     auto min_x = bg::get<0>(ray_start_points[component_id]);
     int32_t ray_y = bg::get<1>(ray_start_points[component_id]);
     auto hit = cast_ray_minus_x(min_x, ray_y, seg_grid, seg_data);
-    if (hit == (std::size_t)-1) {
+    if (hit == half_chain{~0ULL}) {
       exterior_half_chains.push_back(ray_start_half_chains[component_id]);
     } else {
       ray_pairs.emplace_back(ray_start_half_chains[component_id], hit);
     }
   }
 
-  return fe_tuple{std::move(next_half_chain), std::move(exterior_half_chains), std::move(ray_pairs)};
+  return half_chain_relations_t{std::move(next_half_chain), std::move(exterior_half_chains), std::move(ray_pairs)};
 }
 
 } // namespace best_clipper

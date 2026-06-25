@@ -34,6 +34,7 @@ struct half_chain {
     else
       return -chains.powers[chain_id()];
   }
+  auto operator<=> (const half_chain &other) const = default;
   half_chain dual() const { return {id ^ 1}; }
 };
 
