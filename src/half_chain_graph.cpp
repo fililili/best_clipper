@@ -96,7 +96,6 @@ hcg_tuple build_half_chain_graph(const chain_group &chains,
   sort_bucket_half_chains(chains, hot_pixels, bucket_half_chains, bucket_half_chains_offsets);
 
   std::vector<half_chain> next_half_chain(num_half_chains, {~0ULL});
-  std::vector<std::pair<std::size_t, std::size_t>> coplanar;
 
   for (std::size_t v = 0; v < num_vertices; v++) {
     auto vertex_begin = bucket_half_chains_offsets[v], vertex_end = bucket_half_chains_offsets[v + 1];
@@ -105,16 +104,14 @@ hcg_tuple build_half_chain_graph(const chain_group &chains,
     for (auto it = vertex_begin + 1; it < vertex_end; ++it) {
       auto prev = bucket_half_chains[it - 1], cur = bucket_half_chains[it];
       next_half_chain[prev.dual().id] = cur;
-      coplanar.emplace_back(cur.id, prev.dual().id);
     }
     auto first = bucket_half_chains[vertex_begin],
          last = bucket_half_chains[vertex_end - 1];
     next_half_chain[last.dual().id] = first;
-    coplanar.emplace_back(first.id, last.dual().id);
   }
 
   return hcg_tuple{std::move(bucket_half_chains), std::move(bucket_half_chains_offsets),
-                   std::move(next_half_chain), std::move(coplanar)};
+                   std::move(next_half_chain)};
 }
 
 } // namespace best_clipper

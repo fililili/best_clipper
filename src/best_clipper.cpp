@@ -103,7 +103,7 @@ inline auto run_pipeline(std::vector<point> points,
                          std::vector<std::size_t> offsets, auto filter) {
   auto [hot_pixels, chains] = build_chains_from_input(points, offsets);
 
-  auto [sorted_half_chains, half_chains, next_half_chain, coplanar] =
+  auto [sorted_half_chains, half_chains, next_half_chain] =
       build_half_chain_graph(chains, hot_pixels);
 
   auto [exterior_half_chains, ray_pairs] =

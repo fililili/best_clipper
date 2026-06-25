@@ -15,7 +15,7 @@ multi_polygon build_output(
   std::size_t num_half_chains = (chains.offsets.size() - 1) * 2;
   std::size_t num_chains = chains.offsets.size() - 1;
 
-  // Build connected components: coplanar + ray + dual cancellation → same face
+  // Build connected components: next_half_chain + ray + dual cancellation → same face
   std::vector<std::pair<std::size_t, std::size_t>> same_face_half_chains;
   same_face_half_chains.reserve(next_half_chain.size() + ray_pairs.size() + num_chains);
 
