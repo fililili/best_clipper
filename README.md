@@ -99,11 +99,9 @@ cd best_cliiper && mkdir build && cmake -B build
 ## TODO
 1. support two stage cluster, for stage 1, use bbox. And totally sperate different cluster. For stage 2, use bbox and segs, different cluster has different snap rounding and chains build logic, but share ray casting logic.
 2. support connected_component with rank.
-3. For two dual half edge of an edge, only one half edge is possible for ray casting, so ray cast can store half edge index directly.
 4. use power_2 to handle robust input.
 5. sizing support
 6. clipping linestring support (need study to define new power)
-7. figure out interger overflow risk, for example, use delta_coordinate type
 8. add more practice testing
 9. sort ray query's for cache friendly
 10. uniform grid only works for bigger data, use other BVH when data is small.?
