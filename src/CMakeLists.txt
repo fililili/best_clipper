@@ -2,9 +2,10 @@ add_library(best_clipper_core
     best_clipper.cpp
     chain_builder.cpp
     half_chain_graph.cpp
-    exterior_winding.cpp
+    connect_half_chains.cpp
     output_builder.cpp
     graph_helper.cpp
+    filter_half_chains.cpp
 )
 
 target_include_directories(best_clipper_core PUBLIC

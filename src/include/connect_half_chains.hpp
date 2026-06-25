@@ -15,10 +15,4 @@ fe_tuple find_exterior(const chain_group &chains,
                        const std::vector<half_chain> &sorted_half_chains,
                        const std::vector<std::size_t> &sorted_half_chains_offsets);
 
-std::vector<int> compute_winding(
-    const chain_group &chains,
-    const std::vector<half_chain> &next_half_chain,
-    const std::vector<std::pair<std::size_t, std::size_t>> &ray_pairs,
-    const std::vector<std::size_t> &exterior_half_chains);
-
 } // namespace best_clipper

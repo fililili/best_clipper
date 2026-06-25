@@ -1,7 +1,8 @@
 #include "include/best_clipper.hpp"
 #include "include/chain_builder.hpp"
-#include "include/exterior_winding.hpp"
+#include "include/connect_half_chains.hpp"
 #include "include/half_chain_graph.hpp"
+#include "filter_half_chains.hpp"
 #include "include/output_builder.hpp"
 
 #include <chrono>
@@ -85,18 +86,6 @@ static auto collect_segments(const multi_polygon &mp1,
   auto [points, offsets] = collect_segments(mp1);
   append_multi_polygon(points, offsets, mp2);
   return std::pair{std::move(points), std::move(offsets)};
-}
-
-// ---------------------------------------------------------------------------
-// Pipeline
-// ---------------------------------------------------------------------------
-
-inline std::vector<bool> filter_survive(const std::vector<int> &winding,
-                                        auto filter_fn) {
-  std::vector<bool> survive(winding.size());
-  for (std::size_t i = 0; i < winding.size(); i++)
-    survive[i] = filter_fn(winding[i]);
-  return survive;
 }
 
 inline auto run_pipeline(std::vector<point> points,
