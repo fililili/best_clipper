@@ -7,12 +7,13 @@
 
 namespace best_clipper {
 
-using fe_tuple = std::tuple<std::vector<std::size_t>,
+using fe_tuple = std::tuple<std::vector<half_chain>,
+                            std::vector<std::size_t>,
                             std::vector<std::pair<std::size_t, std::size_t>>>;
 
 fe_tuple build_half_chain_relations(const chain_group &chains,
                        const std::vector<point> &hot_pixels,
-                       const std::vector<half_chain> &sorted_half_chains,
-                       const std::vector<std::size_t> &sorted_half_chains_offsets);
+                       std::vector<half_chain> bucket_half_chains,
+                       const std::vector<std::size_t> &bucket_half_chains_offsets);
 
 } // namespace best_clipper

@@ -37,8 +37,7 @@ struct half_chain {
   half_chain dual() const { return {id ^ 1}; }
 };
 
-using hcg_tuple = std::tuple<std::vector<half_chain>, std::vector<std::size_t>,
-                             std::vector<half_chain> >;
+using hcg_tuple = std::tuple<std::vector<half_chain>, std::vector<std::size_t>>;
 
 hcg_tuple build_half_chain_graph(const chain_group &chains,
                                  const std::vector<point> &hot_pixels);

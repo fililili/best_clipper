@@ -14,6 +14,93 @@ namespace best_clipper {
 
 namespace bg = boost::geometry;
 
+void sort_bucket_half_chains(const chain_group &chains,
+                        const std::vector<point> &hot_pixels,
+                        std::vector<half_chain> &bucket_half_chains,
+                        const std::vector<std::size_t> &bucket_half_chains_offsets) {
+  std::size_t num_half_chains = (chains.offsets.size() - 1) * 2;
+  std::size_t num_vertices = hot_pixels.size();
+
+  for (std::size_t v = 0; v < num_vertices; v++) {
+    auto vertex_begin = bucket_half_chains_offsets[v], vertex_end = bucket_half_chains_offsets[v + 1];
+    auto n = vertex_end - vertex_begin;
+    if (n < 2)
+      continue;
+    auto begin_it = bucket_half_chains.begin() + vertex_begin;
+
+    point vpt = hot_pixels[v];
+    coordinate_type vx = bg::get<0>(vpt), vy = bg::get<1>(vpt);
+
+    // Bucket by octant (8 buckets, octant 0 starts at -x).
+    std::array<std::size_t, 8> bucket_cnt{};
+    std::vector<int> octants(n);
+    for (std::size_t i = 0; i < n; i++) {
+      auto h = begin_it[i];
+      auto pt = hot_pixels[h.next_along_source(chains)];
+      coordinate_type dx = bg::get<0>(pt) - vx;
+      coordinate_type dy = bg::get<1>(pt) - vy;
+      int oct;
+      if (dx <= 0) {
+        if (dy <= 0)
+          oct = (-dx >= -dy) ? 0 : 1;
+        else
+          oct = (-dx >= dy) ? 7 : 6;
+      } else {
+        if (dy <= 0)
+          oct = (dx >= -dy) ? 3 : 2;
+        else
+          oct = (dx >= dy) ? 4 : 5;
+      }
+      octants[i] = oct;
+      bucket_cnt[oct]++;
+    }
+
+    // Compute bucket start positions and scatter.
+    std::array<std::size_t, 9> bucket_pos{};
+    for (int o = 0; o < 8; o++)
+      bucket_pos[o + 1] = bucket_pos[o] + bucket_cnt[o];
+    std::vector<half_chain> temp(n);
+    auto cur_pos = bucket_pos;
+    for (std::size_t i = 0; i < n; i++)
+      temp[cur_pos[octants[i]]++] = begin_it[i];
+
+    // Sort each bucket by cross product.
+    for (int o = 0; o < 8; o++) {
+      std::sort(temp.begin() + bucket_pos[o], temp.begin() + bucket_pos[o + 1],
+                [&](half_chain a, half_chain b) {
+                  auto a_pt = hot_pixels[a.next_along_source(chains)];
+                  auto b_pt = hot_pixels[b.next_along_source(chains)];
+                  auto ax = bg::get<0>(a_pt) - vx;
+                  auto ay = bg::get<1>(a_pt) - vy;
+                  auto bx = bg::get<0>(b_pt) - vx;
+                  auto by = bg::get<1>(b_pt) - vy;
+                  return ax * by - ay * bx > 0;
+                });
+    }
+
+    std::move(temp.begin(), temp.end(), begin_it);
+  }
+}
+
+std::vector<half_chain> build_next_chains(const std::vector<half_chain> &bucket_half_chains, const std::vector<std::size_t> &bucket_half_chains_offsets) {
+  std::vector<half_chain> next_half_chain(bucket_half_chains.size(), {~0ULL});
+
+  for (std::size_t i = 0; i + 1 < bucket_half_chains_offsets.size(); ++i) {
+    auto vertex_begin = bucket_half_chains_offsets[i], vertex_end = bucket_half_chains_offsets[i + 1];
+    if (vertex_begin == vertex_end) {
+      continue; // skip by hand for head tail next relation
+    }
+    for (auto it = vertex_begin + 1; it < vertex_end; ++it) {
+      auto prev = bucket_half_chains[it - 1], cur = bucket_half_chains[it];
+      next_half_chain[prev.dual().id] = cur;
+    }
+    auto first = bucket_half_chains[vertex_begin],
+         last = bucket_half_chains[vertex_end - 1];
+    next_half_chain[last.dual().id] = first;
+  }
+  return next_half_chain;
+}
+
 // ---------------------------------------------------------------------------
 // chain_seg (internal to ray casting)
 // ---------------------------------------------------------------------------
@@ -134,15 +221,19 @@ constexpr auto less_by_direction_neg_x_split = [](point source, point target1, p
 fe_tuple
 build_half_chain_relations(const chain_group &chains,
               const std::vector<point> &hot_pixels,
-              const std::vector<half_chain> &sorted_half_chains,
-              const std::vector<std::size_t> &sorted_half_chains_offsets) {
+              std::vector<half_chain> bucket_half_chains,
+              const std::vector<std::size_t> &bucket_half_chains_offsets) {
+  sort_bucket_half_chains(chains, hot_pixels, bucket_half_chains, bucket_half_chains_offsets);
+
+  auto next_half_chain = build_next_chains(bucket_half_chains, bucket_half_chains_offsets);
+
   std::vector<std::pair<std::size_t, std::size_t>> chain_connected_edges;
-  for (std::size_t i = 0; i < sorted_half_chains_offsets.size() - 1; ++i) {
-    auto begin_idx = sorted_half_chains_offsets[i],
-         end_idx = sorted_half_chains_offsets[i + 1];
+  for (std::size_t i = 0; i < bucket_half_chains_offsets.size() - 1; ++i) {
+    auto begin_idx = bucket_half_chains_offsets[i],
+         end_idx = bucket_half_chains_offsets[i + 1];
     for (auto k = begin_idx + 1; k < end_idx; ++k) {
-      chain_connected_edges.emplace_back(sorted_half_chains[begin_idx].chain_id(),
-                                         sorted_half_chains[k].chain_id());
+      chain_connected_edges.emplace_back(bucket_half_chains[begin_idx].chain_id(),
+                                         bucket_half_chains[k].chain_id());
     }
   }
   auto chain_component_ids =
@@ -178,10 +269,10 @@ build_half_chain_relations(const chain_group &chains,
     for (std::size_t component_id = 0; component_id < num_components; ++component_id) {
       auto vertex = chains.indices[position_in_chains[component_id]];
       ray_start_points[component_id] = hot_pixels[vertex];
-      if (sorted_half_chains_offsets[vertex] <
-          sorted_half_chains_offsets[vertex + 1]) {
+      if (bucket_half_chains_offsets[vertex] <
+          bucket_half_chains_offsets[vertex + 1]) {
         ray_start_half_chains[component_id] =
-            sorted_half_chains[sorted_half_chains_offsets[vertex]].id;
+            bucket_half_chains[bucket_half_chains_offsets[vertex]].id;
       } else {
         auto prev_vertex = chains.indices[position_in_chains[component_id] - 1];
         auto next_vertex = chains.indices[position_in_chains[component_id] + 1];
@@ -236,7 +327,7 @@ build_half_chain_relations(const chain_group &chains,
     }
   }
 
-  return fe_tuple{std::move(exterior_half_chains), std::move(ray_pairs)};
+  return fe_tuple{std::move(next_half_chain), std::move(exterior_half_chains), std::move(ray_pairs)};
 }
 
 } // namespace best_clipper
