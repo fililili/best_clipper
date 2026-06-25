@@ -245,26 +245,23 @@ find_exterior(const chain_group &chains,
 
 std::vector<int> compute_winding(
     const chain_group &chains,
-    const std::vector<std::pair<std::size_t, std::size_t>> &coplanar_pairs,
+    const std::vector<half_chain> &next_half_chain,
     const std::vector<std::pair<std::size_t, std::size_t>> &ray_pairs,
     const std::vector<std::size_t> &exterior_half_chains) {
   std::size_t num_half_chains = (chains.offsets.size() - 1) * 2;
 
-  std::vector<edge_with_power_t> edges;
-  edges.reserve((coplanar_pairs.size() + ray_pairs.size()) * 2);
-  for (auto [a, b] : coplanar_pairs) {
-    edges.emplace_back(a, b, 0);
-    edges.emplace_back(b, a, 0);
-  }
+  std::vector<edge_t> edges;
+  edges.reserve(ray_pairs.size() * 2);
   for (auto [a, b] : ray_pairs) {
-    edges.emplace_back(a, b, 0);
-    edges.emplace_back(b, a, 0);
+    edges.emplace_back(a, b);
+    edges.emplace_back(b, a);
   }
 
   auto [adj, adjacency] = bucket_sort(
       edges, num_half_chains,
-      [](const edge_with_power_t &e) { return e.start; },
-      [](const edge_with_power_t &e) { return std::pair{e.end, e.power}; });
+      [](const edge_t &e) { return e.start; },
+      [](const edge_t &e) { return e.end; }
+    );
 
   constexpr int UNKNOWN = std::numeric_limits<int>::max() / 2;
   std::vector<int> winding(num_half_chains, UNKNOWN);
@@ -277,9 +274,9 @@ std::vector<int> compute_winding(
     auto u = stack.back();
     stack.pop_back();
     for (auto j = adj[u]; j < adj[u + 1]; j++) {
-      auto [v, diff] = adjacency[j];
+      auto v = adjacency[j];
       if (winding[v] == UNKNOWN) {
-        winding[v] = winding[u] + diff;
+        winding[v] = winding[u];
         stack.push_back(v);
       }
     }
@@ -288,6 +285,11 @@ std::vector<int> compute_winding(
     if (winding[dual] == UNKNOWN) {
       winding[dual] = winding[u] - half_chain{u}.power(chains);
       stack.push_back(dual);
+    }
+    auto next = next_half_chain[u].id;
+    if (winding[next] == UNKNOWN) {
+      winding[next] = winding[u];
+      stack.push_back(next);
     }
   }
   return winding;

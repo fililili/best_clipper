@@ -110,7 +110,7 @@ inline auto run_pipeline(std::vector<point> points,
       find_exterior(chains, hot_pixels, sorted_half_chains, half_chains);
 
   auto winding =
-      compute_winding(chains, coplanar, ray_pairs, exterior_half_chains);
+      compute_winding(chains, next_half_chain, ray_pairs, exterior_half_chains);
 
   auto survive = filter_survive(winding, filter);
 
