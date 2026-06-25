@@ -63,7 +63,8 @@ construct_graph(const std::vector<point> &points,
           }
           if (auto p = get_intersection(si, segment{points[j], points[j + 1]}))
             hot_pixels.push_back(p.value());
-          // todo: if no more intersections are possible, we could return chains from input direclty
+          // todo: if no more intersections are possible, we could return chains
+          // from input direclty
         });
       }
     }
@@ -73,8 +74,9 @@ construct_graph(const std::vector<point> &points,
   {
     std::vector<std::size_t> pixel_cell(hot_pixels.size());
     for (std::size_t pi = 0; pi < hot_pixels.size(); pi++) {
-      pixel_cell[pi] = segments_box_grid.get_flat_index(segments_box_grid.cell_x(bg::get<0>(hot_pixels[pi])),
-                                                        segments_box_grid.cell_y(bg::get<1>(hot_pixels[pi])));
+      pixel_cell[pi] = segments_box_grid.get_flat_index(
+          segments_box_grid.cell_x(bg::get<0>(hot_pixels[pi])),
+          segments_box_grid.cell_y(bg::get<1>(hot_pixels[pi])));
     }
     std::vector<std::size_t> cell_counts(segments_box_grid.cells(), 0);
     for (auto c : pixel_cell)
@@ -115,17 +117,16 @@ construct_graph(const std::vector<point> &points,
   std::vector<std::size_t> candidates;
   for (std::size_t pi = 0; pi < hot_pixels.size(); pi++) {
     int32_t x = bg::get<0>(hot_pixels[pi]), y = bg::get<1>(hot_pixels[pi]);
-    auto query_box = box{{x-1, y-1}, {x + 1, y+ 1}};
+    auto query_box = box{{x - 1, y - 1}, {x + 1, y + 1}};
     candidates.clear();
-    segments_box_grid.query_intersects(query_box,
-                                       [&](std::size_t pos) {
-                                         if (last_seen[pos] == pi)
-                                           return;
-                                         last_seen[pos] = pi;
-                                         if (!bbox_overlap(query_box, seg_boxes[pos]))
-                                           return;
-                                         candidates.push_back(pos);
-                                       });
+    segments_box_grid.query_intersects(query_box, [&](std::size_t pos) {
+      if (last_seen[pos] == pi)
+        return;
+      last_seen[pos] = pi;
+      if (!bbox_overlap(query_box, seg_boxes[pos]))
+        return;
+      candidates.push_back(pos);
+    });
     if (candidates.size() == 2) {
       segment_pixel_pairs.emplace_back(candidates[0], pi);
       segment_pixel_pairs.emplace_back(candidates[1], pi);
@@ -149,10 +150,11 @@ construct_graph(const std::vector<point> &points,
       std::size_t re = offsets[ri + 1];
       for (std::size_t i = rb; i + 1 < re; i++) {
         auto seg = segment{points[i], points[i + 1]};
-        std::sort(std::begin(pixels) + segs[i], std::begin(pixels) + segs[i + 1], [&](auto pi, auto pj) {
-          return less_by_segment{seg}(hot_pixels[pi], hot_pixels[pj]);
-        });
-        for(auto k = segs[i]; k + 1 < segs[i + 1]; ++k) {
+        std::sort(std::begin(pixels) + segs[i],
+                  std::begin(pixels) + segs[i + 1], [&](auto pi, auto pj) {
+                    return less_by_segment{seg}(hot_pixels[pi], hot_pixels[pj]);
+                  });
+        for (auto k = segs[i]; k + 1 < segs[i + 1]; ++k) {
           edges.emplace_back(pixels[k], pixels[k + 1]);
         }
       }
@@ -214,9 +216,8 @@ unique_edges(std::vector<edge_with_power_t> edges, std::size_t num_vertices) {
 // build_chains_from_input
 // ---------------------------------------------------------------------------
 
-chain_group
-build_chains_from_input(const std::vector<point> &points,
-                        const std::vector<std::size_t> &offsets) {
+chain_group build_chains_from_input(const std::vector<point> &points,
+                                    const std::vector<std::size_t> &offsets) {
   assert(offsets.size() >= 1);
   assert(offsets[0] == 0);
   assert(offsets.back() == points.size());
@@ -238,8 +239,13 @@ build_chains_from_input(const std::vector<point> &points,
       assert(balance[v] == 0);
   }
 #endif
-  auto [chain_indexes, chain_offsets, chain_powers] = build_chains(sorted_edges, hot_pixels.size());
-  return {std::move(hot_pixels), std::move(chain_indexes), std::move(chain_offsets), std::move(chain_powers)};
+  auto [chain_indexes, chain_offsets, chain_powers, chain_out_offsets,
+        chain_out_chains, chain_in_offsets, chain_in_chains] =
+      build_chains(sorted_edges, hot_pixels.size());
+  return {std::move(hot_pixels),        std::move(chain_indexes),
+          std::move(chain_offsets),     std::move(chain_powers),
+          std::move(chain_out_offsets), std::move(chain_out_chains),
+          std::move(chain_in_offsets),  std::move(chain_in_chains)};
 }
 
 } // namespace best_clipper

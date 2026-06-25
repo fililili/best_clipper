@@ -14,21 +14,24 @@ namespace best_clipper {
 
 namespace bg = boost::geometry;
 
-void sort_bucket_half_chains(const chain_group &chains,
-                        std::vector<half_chain_t> &bucket_half_chains,
-                        const std::vector<std::size_t> &bucket_half_chains_offsets) {
+void sort_bucket_half_chains(
+    const chain_group &chains, std::vector<half_chain_t> &bucket_half_chains,
+    const std::vector<std::size_t> &bucket_half_chains_offsets) {
+  assert(chains.out_offsets.size() == chains.in_offsets.size());
+  std::size_t num_end_points = chains.out_offsets.size() - 1;
+
   const std::vector<point> &hot_pixels = chains.hot_pixels;
   std::size_t num_half_chains = (chains.offsets.size() - 1) * 2;
-  std::size_t num_vertices = hot_pixels.size();
 
-  for (std::size_t v = 0; v < num_vertices; v++) {
-    auto vertex_begin = bucket_half_chains_offsets[v], vertex_end = bucket_half_chains_offsets[v + 1];
+  for (std::size_t v = 0; v < num_end_points; v++) {
+    auto vertex_begin = bucket_half_chains_offsets[v],
+         vertex_end = bucket_half_chains_offsets[v + 1];
     auto n = vertex_end - vertex_begin;
     if (n < 2)
       continue;
     auto begin_it = bucket_half_chains.begin() + vertex_begin;
 
-    point vpt = hot_pixels[v];
+    point vpt = hot_pixels[begin_it->source_node(chains)];
     coordinate_type vx = bg::get<0>(vpt), vy = bg::get<1>(vpt);
 
     // Bucket by octant (8 buckets, octant 0 starts at -x).
@@ -82,11 +85,14 @@ void sort_bucket_half_chains(const chain_group &chains,
   }
 }
 
-std::vector<half_chain_t> build_next_chains(const std::vector<half_chain_t> &bucket_half_chains, const std::vector<std::size_t> &bucket_half_chains_offsets) {
+std::vector<half_chain_t>
+build_next_chains(const std::vector<half_chain_t> &bucket_half_chains,
+                  const std::vector<std::size_t> &bucket_half_chains_offsets) {
   std::vector<half_chain_t> next_half_chain(bucket_half_chains.size(), {~0ULL});
 
   for (std::size_t i = 0; i + 1 < bucket_half_chains_offsets.size(); ++i) {
-    auto vertex_begin = bucket_half_chains_offsets[i], vertex_end = bucket_half_chains_offsets[i + 1];
+    auto vertex_begin = bucket_half_chains_offsets[i],
+         vertex_end = bucket_half_chains_offsets[i + 1];
     if (vertex_begin == vertex_end) {
       continue; // skip by hand for head tail next relation
     }
@@ -115,8 +121,8 @@ struct chain_seg {
 // ---------------------------------------------------------------------------
 
 half_chain_t cast_ray_minus_x(coordinate_type vx, coordinate_type ray_y,
-                             const best_clipper::uniform_grid::grid &seg_grid,
-                             const std::vector<chain_seg> &seg_data) {
+                              const best_clipper::uniform_grid::grid &seg_grid,
+                              const std::vector<chain_seg> &seg_data) {
 
   bool any_hit = false;
   auto hit_half_chain_id = half_chain_t{~0ULL};
@@ -127,7 +133,8 @@ half_chain_t cast_ray_minus_x(coordinate_type vx, coordinate_type ray_y,
   auto point_on_seg_order = [](coordinate_type x, coordinate_type y,
                                coordinate_type x1, coordinate_type y1,
                                coordinate_type x2, coordinate_type y2) {
-    return (x2 - x1) * (y - y1) - (y2 - y1) * (x - x1) <=> 0; // <0 is right, =0 is on, >0 is left
+    return (x2 - x1) * (y - y1) - (y2 - y1) * (x - x1) <=>
+           0; // <0 is right, =0 is on, >0 is left
   };
   auto none_intersect_segs_compare_by_xray =
       [point_on_seg_order](coordinate_type x11, coordinate_type x12,
@@ -138,11 +145,9 @@ half_chain_t cast_ray_minus_x(coordinate_type vx, coordinate_type ray_y,
           auto primary = point_on_seg_order(x21, y21, x11, y11, x12, y12);
           if (primary < 0) {
             return true;
-          }
-          else if (primary > 0 ) {
+          } else if (primary > 0) {
             return false;
-          }
-          else {
+          } else {
             auto secondary = point_on_seg_order(x22, y22, x11, y11, x12, y12);
             return secondary < 0;
           }
@@ -150,11 +155,9 @@ half_chain_t cast_ray_minus_x(coordinate_type vx, coordinate_type ray_y,
           auto primary = point_on_seg_order(x11, y11, x21, y21, x22, y22);
           if (primary > 0) {
             return true;
-          }
-          else if (primary < 0 ) {
+          } else if (primary < 0) {
             return false;
-          }
-          else {
+          } else {
             auto secondary = point_on_seg_order(x12, y12, x21, y21, x22, y22);
             return secondary > 0;
           }
@@ -184,53 +187,62 @@ half_chain_t cast_ray_minus_x(coordinate_type vx, coordinate_type ray_y,
       }
     }
     return std::min(best_hit_x1, best_hit_x2);
-    // we want to return best_hit_x_floor that satisfied best_hit_x_real >= best_hit_x_floor, 
-    // and best_hit_x_real >= min(best_hit_x1, best_hit_x2), so use min(best_hit_x1, best_hit_x2) as the return value
+    // we want to return best_hit_x_floor that satisfied best_hit_x_real >=
+    // best_hit_x_floor, and best_hit_x_real >= min(best_hit_x1, best_hit_x2),
+    // so use min(best_hit_x1, best_hit_x2) as the return value
   });
 
   return hit_half_chain_id;
 }
-constexpr auto less_by_direction_neg_x_split = [](point source, point target1, point target2) {
-    enum class quadrant { _3, _4, _1, _2, zero };
-    constexpr auto get_quadrant = [](int32_t dx, int32_t dy) -> quadrant {
-        if (dx < 0 && dy <= 0) return quadrant::_3;
-        else if (dx >= 0 && dy < 0) return quadrant::_4;
-        else if (dx > 0 && dy >= 0) return quadrant::_1;
-        else if (dx <= 0 && dy > 0) return quadrant::_2;
-        return quadrant::zero;
-    };
-    
-    int32_t dx1 = bg::get<0>(target1) - bg::get<0>(source);
-    int32_t dy1 = bg::get<1>(target1) - bg::get<1>(source);
-    int32_t dx2 = bg::get<0>(target2) - bg::get<0>(source);
-    int32_t dy2 = bg::get<1>(target2) - bg::get<1>(source);
+constexpr auto less_by_direction_neg_x_split = [](point source, point target1,
+                                                  point target2) {
+  enum class quadrant { _3, _4, _1, _2, zero };
+  constexpr auto get_quadrant = [](int32_t dx, int32_t dy) -> quadrant {
+    if (dx < 0 && dy <= 0)
+      return quadrant::_3;
+    else if (dx >= 0 && dy < 0)
+      return quadrant::_4;
+    else if (dx > 0 && dy >= 0)
+      return quadrant::_1;
+    else if (dx <= 0 && dy > 0)
+      return quadrant::_2;
+    return quadrant::zero;
+  };
 
-    auto q1 = get_quadrant(dx1, dy1);
-    auto q2 = get_quadrant(dx2, dy2);
-        if (q1 != q2) return q1 < q2;
+  int32_t dx1 = bg::get<0>(target1) - bg::get<0>(source);
+  int32_t dy1 = bg::get<1>(target1) - bg::get<1>(source);
+  int32_t dx2 = bg::get<0>(target2) - bg::get<0>(source);
+  int32_t dy2 = bg::get<1>(target2) - bg::get<1>(source);
 
-    // Same quadrant: compare slopes using cross product.
-    // slope1 < slope2  ⟺  cross = dy1*dx2 - dy2*dx1 < 0 in all quadrants.
-    int64_t cross = (int64_t)dy1 * dx2 - (int64_t)dy2 * dx1;
-    return cross < 0;
+  auto q1 = get_quadrant(dx1, dy1);
+  auto q2 = get_quadrant(dx2, dy2);
+  if (q1 != q2)
+    return q1 < q2;
+
+  // Same quadrant: compare slopes using cross product.
+  // slope1 < slope2  ⟺  cross = dy1*dx2 - dy2*dx1 < 0 in all quadrants.
+  int64_t cross = (int64_t)dy1 * dx2 - (int64_t)dy2 * dx1;
+  return cross < 0;
 };
 
-half_chain_relations_t
-build_half_chain_relations(const chain_group &chains,
-              std::vector<half_chain_t> bucket_half_chains,
-              const std::vector<std::size_t> &bucket_half_chains_offsets) {
+half_chain_relations_t build_half_chain_relations(
+    const chain_group &chains, std::vector<half_chain_t> bucket_half_chains,
+    const std::vector<std::size_t> &bucket_half_chains_offsets) {
   const std::vector<point> &hot_pixels = chains.hot_pixels;
-  sort_bucket_half_chains(chains, bucket_half_chains, bucket_half_chains_offsets);
+  sort_bucket_half_chains(chains, bucket_half_chains,
+                          bucket_half_chains_offsets);
 
-  auto next_half_chain = build_next_chains(bucket_half_chains, bucket_half_chains_offsets);
+  auto next_half_chain =
+      build_next_chains(bucket_half_chains, bucket_half_chains_offsets);
 
   std::vector<std::pair<std::size_t, std::size_t>> chain_connected_edges;
   for (std::size_t i = 0; i < bucket_half_chains_offsets.size() - 1; ++i) {
     auto begin_idx = bucket_half_chains_offsets[i],
          end_idx = bucket_half_chains_offsets[i + 1];
     for (auto k = begin_idx + 1; k < end_idx; ++k) {
-      chain_connected_edges.emplace_back(bucket_half_chains[begin_idx].chain_id(),
-                                         bucket_half_chains[k].chain_id());
+      chain_connected_edges.emplace_back(
+          bucket_half_chains[begin_idx].chain_id(),
+          bucket_half_chains[k].chain_id());
     }
   }
   auto chain_component_ids =
@@ -239,7 +251,8 @@ build_half_chain_relations(const chain_group &chains,
   for (auto c : chain_component_ids) {
     num_components = std::max(num_components, c + 1);
   }
-  // todo: if num_components == 1, no need to create seg_data, seg_grid. Just return one exterior_half_chain and empty ray_pairs
+  // todo: if num_components == 1, no need to create seg_data, seg_grid. Just
+  // return one exterior_half_chain and empty ray_pairs
 
   std::vector<point> ray_start_points(num_components);
   std::vector<half_chain_t> ray_start_half_chains(num_components);
@@ -248,11 +261,12 @@ build_half_chain_relations(const chain_group &chains,
                                         std::numeric_limits<int32_t>::max());
     std::vector<std::size_t> chain_ids(num_components);
     std::vector<std::size_t> position_in_chains(num_components);
+    std::vector<bool> is_end_points(num_components);
     for (std::size_t chain_id = 0; chain_id < chains.offsets.size() - 1;
-        ++chain_id) {
+         ++chain_id) {
       auto component_id = chain_component_ids[chain_id];
       auto chain_begin_idx = chains.offsets[chain_id],
-          chain_end_idx = chains.offsets[chain_id + 1];
+           chain_end_idx = chains.offsets[chain_id + 1];
       for (std::size_t k = chain_begin_idx; k < chain_end_idx - 1; k++) {
         auto vertex = chains.indices[k];
         auto x = bg::get<0>(hot_pixels[vertex]);
@@ -260,23 +274,40 @@ build_half_chain_relations(const chain_group &chains,
           min_xs[component_id] = x;
           chain_ids[component_id] = chain_id;
           position_in_chains[component_id] = k;
+          is_end_points[component_id] = (k == chain_begin_idx);
         }
       }
     }
-    for (std::size_t component_id = 0; component_id < num_components; ++component_id) {
+    std::vector<half_chain_t> first_half_chains(chains.offsets.size() - 1);
+    for (std::size_t i = 0; i < bucket_half_chains_offsets.size() - 1; ++i) {
+      auto begin_idx = bucket_half_chains_offsets[i],
+           end_idx = bucket_half_chains_offsets[i + 1];
+      for (auto k = begin_idx; k < end_idx; ++k) {
+        auto cur_half_chain = bucket_half_chains[k];
+        if (cur_half_chain.is_forward()) {
+          first_half_chains[cur_half_chain.chain_id()] =
+              bucket_half_chains[begin_idx];
+        }
+      }
+    }
+    for (std::size_t component_id = 0; component_id < num_components;
+         ++component_id) {
       auto vertex = chains.indices[position_in_chains[component_id]];
       ray_start_points[component_id] = hot_pixels[vertex];
-      if (bucket_half_chains_offsets[vertex] <
-          bucket_half_chains_offsets[vertex + 1]) {
+      if (is_end_points[component_id]) {
         ray_start_half_chains[component_id] =
-            bucket_half_chains[bucket_half_chains_offsets[vertex]];
+            first_half_chains[chain_ids[component_id]];
       } else {
         auto prev_vertex = chains.indices[position_in_chains[component_id] - 1];
         auto next_vertex = chains.indices[position_in_chains[component_id] + 1];
-        if (less_by_direction_neg_x_split(hot_pixels[vertex], hot_pixels[prev_vertex], hot_pixels[next_vertex])) {
-            ray_start_half_chains[component_id] = half_chain_t{2 * chain_ids[component_id] + 1};
+        if (less_by_direction_neg_x_split(hot_pixels[vertex],
+                                          hot_pixels[prev_vertex],
+                                          hot_pixels[next_vertex])) {
+          ray_start_half_chains[component_id] =
+              half_chain_t{2 * chain_ids[component_id] + 1};
         } else {
-            ray_start_half_chains[component_id] = half_chain_t{2 * chain_ids[component_id]};
+          ray_start_half_chains[component_id] =
+              half_chain_t{2 * chain_ids[component_id]};
         }
       }
     }
@@ -324,7 +355,9 @@ build_half_chain_relations(const chain_group &chains,
     }
   }
 
-  return half_chain_relations_t{std::move(next_half_chain), std::move(exterior_half_chains), std::move(ray_pairs)};
+  return half_chain_relations_t{std::move(next_half_chain),
+                                std::move(exterior_half_chains),
+                                std::move(ray_pairs)};
 }
 
 } // namespace best_clipper

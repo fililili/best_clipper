@@ -1,30 +1,35 @@
 #include "half_chain_graph.hpp"
-#include "graph_helper.hpp"
-#include "snap_rounding_helper.hpp"
 
-#include <algorithm>
-#include <array>
 #include <utility>
 #include <vector>
 
 namespace best_clipper {
 
 half_chain_group_t build_half_chain_graph(const chain_group &chains) {
-  const std::vector<point> &hot_pixels = chains.hot_pixels;
-  std::size_t num_half_chains = (chains.offsets.size() - 1) * 2;
-  std::size_t num_vertices = hot_pixels.size();
+  assert(chains.out_offsets.size() == chains.in_offsets.size());
+  std::size_t num_end_points = chains.out_offsets.size() - 1;
+  std::size_t num_chains = chains.offsets.size() - 1;
 
-  std::vector<half_chain_t> all;
-  all.reserve(num_half_chains);
-  for (std::size_t i = 0; i < num_half_chains; i++)
-    all.push_back({i});
+  std::vector<std::size_t> bucket_half_chains_offsets(num_end_points + 1);
+  for (std::size_t i = 0; i < num_end_points; ++i) {
+    auto out_cnt = chains.out_offsets[i + 1] - chains.out_offsets[i];
+    auto in_cnt = chains.in_offsets[i + 1] - chains.in_offsets[i];
+    bucket_half_chains_offsets[i + 1] =
+        bucket_half_chains_offsets[i] + out_cnt + in_cnt;
+  }
 
-  auto [bucket_half_chains_offsets, bucket_half_chains] = bucket_sort(
-      all, num_vertices, [&](half_chain_t h) { return h.source_node(chains); },
-      [](half_chain_t h) { return h; });
-  bucket_half_chains.erase(std::unique(bucket_half_chains.begin(), bucket_half_chains.end()), bucket_half_chains.end());
+  std::vector<half_chain_t> bucket_half_chains(num_chains * 2);
+  auto cursors = bucket_half_chains_offsets;
+  for (std::size_t i = 0; i < num_end_points; ++i) {
+    for (auto ci = chains.out_offsets[i]; ci < chains.out_offsets[i + 1]; ++ci)
+      bucket_half_chains[cursors[i]++] =
+          half_chain_t{chains.out_chains[ci] * 2};
+    for (auto ci = chains.in_offsets[i]; ci < chains.in_offsets[i + 1]; ++ci)
+      bucket_half_chains[cursors[i]++] =
+          half_chain_t{chains.in_chains[ci] * 2 + 1};
+  }
 
-  return half_chain_group_t{std::move(bucket_half_chains), std::move(bucket_half_chains_offsets)};
+  return {std::move(bucket_half_chains), std::move(bucket_half_chains_offsets)};
 }
 
 } // namespace best_clipper

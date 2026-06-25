@@ -43,7 +43,9 @@ std::vector<std::size_t> connected_components(
 // build_chains — chain decomposition from directed edges with power
 // ---------------------------------------------------------------------------
 
-std::tuple<std::vector<std::size_t>, std::vector<std::size_t>, std::vector<int>>
+std::tuple<std::vector<std::size_t>, std::vector<std::size_t>, std::vector<int>,
+           std::vector<std::size_t>, std::vector<std::size_t>,
+           std::vector<std::size_t>, std::vector<std::size_t>>
 build_chains(const std::vector<edge_with_power_t> &sorted_edges,
              std::size_t node_num) {
   std::vector<std::size_t> edge_offsets(node_num + 1, 0);
@@ -140,7 +142,49 @@ build_chains(const std::vector<edge_with_power_t> &sorted_edges,
     off.push_back(idx.size());
   }
 
-  return {std::move(idx), std::move(off), std::move(powers)};
+  std::size_t num_chains = off.size() - 1;
+  std::vector<std::size_t> chain_out_deg(node_num), chain_in_deg(node_num);
+  for (std::size_t i = 0; i + 1 < off.size(); ++i) {
+    chain_out_deg[idx[off[i]]]++;
+    chain_in_deg[idx[off[i + 1] - 1]]++;
+  }
+
+  std::vector<std::size_t> full_out_offsets(node_num + 1, 0),
+      out_chains(num_chains);
+  std::vector<std::size_t> full_in_offsets(node_num + 1, 0),
+      in_chains(num_chains);
+  for (std::size_t i = 0; i < node_num; ++i) {
+    full_out_offsets[i + 1] = full_out_offsets[i] + chain_out_deg[i];
+  }
+  for (std::size_t i = 0; i < node_num; ++i) {
+    full_in_offsets[i + 1] = full_in_offsets[i] + chain_in_deg[i];
+  }
+  {
+    auto out_cursors = full_out_offsets;
+    auto in_cursors = full_in_offsets;
+    for (std::size_t i = 0; i + 1 < off.size(); ++i) {
+      auto start_idx = idx[off[i]];
+      auto end_idx = idx[off[i + 1] - 1];
+      out_chains[out_cursors[start_idx]++] = i;
+      in_chains[in_cursors[end_idx]++] = i;
+    }
+  }
+  {
+    std::vector<std::size_t> compact_out{0}, compact_in{0};
+    for (std::size_t i = 0; i < node_num; ++i) {
+      if (full_in_offsets[i] < full_in_offsets[i + 1]) {
+        compact_out.push_back(full_out_offsets[i + 1]);
+        compact_in.push_back(full_in_offsets[i + 1]);
+      }
+    }
+    full_out_offsets = std::move(compact_out);
+    full_in_offsets = std::move(compact_in);
+  }
+
+  return {std::move(idx),        std::move(off),
+          std::move(powers),     std::move(full_out_offsets),
+          std::move(out_chains), std::move(full_in_offsets),
+          std::move(in_chains)};
 }
 
 } // namespace best_clipper

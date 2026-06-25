@@ -11,8 +11,11 @@ struct chain_group {
   std::vector<point> hot_pixels;
   std::vector<std::size_t> indices, offsets;
   std::vector<int> powers;
+  std::vector<std::size_t> out_offsets, out_chains;
+  std::vector<std::size_t> in_offsets, in_chains;
 };
 
-chain_group build_chains_from_input(const std::vector<point> &points, const std::vector<std::size_t> &offsets);
+chain_group build_chains_from_input(const std::vector<point> &points,
+                                    const std::vector<std::size_t> &offsets);
 
 } // namespace best_clipper
