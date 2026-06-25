@@ -115,7 +115,7 @@ inline auto run_pipeline(std::vector<point> points,
   auto survive = filter_survive(winding, filter);
 
   auto result = build_output(chains, hot_pixels, std::move(next_half_chain),
-                             std::move(survive), coplanar, ray_pairs);
+                             std::move(survive), ray_pairs);
   return result;
 }
 

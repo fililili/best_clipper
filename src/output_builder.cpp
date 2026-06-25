@@ -11,23 +11,25 @@ namespace best_clipper {
 multi_polygon build_output(
     const chain_group &chains, const std::vector<point> &hot_pixels,
     std::vector<half_chain> next_half_chain, std::vector<bool> survive,
-    const std::vector<std::pair<std::size_t, std::size_t>> &coplanar_pairs,
     const std::vector<std::pair<std::size_t, std::size_t>> &ray_pairs) {
   std::size_t num_half_chains = (chains.offsets.size() - 1) * 2;
   std::size_t num_chains = chains.offsets.size() - 1;
 
   // Build connected components: coplanar + ray + dual cancellation → same face
-  std::vector<std::pair<std::size_t, std::size_t>> face_edges;
-  face_edges.reserve(coplanar_pairs.size() + ray_pairs.size() + num_chains);
-  face_edges.insert(face_edges.end(), coplanar_pairs.begin(),
-                    coplanar_pairs.end());
-  face_edges.insert(face_edges.end(), ray_pairs.begin(), ray_pairs.end());
+  std::vector<std::pair<std::size_t, std::size_t>> same_face_half_chains;
+  same_face_half_chains.reserve(next_half_chain.size() + ray_pairs.size() + num_chains);
+
+  for(std::size_t i = 0; i < next_half_chain.size(); i++) {
+    same_face_half_chains.emplace_back(i, next_half_chain[i].id);
+  }
+
+  same_face_half_chains.insert(same_face_half_chains.end(), ray_pairs.begin(), ray_pairs.end());
 
   for (std::size_t chain_idx = 0; chain_idx < num_chains; chain_idx++) {
     std::size_t forward_id = 2 * chain_idx, reverse_id = 2 * chain_idx + 1;
     if (survive[forward_id] && survive[reverse_id]) {
       survive[forward_id] = survive[reverse_id] = false;
-      face_edges.emplace_back(forward_id, reverse_id);
+      same_face_half_chains.emplace_back(forward_id, reverse_id);
     }
   }
 
@@ -39,7 +41,7 @@ multi_polygon build_output(
     }
   }
 
-  auto component_id = connected_components(num_half_chains, face_edges);
+  auto component_id = connected_components(num_half_chains, same_face_half_chains);
 
   std::vector<std::pair<std::size_t, std::size_t>> half_chain_to_face;
   for (std::size_t i = 0; i < num_half_chains; i++) {
