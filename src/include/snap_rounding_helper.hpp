@@ -35,56 +35,6 @@ inline multi_coordinate_type cross(coordinate_type dx1, coordinate_type dy1,
   return (multi_coordinate_type)dx1 * dy2 - (multi_coordinate_type)dy1 * dx2;
 }
 
-inline std::optional<point> get_intersection(segment s1, segment s2) {
-  coordinate_type x1 = bg::get<0, 0>(s1), y1 = bg::get<0, 1>(s1);
-  coordinate_type x2 = bg::get<1, 0>(s1), y2 = bg::get<1, 1>(s1);
-  coordinate_type x3 = bg::get<0, 0>(s2), y3 = bg::get<0, 1>(s2);
-  coordinate_type x4 = bg::get<1, 0>(s2), y4 = bg::get<1, 1>(s2);
-  coordinate_type dx1 = x2 - x1, dy1 = y2 - y1;
-  coordinate_type dx2 = x4 - x3, dy2 = y4 - y3;
-
-  // Fast path: axis-aligned segments.
-  if (dx1 == 0 && dy2 == 0) {
-    if (x1 <= std::min(x3, x4) || x1 >= std::max(x3, x4))
-      return {};
-    if (y3 <= std::min(y1, y2) || y3 >= std::max(y1, y2))
-      return {};
-    return point{x1, y3};
-  }
-  if (dy1 == 0 && dx2 == 0) {
-    if (x3 <= std::min(x1, x2) || x3 >= std::max(x1, x2))
-      return {};
-    if (y1 <= std::min(y3, y4) || y1 >= std::max(y3, y4))
-      return {};
-    return point{x3, y1};
-  }
-
-  if (cross(dx1, dy1, dx2, dy2) == 0)
-    return {};
-
-  multi_coordinate_type d = cross(dx1, dy1, dx2, dy2);
-  multi_coordinate_type t1_num = cross(x3 - x1, y3 - y1, dx2, dy2);
-  multi_coordinate_type t2_num = cross(x3 - x1, y3 - y1, dx1, dy1);
-  if (d < 0) {
-    d = -d;
-    t1_num = -t1_num;
-    t2_num = -t2_num;
-  }
-  if (t1_num <= 0 || t1_num >= d || t2_num <= 0 || t2_num >= d)
-    return {};
-
-  auto snap = [&](coordinate_type x, coordinate_type dx,
-                  multi_coordinate_type num,
-                  multi_coordinate_type den) -> coordinate_type {
-    multi_coordinate_type num_dx = num * dx;
-    multi_coordinate_type n = 2 * num_dx + den - 1;
-    multi_coordinate_type dd = 2 * den;
-    multi_coordinate_type q = n >= 0 ? n / dd : (n - dd + 1) / dd;
-    return (coordinate_type)(x + q);
-  };
-  return point{snap(x1, dx1, t1_num, d), snap(y1, dy1, t1_num, d)};
-}
-
 // Hot pixel Pi(p) = [x-0.5, x+0.5) x [y-0.5, y+0.5) — unit square centered at
 // integral point p.  Left/bottom closed, right/top open.  This half-open
 // convention guarantees each plane point belongs to exactly one pixel and is
@@ -149,6 +99,59 @@ inline bool is_point_on_segment(point p, segment s) {
     }
   }
   return true;
+}
+
+inline std::optional<point> get_intersection(segment s1, segment s2) {
+  coordinate_type x1 = bg::get<0, 0>(s1), y1 = bg::get<0, 1>(s1);
+  coordinate_type x2 = bg::get<1, 0>(s1), y2 = bg::get<1, 1>(s1);
+  coordinate_type x3 = bg::get<0, 0>(s2), y3 = bg::get<0, 1>(s2);
+  coordinate_type x4 = bg::get<1, 0>(s2), y4 = bg::get<1, 1>(s2);
+  coordinate_type dx1 = x2 - x1, dy1 = y2 - y1;
+  coordinate_type dx2 = x4 - x3, dy2 = y4 - y3;
+
+  // Fast path: axis-aligned segments.
+  if (dx1 == 0 && dy2 == 0) {
+    if (x1 <= std::min(x3, x4) || x1 >= std::max(x3, x4))
+      return {};
+    if (y3 <= std::min(y1, y2) || y3 >= std::max(y1, y2))
+      return {};
+    return point{x1, y3};
+  }
+  if (dy1 == 0 && dx2 == 0) {
+    if (x3 <= std::min(x1, x2) || x3 >= std::max(x1, x2))
+      return {};
+    if (y1 <= std::min(y3, y4) || y1 >= std::max(y3, y4))
+      return {};
+    return point{x3, y1};
+  }
+
+  if (cross(dx1, dy1, dx2, dy2) == 0)
+    return {};
+
+  multi_coordinate_type d = cross(dx1, dy1, dx2, dy2);
+  multi_coordinate_type t1_num = cross(x3 - x1, y3 - y1, dx2, dy2);
+  multi_coordinate_type t2_num = cross(x3 - x1, y3 - y1, dx1, dy1);
+  if (d < 0) {
+    d = -d;
+    t1_num = -t1_num;
+    t2_num = -t2_num;
+  }
+  if (t1_num <= 0 || t1_num >= d || t2_num <= 0 || t2_num >= d)
+    return {};
+
+  auto snap = [&](coordinate_type x, coordinate_type dx,
+                  multi_coordinate_type num,
+                  multi_coordinate_type den) -> coordinate_type {
+    multi_coordinate_type num_dx = num * dx;
+    multi_coordinate_type n = 2 * num_dx + den - 1;
+    multi_coordinate_type dd = 2 * den;
+    multi_coordinate_type q = n >= 0 ? n / dd : (n - dd + 1) / dd;
+    return (coordinate_type)(x + q);
+  };
+  auto ret = point{snap(x1, dx1, t1_num, d), snap(y1, dy1, t1_num, d)};
+  assert(is_point_on_segment(ret, s1));
+  assert(is_point_on_segment(ret, s2));
+  return ret;
 }
 
 } // namespace best_clipper
