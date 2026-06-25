@@ -30,7 +30,7 @@ std::vector<int> compute_winding(
   for (auto exterior : exterior_half_chains)
     winding[exterior.id] = 0;
 
-  std::vector<half_chain> stack(exterior_half_chains.begin(),
+  std::vector<half_chain_t> stack(exterior_half_chains.begin(),
                                  exterior_half_chains.end());
   while (!stack.empty()) {
     auto u = stack.back();
@@ -39,7 +39,7 @@ std::vector<int> compute_winding(
       auto v = adjacency[j];
       if (winding[v] == UNKNOWN) {
         winding[v] = winding[u.id];
-        stack.push_back(half_chain{v});
+        stack.push_back(half_chain_t{v});
       }
     }
     // Dual edge: i ↔ i^1 with winding difference = -power of i

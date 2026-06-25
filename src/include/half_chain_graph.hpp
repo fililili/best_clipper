@@ -6,7 +6,7 @@
 
 namespace best_clipper {
 
-struct half_chain {
+struct half_chain_t {
   std::size_t id;
   std::size_t chain_id() const { return id / 2; }
   bool is_forward() const { return id % 2 == 0; }
@@ -34,11 +34,11 @@ struct half_chain {
     else
       return -chains.powers[chain_id()];
   }
-  auto operator<=> (const half_chain &other) const = default;
-  half_chain dual() const { return {id ^ 1}; }
+  auto operator<=> (const half_chain_t &other) const = default;
+  half_chain_t dual() const { return {id ^ 1}; }
 };
 
-using hcg_tuple = std::tuple<std::vector<half_chain>, std::vector<std::size_t>>;
+using hcg_tuple = std::tuple<std::vector<half_chain_t>, std::vector<std::size_t>>;
 
 hcg_tuple build_half_chain_graph(const chain_group &chains,
                                  const std::vector<point> &hot_pixels);

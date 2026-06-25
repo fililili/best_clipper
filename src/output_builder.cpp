@@ -74,7 +74,7 @@ multi_polygon build_output(
       if (done[current_id])
         continue;
       do {
-        auto h = half_chain{current_id};
+        auto h = half_chain_t{current_id};
         auto chain_idx = h.chain_id();
         auto chain_begin = chains.offsets[chain_idx],
              chain_end = chains.offsets[chain_idx + 1];
