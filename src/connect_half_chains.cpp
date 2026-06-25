@@ -15,9 +15,9 @@ namespace best_clipper {
 namespace bg = boost::geometry;
 
 void sort_bucket_half_chains(const chain_group &chains,
-                        const std::vector<point> &hot_pixels,
                         std::vector<half_chain_t> &bucket_half_chains,
                         const std::vector<std::size_t> &bucket_half_chains_offsets) {
+  const std::vector<point> &hot_pixels = chains.hot_pixels;
   std::size_t num_half_chains = (chains.offsets.size() - 1) * 2;
   std::size_t num_vertices = hot_pixels.size();
 
@@ -214,16 +214,13 @@ constexpr auto less_by_direction_neg_x_split = [](point source, point target1, p
     int64_t cross = (int64_t)dy1 * dx2 - (int64_t)dy2 * dx1;
     return cross < 0;
 };
-// ---------------------------------------------------------------------------
-// build_half_chain_relations_t
-// ---------------------------------------------------------------------------
 
 half_chain_relations_t
-build_half_chain_relations_t(const chain_group &chains,
-              const std::vector<point> &hot_pixels,
+build_half_chain_relations(const chain_group &chains,
               std::vector<half_chain_t> bucket_half_chains,
               const std::vector<std::size_t> &bucket_half_chains_offsets) {
-  sort_bucket_half_chains(chains, hot_pixels, bucket_half_chains, bucket_half_chains_offsets);
+  const std::vector<point> &hot_pixels = chains.hot_pixels;
+  sort_bucket_half_chains(chains, bucket_half_chains, bucket_half_chains_offsets);
 
   auto next_half_chain = build_next_chains(bucket_half_chains, bucket_half_chains_offsets);
 

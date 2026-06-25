@@ -34,6 +34,6 @@ std::vector<std::size_t> connected_components(
 
 chain_group
 build_chains(const std::vector<edge_with_power_t> &sorted_edges,
-             std::size_t node_num);
+             std::size_t node_num, const std::vector<point>& points);
 
 } // namespace best_clipper

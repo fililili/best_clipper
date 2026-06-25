@@ -17,9 +17,7 @@ struct half_chain_relations_t {
     std::vector<ray_pair> ray_pairs;
 };
 
-half_chain_relations_t build_half_chain_relations_t(const chain_group &chains,
-                       const std::vector<point> &hot_pixels,
-                       std::vector<half_chain_t> bucket_half_chains,
+half_chain_relations_t build_half_chain_relations(const chain_group &chains, std::vector<half_chain_t> bucket_half_chains,
                        const std::vector<std::size_t> &bucket_half_chains_offsets);
 
 } // namespace best_clipper

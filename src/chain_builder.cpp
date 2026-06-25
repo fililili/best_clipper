@@ -214,7 +214,7 @@ unique_edges(std::vector<edge_with_power_t> edges, std::size_t num_vertices) {
 // build_chains_from_input
 // ---------------------------------------------------------------------------
 
-std::tuple<std::vector<point>, chain_group>
+chain_group
 build_chains_from_input(const std::vector<point> &points,
                         const std::vector<std::size_t> &offsets) {
   assert(offsets.size() >= 1);
@@ -239,9 +239,7 @@ build_chains_from_input(const std::vector<point> &points,
   }
 #endif
 
-  auto chains = build_chains(sorted_edges, hot_pixels.size());
-
-  return std::tuple{std::move(hot_pixels), std::move(chains)};
+  return build_chains(sorted_edges, hot_pixels.size(), hot_pixels);
 }
 
 } // namespace best_clipper

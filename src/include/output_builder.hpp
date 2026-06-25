@@ -10,7 +10,7 @@
 namespace best_clipper {
 
 multi_polygon build_output(
-    const chain_group &chains, const std::vector<point> &hot_pixels,
+    const chain_group &chains,
     half_chain_relations_t half_chain_relations, std::vector<bool> survive);
 
 } // namespace best_clipper

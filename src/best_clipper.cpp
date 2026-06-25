@@ -90,20 +90,20 @@ static auto collect_segments(const multi_polygon &mp1,
 
 inline auto run_pipeline(std::vector<point> points,
                          std::vector<std::size_t> offsets, auto filter) {
-  auto [hot_pixels, chains] = build_chains_from_input(points, offsets);
+  auto chains = build_chains_from_input(points, offsets);
 
   auto [bucket_half_chains, half_chains] =
-      build_half_chain_graph(chains, hot_pixels);
+      build_half_chain_graph(chains);
 
   auto half_chain_relations =
-      build_half_chain_relations_t(chains, hot_pixels, std::move(bucket_half_chains), std::move(half_chains));
+      build_half_chain_relations(chains, std::move(bucket_half_chains), std::move(half_chains));
 
   auto winding =
       compute_winding(chains, half_chain_relations);
 
   auto survive = filter_survive(winding, filter);
 
-  auto result = build_output(chains, hot_pixels, half_chain_relations, survive);
+  auto result = build_output(chains, half_chain_relations, survive);
   return result;
 }
 

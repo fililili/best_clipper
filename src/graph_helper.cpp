@@ -45,7 +45,7 @@ std::vector<std::size_t> connected_components(
 
 chain_group
 build_chains(const std::vector<edge_with_power_t> &sorted_edges,
-             std::size_t node_num) {
+             std::size_t node_num, const std::vector<point>& points) {
   std::vector<std::size_t> edge_offsets(node_num + 1, 0);
   {
     std::vector<std::size_t> edge_count(node_num, 0);
@@ -140,7 +140,7 @@ build_chains(const std::vector<edge_with_power_t> &sorted_edges,
     off.push_back(idx.size());
   }
 
-  return {std::move(idx), std::move(off), std::move(powers)};
+  return {std::move(points), std::move(idx), std::move(off), std::move(powers)};
 }
 
 } // namespace best_clipper

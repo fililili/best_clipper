@@ -40,7 +40,6 @@ struct half_chain_t {
 
 using hcg_tuple = std::tuple<std::vector<half_chain_t>, std::vector<std::size_t>>;
 
-hcg_tuple build_half_chain_graph(const chain_group &chains,
-                                 const std::vector<point> &hot_pixels);
+hcg_tuple build_half_chain_graph(const chain_group &chains);
 
 } // namespace best_clipper

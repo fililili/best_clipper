@@ -9,8 +9,8 @@
 
 namespace best_clipper {
 
-hcg_tuple build_half_chain_graph(const chain_group &chains,
-                                 const std::vector<point> &hot_pixels) {
+hcg_tuple build_half_chain_graph(const chain_group &chains) {
+  const std::vector<point> &hot_pixels = chains.hot_pixels;
   std::size_t num_half_chains = (chains.offsets.size() - 1) * 2;
   std::size_t num_vertices = hot_pixels.size();
 
