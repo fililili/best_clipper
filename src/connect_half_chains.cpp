@@ -128,11 +128,11 @@ constexpr auto less_by_direction_neg_x_split = [](point source, point target1, p
     return cross < 0;
 };
 // ---------------------------------------------------------------------------
-// find_exterior
+// build_half_chain_relations
 // ---------------------------------------------------------------------------
 
 fe_tuple
-find_exterior(const chain_group &chains,
+build_half_chain_relations(const chain_group &chains,
               const std::vector<point> &hot_pixels,
               const std::vector<half_chain> &sorted_half_chains,
               const std::vector<std::size_t> &sorted_half_chains_offsets) {

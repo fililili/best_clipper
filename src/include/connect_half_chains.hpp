@@ -10,7 +10,7 @@ namespace best_clipper {
 using fe_tuple = std::tuple<std::vector<std::size_t>,
                             std::vector<std::pair<std::size_t, std::size_t>>>;
 
-fe_tuple find_exterior(const chain_group &chains,
+fe_tuple build_half_chain_relations(const chain_group &chains,
                        const std::vector<point> &hot_pixels,
                        const std::vector<half_chain> &sorted_half_chains,
                        const std::vector<std::size_t> &sorted_half_chains_offsets);

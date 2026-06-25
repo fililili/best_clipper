@@ -79,6 +79,25 @@ void sort_bucket_half_chains(const chain_group &chains,
   }
 }
 
+std::vector<half_chain> build_next_chains(std::vector<half_chain> &bucket_half_chains, std::vector<std::size_t> &bucket_half_chains_offsets) {
+  std::vector<half_chain> next_half_chain(bucket_half_chains.size(), {~0ULL});
+
+  for (std::size_t i = 0; i + 1 < bucket_half_chains_offsets.size(); ++i) {
+    auto vertex_begin = bucket_half_chains_offsets[i], vertex_end = bucket_half_chains_offsets[i + 1];
+    if (vertex_begin == vertex_end) {
+      continue; // skip by hand for head tail next relation
+    }
+    for (auto it = vertex_begin + 1; it < vertex_end; ++it) {
+      auto prev = bucket_half_chains[it - 1], cur = bucket_half_chains[it];
+      next_half_chain[prev.dual().id] = cur;
+    }
+    auto first = bucket_half_chains[vertex_begin],
+         last = bucket_half_chains[vertex_end - 1];
+    next_half_chain[last.dual().id] = first;
+  }
+  return next_half_chain;
+}
+
 hcg_tuple build_half_chain_graph(const chain_group &chains,
                                  const std::vector<point> &hot_pixels) {
   std::size_t num_half_chains = (chains.offsets.size() - 1) * 2;
@@ -95,20 +114,7 @@ hcg_tuple build_half_chain_graph(const chain_group &chains,
       
   sort_bucket_half_chains(chains, hot_pixels, bucket_half_chains, bucket_half_chains_offsets);
 
-  std::vector<half_chain> next_half_chain(num_half_chains, {~0ULL});
-
-  for (std::size_t v = 0; v < num_vertices; v++) {
-    auto vertex_begin = bucket_half_chains_offsets[v], vertex_end = bucket_half_chains_offsets[v + 1];
-    if (vertex_begin == vertex_end)
-      continue;
-    for (auto it = vertex_begin + 1; it < vertex_end; ++it) {
-      auto prev = bucket_half_chains[it - 1], cur = bucket_half_chains[it];
-      next_half_chain[prev.dual().id] = cur;
-    }
-    auto first = bucket_half_chains[vertex_begin],
-         last = bucket_half_chains[vertex_end - 1];
-    next_half_chain[last.dual().id] = first;
-  }
+  auto next_half_chain = build_next_chains(bucket_half_chains, bucket_half_chains_offsets);
 
   return hcg_tuple{std::move(bucket_half_chains), std::move(bucket_half_chains_offsets),
                    std::move(next_half_chain)};

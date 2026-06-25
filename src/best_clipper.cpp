@@ -96,7 +96,7 @@ inline auto run_pipeline(std::vector<point> points,
       build_half_chain_graph(chains, hot_pixels);
 
   auto [exterior_half_chains, ray_pairs] =
-      find_exterior(chains, hot_pixels, sorted_half_chains, half_chains);
+      build_half_chain_relations(chains, hot_pixels, sorted_half_chains, half_chains);
 
   auto winding =
       compute_winding(chains, next_half_chain, ray_pairs, exterior_half_chains);
