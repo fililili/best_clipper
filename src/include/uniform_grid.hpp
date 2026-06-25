@@ -1,6 +1,6 @@
 #pragma once
 
-/// Uniform grid spatial index for int32_t-coordinate 2D bounding boxes.
+/// Uniform grid spatial index for coordinate_type 2D bounding boxes.
 ///
 /// Divides space into fixed-size cells. Each item (box + index) is placed
 /// into every cell its box touches. The grid only stores cell→item-index
@@ -17,22 +17,23 @@ namespace best_clipper::uniform_grid {
 
 struct grid {
 
-  std::size_t get_flat_index(coordinate_type x_cell, coordinate_type y_cell) const {
+  std::size_t get_flat_index(coordinate_type x_cell,
+                             coordinate_type y_cell) const {
     assert(x_cell >= 0 && x_cell < _x_cells);
     assert(y_cell >= 0 && y_cell < _y_cells);
     return (std::size_t)y_cell * _x_cells + x_cell;
   }
 
   coordinate_type cell_x(coordinate_type x) const {
-    return std::clamp(((x - _min_x) / _cell_size), (coordinate_type)0, _x_cells - 1);
+    return std::clamp(((x - _min_x) / _cell_size), (coordinate_type)0,
+                      _x_cells - 1);
   }
   coordinate_type cell_y(coordinate_type y) const {
-    return std::clamp(((y - _min_y) / _cell_size), (coordinate_type)0, _y_cells - 1);
+    return std::clamp(((y - _min_y) / _cell_size), (coordinate_type)0,
+                      _y_cells - 1);
   }
 
-  std::size_t cells() {
-    return _x_cells * _y_cells;
-  }
+  std::size_t cells() { return (std::size_t)_x_cells * _y_cells; }
 
   /// Build from boxes. Item index = position in the vector.
   explicit grid(const std::vector<box> &items) {
@@ -64,7 +65,7 @@ struct grid {
     _cell_size = std::max((coordinate_type)1, std::max(dx, dy) / cells_per_dim);
     _x_cells = (max_x - min_x) / _cell_size + 1;
     _y_cells = (max_y - min_y) / _cell_size + 1;
-    std::size_t num_cells = _x_cells * _y_cells;
+    std::size_t num_cells = (std::size_t)_x_cells * _y_cells;
 
     std::vector<std::pair<std::size_t, std::size_t>> cell_pairs;
     cell_pairs.reserve(n * 4);
@@ -119,15 +120,19 @@ struct grid {
       }
     }
   }
-  
+
   template <typename Callback>
-  void query_ray_left(coordinate_type query_x, coordinate_type query_y, Callback &&cb) const {
+  void query_ray_left(coordinate_type query_x, coordinate_type query_y,
+                      Callback &&cb) const {
     coordinate_type cx = cell_x(query_x);
     coordinate_type cy = cell_y(query_y);
-    coordinate_type best_x_floor = std::numeric_limits<coordinate_type>::min(); 
-    // best_x_real is not interger, so we store the floor of it. best_x_real >= best_x_floor
-    for (coordinate_type current_cx = cx; current_cx != (coordinate_type)(-1); current_cx--) {
-      if (best_x_floor > _min_x + (current_cx + 1) * _cell_size) {
+    coordinate_type best_x_floor = std::numeric_limits<coordinate_type>::min();
+    // best_x_real is not interger, so we store the floor of it. best_x_real >=
+    // best_x_floor
+    for (coordinate_type current_cx = cx; current_cx != (coordinate_type)(-1);
+         current_cx--) {
+      if (best_x_floor >
+          _min_x + (multi_coordinate_type)(current_cx + 1) * _cell_size) {
         break;
       }
       std::size_t ci = get_flat_index(current_cx, cy);
@@ -140,7 +145,8 @@ struct grid {
   coordinate_type _min_x = 0, _min_y = 0, _cell_size = 0;
   coordinate_type _x_cells = 0; // use coordinate_type because _x_cells < max_x
   coordinate_type _y_cells = 0;
-  std::vector<size_t>  _cell_begins; // dense: (x_cells * y_cells + 1) offsets into _cell_items
+  std::vector<size_t>
+      _cell_begins; // dense: (x_cells * y_cells + 1) offsets into _cell_items
   std::vector<size_t> _cell_items; // flat item indices, grouped by cell
 };
 

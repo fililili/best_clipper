@@ -75,7 +75,9 @@ void sort_bucket_half_chains(
                   auto ay = bg::get<1>(a_pt) - vy;
                   auto bx = bg::get<0>(b_pt) - vx;
                   auto by = bg::get<1>(b_pt) - vy;
-                  return ax * by - ay * bx > 0;
+                  return (multi_coordinate_type)ax * by -
+                             (multi_coordinate_type)ay * bx >
+                         0;
                 });
     }
 
@@ -131,7 +133,8 @@ half_chain_t cast_ray_minus_x(coordinate_type vx, coordinate_type ray_y,
   auto point_on_seg_order = [](coordinate_type x, coordinate_type y,
                                coordinate_type x1, coordinate_type y1,
                                coordinate_type x2, coordinate_type y2) {
-    return (x2 - x1) * (y - y1) - (y2 - y1) * (x - x1) <=>
+    return (multi_coordinate_type)(x2 - x1) * (y - y1) -
+               (multi_coordinate_type)(y2 - y1) * (x - x1) <=>
            0; // <0 is right, =0 is on, >0 is left
   };
   auto none_intersect_segs_compare_by_xray =
@@ -195,7 +198,8 @@ half_chain_t cast_ray_minus_x(coordinate_type vx, coordinate_type ray_y,
 constexpr auto less_by_direction_neg_x_split = [](point source, point target1,
                                                   point target2) {
   enum class quadrant { _3, _4, _1, _2, zero };
-  constexpr auto get_quadrant = [](int32_t dx, int32_t dy) -> quadrant {
+  constexpr auto get_quadrant = [](coordinate_type dx,
+                                   coordinate_type dy) -> quadrant {
     if (dx < 0 && dy <= 0)
       return quadrant::_3;
     else if (dx >= 0 && dy < 0)
@@ -207,10 +211,10 @@ constexpr auto less_by_direction_neg_x_split = [](point source, point target1,
     return quadrant::zero;
   };
 
-  int32_t dx1 = bg::get<0>(target1) - bg::get<0>(source);
-  int32_t dy1 = bg::get<1>(target1) - bg::get<1>(source);
-  int32_t dx2 = bg::get<0>(target2) - bg::get<0>(source);
-  int32_t dy2 = bg::get<1>(target2) - bg::get<1>(source);
+  coordinate_type dx1 = bg::get<0>(target1) - bg::get<0>(source);
+  coordinate_type dy1 = bg::get<1>(target1) - bg::get<1>(source);
+  coordinate_type dx2 = bg::get<0>(target2) - bg::get<0>(source);
+  coordinate_type dy2 = bg::get<1>(target2) - bg::get<1>(source);
 
   auto q1 = get_quadrant(dx1, dy1);
   auto q2 = get_quadrant(dx2, dy2);
@@ -219,7 +223,8 @@ constexpr auto less_by_direction_neg_x_split = [](point source, point target1,
 
   // Same quadrant: compare slopes using cross product.
   // slope1 < slope2  ⟺  cross = dy1*dx2 - dy2*dx1 < 0 in all quadrants.
-  int64_t cross = (int64_t)dy1 * dx2 - (int64_t)dy2 * dx1;
+  multi_coordinate_type cross =
+      (multi_coordinate_type)dy1 * dx2 - (multi_coordinate_type)dy2 * dx1;
   return cross < 0;
 };
 
@@ -254,8 +259,8 @@ half_chain_relations_t build_half_chain_relations(
   std::vector<point> ray_start_points(num_components);
   std::vector<half_chain_t> ray_start_half_chains(num_components);
   {
-    std::vector<coordinate_type> min_xs(num_components,
-                                        std::numeric_limits<int32_t>::max());
+    std::vector<coordinate_type> min_xs(
+        num_components, std::numeric_limits<coordinate_type>::max());
     std::vector<std::size_t> chain_ids(num_components);
     std::vector<std::size_t> position_in_chains(num_components);
     std::vector<bool> is_end_points(num_components);
@@ -342,7 +347,7 @@ half_chain_relations_t build_half_chain_relations(
   for (std::size_t component_id = 0; component_id < num_components;
        ++component_id) {
     auto min_x = bg::get<0>(ray_start_points[component_id]);
-    int32_t ray_y = bg::get<1>(ray_start_points[component_id]);
+    coordinate_type ray_y = bg::get<1>(ray_start_points[component_id]);
     auto hit = cast_ray_minus_x(min_x, ray_y, seg_grid, seg_data);
     if (hit == half_chain_t{~0ULL}) {
       exterior_half_chains.push_back(ray_start_half_chains[component_id]);

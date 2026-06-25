@@ -102,11 +102,11 @@ multi_polygon build_output(const chain_group &chains,
 
     std::size_t outer_index = 0;
     {
-      int32_t min_x = std::numeric_limits<int32_t>::max();
+      coordinate_type min_x = std::numeric_limits<coordinate_type>::max();
       for (std::size_t ring_index = 0; ring_index < rings.size();
            ring_index++) {
         for (const auto &point_value : rings[ring_index]) {
-          int32_t x = bg::get<0>(point_value);
+          coordinate_type x = bg::get<0>(point_value);
           if (x < min_x) {
             min_x = x;
             outer_index = ring_index;

@@ -116,7 +116,8 @@ construct_graph(const std::vector<point> &points,
   std::vector<std::size_t> last_seen(points.size(), ~0ULL);
   std::vector<std::size_t> candidates;
   for (std::size_t pi = 0; pi < hot_pixels.size(); pi++) {
-    int32_t x = bg::get<0>(hot_pixels[pi]), y = bg::get<1>(hot_pixels[pi]);
+    coordinate_type x = bg::get<0>(hot_pixels[pi]),
+                    y = bg::get<1>(hot_pixels[pi]);
     auto query_box = box{{x - 1, y - 1}, {x + 1, y + 1}};
     candidates.clear();
     segments_box_grid.query_intersects(query_box, [&](std::size_t pos) {
