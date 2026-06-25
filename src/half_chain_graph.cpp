@@ -26,7 +26,7 @@ void sort_bucket_half_chains(const chain_group &chains,
     auto begin_it = bucket_half_chains.begin() + vertex_begin;
 
     point vpt = hot_pixels[v];
-    int32_t vx = bg::get<0>(vpt), vy = bg::get<1>(vpt);
+    coordinate_type vx = bg::get<0>(vpt), vy = bg::get<1>(vpt);
 
     // Bucket by octant (8 buckets, octant 0 starts at -x).
     std::array<std::size_t, 8> bucket_cnt{};
@@ -34,8 +34,8 @@ void sort_bucket_half_chains(const chain_group &chains,
     for (std::size_t i = 0; i < n; i++) {
       auto h = begin_it[i];
       auto pt = hot_pixels[h.next_along_source(chains)];
-      int64_t dx = (int64_t)bg::get<0>(pt) - vx;
-      int64_t dy = (int64_t)bg::get<1>(pt) - vy;
+      coordinate_type dx = bg::get<0>(pt) - vx;
+      coordinate_type dy = bg::get<1>(pt) - vy;
       int oct;
       if (dx <= 0) {
         if (dy <= 0)
@@ -67,10 +67,10 @@ void sort_bucket_half_chains(const chain_group &chains,
                 [&](half_chain a, half_chain b) {
                   auto a_pt = hot_pixels[a.next_along_source(chains)];
                   auto b_pt = hot_pixels[b.next_along_source(chains)];
-                  int64_t ax = (int64_t)bg::get<0>(a_pt) - vx;
-                  int64_t ay = (int64_t)bg::get<1>(a_pt) - vy;
-                  int64_t bx = (int64_t)bg::get<0>(b_pt) - vx;
-                  int64_t by = (int64_t)bg::get<1>(b_pt) - vy;
+                  auto ax = bg::get<0>(a_pt) - vx;
+                  auto ay = bg::get<1>(a_pt) - vy;
+                  auto bx = bg::get<0>(b_pt) - vx;
+                  auto by = bg::get<1>(b_pt) - vy;
                   return ax * by - ay * bx > 0;
                 });
     }
