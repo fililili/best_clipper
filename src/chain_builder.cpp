@@ -216,8 +216,10 @@ unique_edges(std::vector<edge_with_power_t> edges, std::size_t num_vertices) {
 // build_chains_from_input
 // ---------------------------------------------------------------------------
 
-chain_group build_chains_from_input(const std::vector<point> &points,
-                                    const std::vector<std::size_t> &offsets) {
+std::tuple<chain_group, std::vector<std::size_t>, std::vector<std::size_t>,
+           std::vector<std::size_t>, std::vector<std::size_t>>
+build_chains_from_input(const std::vector<point> &points,
+                        const std::vector<std::size_t> &offsets) {
   assert(offsets.size() >= 1);
   assert(offsets[0] == 0);
   assert(offsets.back() == points.size());
@@ -242,10 +244,10 @@ chain_group build_chains_from_input(const std::vector<point> &points,
   auto [chain_indexes, chain_offsets, chain_powers, chain_out_offsets,
         chain_out_chains, chain_in_offsets, chain_in_chains] =
       build_chains(sorted_edges, hot_pixels.size());
-  return {std::move(hot_pixels),        std::move(chain_indexes),
-          std::move(chain_offsets),     std::move(chain_powers),
+  return {chain_group{std::move(hot_pixels), std::move(chain_indexes),
+                      std::move(chain_offsets), std::move(chain_powers)},
           std::move(chain_out_offsets), std::move(chain_out_chains),
-          std::move(chain_in_offsets),  std::move(chain_in_chains)};
+          std::move(chain_in_offsets), std::move(chain_in_chains)};
 }
 
 } // namespace best_clipper

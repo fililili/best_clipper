@@ -34,12 +34,18 @@ struct half_chain_t {
     else
       return -chains.powers[chain_id()];
   }
-  auto operator<=> (const half_chain_t &other) const = default;
+  auto operator<=>(const half_chain_t &other) const = default;
   half_chain_t dual() const { return {id ^ 1}; }
 };
 
-using half_chain_group_t = std::tuple<std::vector<half_chain_t>, std::vector<std::size_t>>;
+using half_chain_group_t =
+    std::tuple<std::vector<half_chain_t>, std::vector<std::size_t>>;
 
-half_chain_group_t build_half_chain_graph(const chain_group &chains);
+half_chain_group_t
+build_half_chain_graph(const chain_group &chains,
+                       const std::vector<std::size_t> &out_offsets,
+                       const std::vector<std::size_t> &out_chains,
+                       const std::vector<std::size_t> &in_offsets,
+                       const std::vector<std::size_t> &in_chains);
 
 } // namespace best_clipper

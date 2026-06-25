@@ -17,8 +17,7 @@ namespace bg = boost::geometry;
 void sort_bucket_half_chains(
     const chain_group &chains, std::vector<half_chain_t> &bucket_half_chains,
     const std::vector<std::size_t> &bucket_half_chains_offsets) {
-  assert(chains.out_offsets.size() == chains.in_offsets.size());
-  std::size_t num_end_points = chains.out_offsets.size() - 1;
+  std::size_t num_end_points = bucket_half_chains_offsets.size() - 1;
 
   const std::vector<point> &hot_pixels = chains.hot_pixels;
   std::size_t num_half_chains = (chains.offsets.size() - 1) * 2;
