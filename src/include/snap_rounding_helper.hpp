@@ -35,11 +35,13 @@ inline multi_coordinate_type cross(coordinate_type dx1, coordinate_type dy1,
   return (multi_coordinate_type)dx1 * dy2 - (multi_coordinate_type)dy1 * dx2;
 }
 
-// Hot pixel Pi(p) = [x-0.5, x+0.5) x [y-0.5, y+0.5) — unit square centered at
-// integral point p.  Left/bottom closed, right/top open.  This half-open
+// Hot pixel Pi(p) = (x-0.5, x+0.5] x (y-0.5, y+0.5] — unit square centered at
+// integral point p.  Right/top closed, left/bottom open.  This half-open
 // convention guarantees each plane point belongs to exactly one pixel and is
 // the foundation of the topological consistency proof in Guibas & Marimont
 // (1998, "Rounding Arrangements Dynamically", section 2-3).
+// Snap rounding in get_intersection() rounds half-integers toward -inf
+// (left/bottom), consistent with the open boundaries.
 inline bool is_point_on_segment(point p, segment s) {
   coordinate_type x = bg::get<0>(p), y = bg::get<1>(p);
   coordinate_type x1 = bg::get<0, 0>(s), y1 = bg::get<0, 1>(s);
