@@ -92,11 +92,11 @@ inline auto run_pipeline(std::vector<point> points,
                          std::vector<std::size_t> offsets, auto filter) {
   auto chains = build_chains_from_input(points, offsets);
 
-  auto [bucket_half_chains, half_chains] =
+  auto [bucket_half_chains, bucket_half_chains_offsets] =
       build_half_chain_graph(chains);
 
   auto half_chain_relations =
-      build_half_chain_relations(chains, std::move(bucket_half_chains), std::move(half_chains));
+      build_half_chain_relations(chains, std::move(bucket_half_chains), std::move(bucket_half_chains_offsets));
 
   auto winding =
       compute_winding(chains, half_chain_relations);

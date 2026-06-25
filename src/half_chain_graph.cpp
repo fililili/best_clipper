@@ -22,6 +22,7 @@ hcg_tuple build_half_chain_graph(const chain_group &chains) {
   auto [bucket_half_chains_offsets, bucket_half_chains] = bucket_sort(
       all, num_vertices, [&](half_chain_t h) { return h.source_node(chains); },
       [](half_chain_t h) { return h; });
+  bucket_half_chains.erase(std::unique(bucket_half_chains.begin(), bucket_half_chains.end()), bucket_half_chains.end());
 
   return hcg_tuple{std::move(bucket_half_chains), std::move(bucket_half_chains_offsets)};
 }
