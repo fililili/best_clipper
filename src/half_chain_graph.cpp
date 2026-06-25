@@ -11,26 +11,19 @@ namespace best_clipper {
 
 namespace bg = boost::geometry;
 
-hcg_tuple build_half_chain_graph(const chain_group &chains,
-                                 const std::vector<point> &hot_pixels) {
+void sort_bucket_half_chains(const chain_group &chains,
+                        const std::vector<point> &hot_pixels,
+                        std::vector<half_chain> &bucket_half_chains,
+                        std::vector<std::size_t> &bucket_half_chains_offsets) {
   std::size_t num_half_chains = (chains.offsets.size() - 1) * 2;
   std::size_t num_vertices = hot_pixels.size();
 
-  std::vector<half_chain> all;
-  all.reserve(num_half_chains);
-  for (std::size_t i = 0; i < num_half_chains; i++)
-    all.push_back({i});
-
-  auto [locs, sorted_half_chains] = bucket_sort(
-      all, num_vertices, [&](half_chain h) { return h.source_node(chains); },
-      [](half_chain h) { return h; });
-
   for (std::size_t v = 0; v < num_vertices; v++) {
-    auto vertex_begin = locs[v], vertex_end = locs[v + 1];
+    auto vertex_begin = bucket_half_chains_offsets[v], vertex_end = bucket_half_chains_offsets[v + 1];
     auto n = vertex_end - vertex_begin;
     if (n < 2)
       continue;
-    auto begin_it = sorted_half_chains.begin() + vertex_begin;
+    auto begin_it = bucket_half_chains.begin() + vertex_begin;
 
     point vpt = hot_pixels[v];
     int32_t vx = bg::get<0>(vpt), vy = bg::get<1>(vpt);
@@ -84,26 +77,43 @@ hcg_tuple build_half_chain_graph(const chain_group &chains,
 
     std::move(temp.begin(), temp.end(), begin_it);
   }
+}
+
+hcg_tuple build_half_chain_graph(const chain_group &chains,
+                                 const std::vector<point> &hot_pixels) {
+  std::size_t num_half_chains = (chains.offsets.size() - 1) * 2;
+  std::size_t num_vertices = hot_pixels.size();
+
+  std::vector<half_chain> all;
+  all.reserve(num_half_chains);
+  for (std::size_t i = 0; i < num_half_chains; i++)
+    all.push_back({i});
+
+  auto [bucket_half_chains_offsets, bucket_half_chains] = bucket_sort(
+      all, num_vertices, [&](half_chain h) { return h.source_node(chains); },
+      [](half_chain h) { return h; });
+      
+  sort_bucket_half_chains(chains, hot_pixels, bucket_half_chains, bucket_half_chains_offsets);
 
   std::vector<half_chain> next_half_chain(num_half_chains, {~0ULL});
   std::vector<std::pair<std::size_t, std::size_t>> coplanar;
 
   for (std::size_t v = 0; v < num_vertices; v++) {
-    auto vertex_begin = locs[v], vertex_end = locs[v + 1];
+    auto vertex_begin = bucket_half_chains_offsets[v], vertex_end = bucket_half_chains_offsets[v + 1];
     if (vertex_begin == vertex_end)
       continue;
     for (auto it = vertex_begin + 1; it < vertex_end; ++it) {
-      auto prev = sorted_half_chains[it - 1], cur = sorted_half_chains[it];
+      auto prev = bucket_half_chains[it - 1], cur = bucket_half_chains[it];
       next_half_chain[prev.dual().id] = cur;
       coplanar.emplace_back(cur.id, prev.dual().id);
     }
-    auto first = sorted_half_chains[vertex_begin],
-         last = sorted_half_chains[vertex_end - 1];
+    auto first = bucket_half_chains[vertex_begin],
+         last = bucket_half_chains[vertex_end - 1];
     next_half_chain[last.dual().id] = first;
     coplanar.emplace_back(first.id, last.dual().id);
   }
 
-  return hcg_tuple{std::move(sorted_half_chains), std::move(locs),
+  return hcg_tuple{std::move(bucket_half_chains), std::move(bucket_half_chains_offsets),
                    std::move(next_half_chain), std::move(coplanar)};
 }
 
