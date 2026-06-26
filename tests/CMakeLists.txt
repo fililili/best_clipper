@@ -36,14 +36,14 @@ target_compile_features(test_union_rect PRIVATE cxx_std_20)
 target_link_libraries(test_union_rect PRIVATE best_clipper_core GTest::gtest_main)
 add_test(NAME _test_union_rect COMMAND test_union_rect)
 
-add_executable(test_point_on_segment test_point_on_segment.cpp)
-target_compile_features(test_point_on_segment PRIVATE cxx_std_20)
-target_link_libraries(test_point_on_segment PRIVATE best_clipper_core GTest::gtest_main)
-add_test(NAME _test_point_on_segment COMMAND test_point_on_segment)
+add_executable(test_snap_rounding test_snap_rounding.cpp)
+target_compile_features(test_snap_rounding PRIVATE cxx_std_20)
+target_link_libraries(test_snap_rounding PRIVATE best_clipper_core GTest::gtest_main)
+add_test(NAME _test_snap_rounding COMMAND test_snap_rounding)
 
 
 set_tests_properties(
     _test_known_wkt _test_union_rect
     _test_connected_components _test_manhattan _test_uniform_grid
-    _test_point_on_segment
+    _test_snap_rounding
     PROPERTIES LABELS "unit")
