@@ -82,7 +82,8 @@ O(n log n) for snap rounding (dominated by spatial index queries), O(n) for face
 - **clipper2**: for testing.
 
 ## Disadvantage
-Snap rounding is a global algorithm, we have to query every hot_pixels with segments. What's more, to simplify implementation, we don't remove useless hot_pixels before snap rounding. It will be time consuming. But it's acceptable because we have do query for all segments. Cache friendly algorithm and cluster will corver the time cost.
+Snap rounding is a global algorithm, we have to query every hot_pixels with segments. What's more, to simplify implementation, we don't remove useless hot_pixels before snap rounding. It will be time consuming. But it's acceptable because we have do query for all segments, too. The runtime is average. Cache friendly algorithm and cluster will corver the time cost.
+uniform grid only works for bigger data, when data is small, it's slow.
 
 ## Build
 
@@ -99,14 +100,14 @@ cd best_cliiper && mkdir build && cmake -B build
 ## TODO
 1. support two stage cluster, for stage 1, use bbox. And totally sperate different cluster. For stage 2, use bbox and segs, different cluster has different snap rounding and chains build logic, but share ray casting logic.
 2. support connected_component with rank.
-4. use power_2 to handle robust input.
-5. sizing support
-6. clipping linestring support (need study to define new power)
-8. add more practice testing
-9. sort ray query's for cache friendly
-10. uniform grid only works for bigger data, use other BVH when data is small.?
-11. try to use geo hash for get_flat_index for cache friendly.
-12. define own input and output polygon type based on chain, boost geometry should only used for unit testing. (At current, an outer ring can be combined by one ring and many other point touched holes. So it doesn't match OGC's valid, but it's better output I think. In new polygon type, we will use more natuarly way to support converting to OGC valid polygon.)
+3. add more practice testing, may get from GIS data set.
+4. sort ray query by y ceil for cache friendly.
+
+### LongTerm
+1. use power_2 to handle robust input.
+2. sizing support
+3. clipping linestring support (need study to define new power)
+4. define geometry types and remove boost geometry dependency. New geometry type should depend on chains and support one ring (same face) contains many chains.
 
 ## More study
 1. CUDA speed up for both graph and BVH glgo.
