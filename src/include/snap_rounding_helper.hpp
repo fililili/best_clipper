@@ -9,7 +9,7 @@ namespace best_clipper {
 
 // Order hot pixels along a segment.  Every pixel passed to operator() lies on
 // the segment, so p = (x1 + t*dx, y1 + t*dy) for some t in [0, 1].  The dot
-// product with (dx, dy) is x1*dx + y1*dy + t*(dx*dx+dy*dy) — monotonic in t.
+// product with (dx, dy) is x1*dx + y1*dy + t*(dx*dx+dy*dy) - monotonic in t.
 // Replacing (dx, dy) by their signs (sx, sy) in {-1,0,1} gives:
 //   dot(p, (sx, sy)) = x1*sx + y1*sy + t*(|dx| + |dy|)
 // The constant offset cancels in comparison and |dx|+|dy| > 0, so the ordering
@@ -35,7 +35,7 @@ inline multi_coordinate_type cross(coordinate_type dx1, coordinate_type dy1,
   return (multi_coordinate_type)dx1 * dy2 - (multi_coordinate_type)dy1 * dx2;
 }
 
-// Hot pixel Pi(p) = (x-0.5, x+0.5] x (y-0.5, y+0.5] — unit square centered at
+// Hot pixel Pi(p) = (x-0.5, x+0.5] x (y-0.5, y+0.5] - unit square centered at
 // integral point p.  Right/top closed, left/bottom open.  This half-open
 // convention guarantees each plane point belongs to exactly one pixel and is
 // the foundation of the topological consistency proof in Guibas & Marimont

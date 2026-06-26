@@ -4,7 +4,7 @@
 using namespace best_clipper;
 
 // ============================================================================
-// Intersection tests — verify against known WKT
+// Intersection tests - verify against known WKT
 // ============================================================================
 
 void test_intersection(const std::string &a_wkt, const std::string &b_wkt,

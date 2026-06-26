@@ -16,7 +16,7 @@ namespace best_clipper {
 namespace bg = boost::geometry;
 
 // ---------------------------------------------------------------------------
-// construct_graph — returns edges and hot_pixels
+// construct_graph - returns edges and hot_pixels
 // ---------------------------------------------------------------------------
 
 std::tuple<std::vector<edge_t>, std::vector<point>>

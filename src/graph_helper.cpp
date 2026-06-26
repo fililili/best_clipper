@@ -55,7 +55,7 @@ connected_components(
 }
 
 // ---------------------------------------------------------------------------
-// build_chains — chain decomposition from directed edges with power
+// build_chains chain decomposition from directed edges with power
 // ---------------------------------------------------------------------------
 
 std::tuple<std::vector<std::size_t>, std::vector<std::size_t>, std::vector<int>,

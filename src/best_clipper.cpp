@@ -12,7 +12,7 @@
 namespace best_clipper {
 
 // ---------------------------------------------------------------------------
-// Append helpers — each ring writes points then pushes points.size().
+// Append helpers - each ring writes points then pushes points.size().
 // Ring i spans points[offsets[i] .. offsets[i+1]), offsets starts with {0}.
 // ---------------------------------------------------------------------------
 
@@ -71,7 +71,7 @@ static void append_multi_polygon_rev(std::vector<point> &points,
 }
 
 // ---------------------------------------------------------------------------
-// collect_segments — gather rings into points + [begin, end) offsets
+// collect_segments - gather rings into points + [begin, end) offsets
 // ---------------------------------------------------------------------------
 
 static auto collect_segments(const multi_polygon &mp) {

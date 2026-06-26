@@ -5,7 +5,7 @@ using namespace best_clipper;
 
 // All polygons below are OGC valid: no self-intersections, no overlapping
 // components, correct ring orientation. All edges are axis-aligned with integer
-// coordinates, so every intersection already falls on an integer grid point —
+// coordinates, so every intersection already falls on an integer grid point -
 // snap rounding is a no-op for these inputs.
 //
 // Because the input is OGC valid, Boost.Geometry is reliable ground truth.
@@ -290,7 +290,7 @@ TEST(ManhattanUnion, ManyOverlappingSquares) {
   multi_polygon b;
   for (int i = 0; i < 5; i++)
     b.push_back(make_rect_poly(i * 2 + 1, i * 2 - 1, i * 2 + 4, i * 2 + 2));
-  // a and b each contain internally-overlapping squares — multi_polygon
+  // a and b each contain internally-overlapping squares - multi_polygon
   // validity requires non-overlapping polygons, skip input validity check
   a = robust_self_or(a);
   b = robust_self_or(b);
@@ -471,7 +471,7 @@ TEST(ManhattanSelfOr, NestedRect) {
   multi_polygon a;
   a.push_back(make_rect_poly(0, 0, 10, 10));
   a.push_back(make_rect_poly(2, 2, 5, 5));
-  // overlapping — input invalid as multi_polygon per bg convention
+  // overlapping - input invalid as multi_polygon per bg convention
 
   auto result = robust_self_or(a);
 
@@ -485,7 +485,7 @@ TEST(ManhattanSelfOr, ThreeOverlapping) {
   a.push_back(make_rect_poly(0, 0, 3, 3));
   a.push_back(make_rect_poly(2, 1, 5, 4));
   a.push_back(make_rect_poly(1, 2, 4, 6));
-  // overlapping — input invalid as multi_polygon per bg convention
+  // overlapping - input invalid as multi_polygon per bg convention
 
   auto result = robust_self_or(a);
 
@@ -496,7 +496,7 @@ TEST(ManhattanSelfOr, LShapedSelfOr) {
   multi_polygon a;
   a.push_back(make_rect_poly(0, 0, 5, 2));
   a.push_back(make_rect_poly(0, 2, 2, 5));
-  // edge-touching inputs — bg considers overlapping/touching multi_polygon
+  // edge-touching inputs - bg considers overlapping/touching multi_polygon
   // invalid
   ASSERT_TRUE(bg::is_valid(robust_self_or(a))) << "self-union a invalid";
 
@@ -621,7 +621,7 @@ TEST(ManhattanEdgeCase, SharingMultipleEdges) {
   multi_polygon b;
   b.push_back(make_rect_poly(2, 0, 6, 2));
   b.push_back(make_rect_poly(4, 2, 6, 4));
-  // edge-touching inputs — bg considers touching multi_polygon invalid
+  // edge-touching inputs - bg considers touching multi_polygon invalid
   a = robust_self_or(a);
   b = robust_self_or(b);
   ASSERT_TRUE(bg::is_valid(a)) << "a: " << bg::wkt(a);
@@ -693,7 +693,7 @@ TEST(ManhattanLarge, RectWith20Holes) {
 }
 
 TEST(ManhattanLarge, RectWithCoincidentHole) {
-  // Hole left edge at x=52 coincides with B's right edge — the root issue.
+  // Hole left edge at x=52 coincides with B's right edge - the root issue.
   multi_polygon a;
   {
     polygon p;
@@ -883,7 +883,7 @@ TEST(ManhattanLarge, RectWithSixColumnsPlusColumn9Intersection) {
 }
 
 TEST(ManhattanLarge, RectWithTwoColumnsFarApart) {
-  // Only columns 0 and 9 — max distance between hole groups
+  // Only columns 0 and 9 - max distance between hole groups
   multi_polygon a;
   {
     polygon p;
@@ -909,7 +909,7 @@ TEST(ManhattanLarge, RectWithTwoColumnsFarApart) {
 }
 
 TEST(ManhattanLarge, RectWithSixColumnsPlusColumn8And9) {
-  // Two far-away columns (8 and 9) — multiple isolated groups
+  // Two far-away columns (8 and 9) - multiple isolated groups
   multi_polygon a;
   {
     polygon p;

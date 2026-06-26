@@ -11,7 +11,7 @@ using namespace best_clipper;
 // ============================================================================
 // Random non-Manhattan 11-gons uniformly distributed in [0,1000]×[0,1000].
 // Each polygon is a randomly perturbed regular 11-gon. Vertices are CW for
-// Boost compatibility. Edges are slanted — no axis-aligned shortcuts.
+// Boost compatibility. Edges are slanted - no axis-aligned shortcuts.
 // ============================================================================
 namespace {
 
@@ -230,7 +230,7 @@ BENCHMARK_DEFINE_F(CmpDifferenceFixture,
 BENCHMARK_REGISTER_F(CmpDifferenceFixture, Clipper2_Difference) CMP_DIFF_ARGS;
 
 // ============================================================================
-// Self-union benchmark — single set
+// Self-union benchmark - single set
 // ============================================================================
 struct CmpSelfOrFixture : benchmark::Fixture {
   void SetUp(const benchmark::State &state) override {

@@ -6,7 +6,7 @@
 using namespace best_clipper;
 
 // ============================================================================
-// Uniform random rectangles in [0, 1000]^2 — realistic spatial distribution
+// Uniform random rectangles in [0, 1000]^2 - realistic spatial distribution
 // ============================================================================
 static polygon make_rect(int32_t x, int32_t y, int32_t w, int32_t h) {
   polygon p;

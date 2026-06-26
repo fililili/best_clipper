@@ -12,7 +12,7 @@ Global snap rounding is a technique to convert arbitrary-precision geometric arr
 
 The key idea: all segment endpoints and intersection points are treated as **hot pixels** (integer grid points). Every segment is then "snapped" to passed hot pixels.
 
-Unlike the original paper which handles dynamic (online) insertion, this library processes all segments in batch (offline). Instead of a dynamic rounding structure, a **spatial index tree** (uniform grid now) is used to accelerate segment-intersection and point-on-segment queries. All geometric computations use **strict integer arithmetic** — no floating point inaccuracy.
+Unlike the original paper which handles dynamic (online) insertion, this library processes all segments in batch (offline). Instead of a dynamic rounding structure, a **spatial index tree** (uniform grid now) is used to accelerate segment-intersection and point-on-segment queries. All geometric computations use **strict integer arithmetic** - no floating point inaccuracy.
 
 Pipeline for snap rounding:
 1. Find all segment-segment intersection points, snapped to integer as hot pixels

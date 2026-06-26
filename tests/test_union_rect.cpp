@@ -4,7 +4,7 @@
 using namespace best_clipper;
 
 // ============================================================================
-// Rectangle union / robust_self_or — many overlapping squares
+// Rectangle union / robust_self_or - many overlapping squares
 // ============================================================================
 
 void test_union_rectangle(int size) {
