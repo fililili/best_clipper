@@ -100,6 +100,7 @@ cd best_cliiper && mkdir build && cmake -B build
 ## TODO
 1. support two stage cluster, for stage 1, use bbox. And totally sperate different cluster. For stage 2, use bbox and segs, different cluster has different snap rounding and chains build logic, but share ray casting logic.
 2. add more practice testing, may get from GIS data set.
+3. num * dx, num is multi_coord, dx is coord, high overflow risk, need find a better algo.
 
 ### LongTerm
 1. use power_2 to handle robust input.
