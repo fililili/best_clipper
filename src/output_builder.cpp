@@ -47,7 +47,7 @@ multi_polygon build_output(const chain_group &chains,
     }
   }
 
-  auto component_id =
+  auto [component_id, component_sizes] =
       connected_components(num_half_chains, same_face_half_chains);
 
   std::vector<std::pair<std::size_t, std::size_t>> half_chain_to_face;
@@ -57,9 +57,7 @@ multi_polygon build_output(const chain_group &chains,
     }
   }
 
-  std::size_t num_faces = 0;
-  for (auto c : component_id)
-    num_faces = std::max(num_faces, c + 1);
+  std::size_t num_faces = (std::size_t)component_sizes.size();
   auto [face_chains, existed_half_chains] = bucket_sort(
       half_chain_to_face, num_faces,
       [](const std::pair<std::size_t, std::size_t> &p) { return p.first; },

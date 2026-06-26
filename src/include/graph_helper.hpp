@@ -28,7 +28,11 @@ inline auto bucket_sort(auto vec, auto bucket_size, auto get_bucket,
   return std::pair{std::move(offsets), std::move(data)};
 }
 
-std::vector<std::size_t> connected_components(
+// Returns a pair: (component_ids, component_sizes).
+// component_ids[v] is the component ID (0..num_components-1) of vertex v.
+// component_sizes[c] is the number of vertices in component c.
+std::pair<std::vector<std::size_t>, std::vector<std::size_t>>
+connected_components(
     std::size_t n,
     const std::vector<std::pair<std::size_t, std::size_t>> &edges);
 

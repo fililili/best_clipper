@@ -4,11 +4,13 @@
 
 namespace best_clipper {
 
-std::vector<std::size_t> connected_components(
+std::pair<std::vector<std::size_t>, std::vector<std::size_t>>
+connected_components(
     std::size_t n,
     const std::vector<std::pair<std::size_t, std::size_t>> &edges) {
 
   std::vector<std::size_t> parent(n);
+  std::vector<std::size_t> rank(n, 0);
   for (std::size_t i = 0; i < n; i++)
     parent[i] = i;
 
@@ -22,21 +24,34 @@ std::vector<std::size_t> connected_components(
 
   for (auto [a, b] : edges) {
     auto ra = find(a), rb = find(b);
-    if (ra != rb)
+    if (ra == rb)
+      continue;
+    if (rank[ra] < rank[rb])
       parent[ra] = rb;
+    else if (rank[ra] > rank[rb])
+      parent[rb] = ra;
+    else {
+      parent[ra] = rb;
+      rank[rb]++;
+    }
   }
 
   std::vector<std::size_t> comp(n);
   std::vector<std::size_t> root_to_id(n, ~0ULL);
+  std::vector<std::size_t> comp_sizes;
   std::size_t num_components = 0;
   for (std::size_t v = 0; v < n; v++) {
     auto r = find(v);
-    if (root_to_id[r] == ~0ULL)
+    if (root_to_id[r] == ~0ULL) {
       root_to_id[r] = num_components++;
-    comp[v] = root_to_id[r];
+      comp_sizes.push_back(0);
+    }
+    auto cid = root_to_id[r];
+    comp[v] = cid;
+    comp_sizes[cid]++;
   }
 
-  return comp;
+  return {std::move(comp), std::move(comp_sizes)};
 }
 
 // ---------------------------------------------------------------------------

@@ -247,12 +247,9 @@ half_chain_relations_t build_half_chain_relations(
           bucket_half_chains[k].chain_id());
     }
   }
-  auto chain_component_ids =
+  auto [chain_component_ids, chain_component_sizes] =
       connected_components(chains.offsets.size() - 1, chain_connected_edges);
-  std::size_t num_components = 0;
-  for (auto c : chain_component_ids) {
-    num_components = std::max(num_components, c + 1);
-  }
+  std::size_t num_components = (std::size_t)chain_component_sizes.size();
   // todo: if num_components == 1, no need to create seg_data, seg_grid. Just
   // return one exterior_half_chain and empty ray_pairs
 
@@ -344,15 +341,35 @@ half_chain_relations_t build_half_chain_relations(
   std::vector<half_chain_t> exterior_half_chains;
   std::vector<half_chain_relations_t::ray_pair> ray_pairs;
 
-  for (std::size_t component_id = 0; component_id < num_components;
-       ++component_id) {
-    auto min_x = bg::get<0>(ray_start_points[component_id]);
-    coordinate_type ray_y = bg::get<1>(ray_start_points[component_id]);
-    auto hit = cast_ray_minus_x(min_x, ray_y, seg_grid, seg_data);
-    if (hit == half_chain_t{~0ULL}) {
-      exterior_half_chains.push_back(ray_start_half_chains[component_id]);
-    } else {
-      ray_pairs.emplace_back(ray_start_half_chains[component_id], hit);
+  // Sort ray queries by y_ceil for cache-friendly grid access.
+  // Same pattern as hot_pixels dedup: group by grid cell, process per cell.
+  {
+    std::vector<coordinate_type> y_cells(num_components);
+    for (std::size_t i = 0; i < num_components; ++i)
+      y_cells[i] = seg_grid.cell_y(bg::get<1>(ray_start_points[i]));
+
+    std::vector<std::size_t> cell_counts(seg_grid._y_cells, 0);
+    for (auto c : y_cells)
+      cell_counts[c]++;
+
+    std::vector<std::size_t> begins(seg_grid._y_cells + 1, 0);
+    for (coordinate_type c = 0; c < seg_grid._y_cells; c++)
+      begins[c + 1] = begins[c] + cell_counts[c];
+
+    std::vector<std::size_t> ray_order(num_components);
+    auto cursors = begins;
+    for (std::size_t i = 0; i < num_components; ++i)
+      ray_order[cursors[y_cells[i]]++] = i;
+
+    for (std::size_t component_id : ray_order) {
+      auto min_x = bg::get<0>(ray_start_points[component_id]);
+      coordinate_type ray_y = bg::get<1>(ray_start_points[component_id]);
+      auto hit = cast_ray_minus_x(min_x, ray_y, seg_grid, seg_data);
+      if (hit == half_chain_t{~0ULL}) {
+        exterior_half_chains.push_back(ray_start_half_chains[component_id]);
+      } else {
+        ray_pairs.emplace_back(ray_start_half_chains[component_id], hit);
+      }
     }
   }
 
