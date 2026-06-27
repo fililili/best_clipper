@@ -55,7 +55,10 @@ connected_components(
 }
 
 // ---------------------------------------------------------------------------
-// build_chains chain decomposition from directed edges with power
+// build_chains — chain decomposition from directed edges with power.
+// Merges adjacent edges that share a vertex with out_deg==in_deg==1 and same
+// power. Returns (chain_idx, chain_off, chain_powers,
+//                out_offsets, out_chains, in_offsets, in_chains).
 // ---------------------------------------------------------------------------
 
 std::tuple<std::vector<std::size_t>, std::vector<std::size_t>, std::vector<int>,
@@ -63,19 +66,7 @@ std::tuple<std::vector<std::size_t>, std::vector<std::size_t>, std::vector<int>,
            std::vector<std::size_t>, std::vector<std::size_t>>
 build_chains(const std::vector<edge_with_power_t> &sorted_edges,
              std::size_t node_num) {
-  std::vector<std::size_t> edge_offsets(node_num + 1, 0);
-  {
-    std::vector<std::size_t> edge_count(node_num, 0);
-    for (auto &e : sorted_edges)
-      edge_count[e.start]++;
-    std::size_t cur = 0;
-    for (std::size_t v = 0; v < node_num; v++) {
-      edge_offsets[v] = cur;
-      cur += edge_count[v];
-    }
-    edge_offsets.back() = cur;
-  }
-
+  // 1. Degrees and powers.
   std::vector<std::uint32_t> out_deg(node_num), in_deg(node_num);
   std::vector<int> out_power(node_num), in_power(node_num);
   for (const auto &e : sorted_edges) {
@@ -85,120 +76,91 @@ build_chains(const std::vector<edge_with_power_t> &sorted_edges,
     in_power[e.end] = e.power;
   }
 
+  // 2. Edge offsets from out_deg.
+  std::vector<std::size_t> edge_offsets(node_num + 1, 0);
+  std::exclusive_scan(out_deg.begin(), out_deg.end(), edge_offsets.begin(),
+                      std::size_t{0});
+  edge_offsets.back() = sorted_edges.size();
+
+  // 3. End-node classification.
   std::vector<bool> is_end(node_num);
-  for (std::size_t i = 0; i < node_num; i++) {
+  for (std::size_t i = 0; i < node_num; i++)
     is_end[i] =
         !(out_deg[i] == 1 && in_deg[i] == 1 && out_power[i] == in_power[i]);
+
+  // 4. Compact mapping and offsets from end nodes.
+  std::vector<std::size_t> compact_of(node_num, ~0ULL);
+  std::vector<std::size_t> out_offsets{0}, in_offsets{0};
+  for (std::size_t v = 0; v < node_num; v++) {
+    if (!is_end[v] || in_deg[v] == 0)
+      continue;
+    compact_of[v] = out_offsets.size() - 1;
+    out_offsets.push_back(out_offsets.back() + (std::size_t)out_deg[v]);
+    in_offsets.push_back(in_offsets.back() + (std::size_t)in_deg[v]);
   }
 
-  std::vector<bool> visited(node_num), edge_used(sorted_edges.size());
+  std::vector<std::size_t> out_chains(out_offsets.back()),
+      in_chains(in_offsets.back());
+  auto out_c = out_offsets, in_c = in_offsets;
+
+  // 5. Trace paths from end nodes, fill CSR directly.
+  std::vector<bool> edge_used(sorted_edges.size());
   std::vector<std::size_t> idx, off{0};
   std::vector<int> powers;
 
   for (std::size_t i = 0; i < node_num; i++) {
     if (!is_end[i])
       continue;
-    visited[i] = true;
     for (std::size_t j = edge_offsets[i]; j < edge_offsets[i + 1]; j++) {
-      if (edge_used[j] || sorted_edges[j].start != i)
+      if (edge_used[j])
         continue;
+      std::size_t chain_idx = off.size() - 1;
       edge_used[j] = true;
       idx.push_back(i);
       powers.push_back(sorted_edges[j].power);
-      auto cur = sorted_edges[j].end;
+      std::size_t cur = sorted_edges[j].end;
       while (!is_end[cur]) {
-        visited[cur] = true;
         idx.push_back(cur);
-        std::size_t nj = ~0ULL;
-        for (std::size_t k = edge_offsets[cur]; k < edge_offsets[cur + 1]; k++)
-          if (!edge_used[k] && sorted_edges[k].start == cur) {
-            nj = k;
-            break;
-          }
-        assert(nj != ~0ULL);
+        std::size_t nj = edge_offsets[cur];
         edge_used[nj] = true;
         cur = sorted_edges[nj].end;
       }
       idx.push_back(cur);
       off.push_back(idx.size());
+      out_chains[out_c[compact_of[i]]++] = chain_idx;
+      in_chains[in_c[compact_of[cur]]++] = chain_idx;
     }
   }
 
+  // 6. Trace cycles from remaining edges, append directly to CSR.
   for (std::size_t i = 0; i < node_num; i++) {
-    if (visited[i])
-      continue;
-    std::size_t sj = ~0ULL;
-    for (std::size_t j = edge_offsets[i]; j < edge_offsets[i + 1]; j++)
-      if (!edge_used[j] && sorted_edges[j].start == i) {
-        sj = j;
-        break;
+    for (std::size_t j = edge_offsets[i]; j < edge_offsets[i + 1]; j++) {
+      if (edge_used[j])
+        continue;
+      std::size_t chain_idx = off.size() - 1;
+      std::size_t start = i;
+      edge_used[j] = true;
+      idx.push_back(start);
+      powers.push_back(sorted_edges[j].power);
+      std::size_t cur = sorted_edges[j].end;
+      while (cur != start) {
+        idx.push_back(cur);
+        std::size_t nj = edge_offsets[cur];
+        edge_used[nj] = true;
+        cur = sorted_edges[nj].end;
       }
-    if (sj == ~0ULL)
-      continue;
-    visited[i] = true;
-    edge_used[sj] = true;
-    idx.push_back(i);
-    powers.push_back(sorted_edges[sj].power);
-    auto cur = sorted_edges[sj].end;
-    while (i != cur) {
-      visited[cur] = true;
       idx.push_back(cur);
-      std::size_t nj = ~0ULL;
-      for (std::size_t k = edge_offsets[cur]; k < edge_offsets[cur + 1]; k++)
-        if (!edge_used[k] && sorted_edges[k].start == cur) {
-          nj = k;
-          break;
-        }
-      assert(nj != ~0ULL);
-      edge_used[nj] = true;
-      cur = sorted_edges[nj].end;
-    }
-    idx.push_back(cur);
-    off.push_back(idx.size());
-  }
+      off.push_back(idx.size());
 
-  std::size_t num_chains = off.size() - 1;
-  std::vector<std::size_t> chain_out_deg(node_num), chain_in_deg(node_num);
-  for (std::size_t i = 0; i + 1 < off.size(); ++i) {
-    chain_out_deg[idx[off[i]]]++;
-    chain_in_deg[idx[off[i + 1] - 1]]++;
-  }
-
-  std::vector<std::size_t> full_out_offsets(node_num + 1, 0),
-      out_chains(num_chains);
-  std::vector<std::size_t> full_in_offsets(node_num + 1, 0),
-      in_chains(num_chains);
-  for (std::size_t i = 0; i < node_num; ++i) {
-    full_out_offsets[i + 1] = full_out_offsets[i] + chain_out_deg[i];
-  }
-  for (std::size_t i = 0; i < node_num; ++i) {
-    full_in_offsets[i + 1] = full_in_offsets[i] + chain_in_deg[i];
-  }
-  {
-    auto out_cursors = full_out_offsets;
-    auto in_cursors = full_in_offsets;
-    for (std::size_t i = 0; i + 1 < off.size(); ++i) {
-      auto start_idx = idx[off[i]];
-      auto end_idx = idx[off[i + 1] - 1];
-      out_chains[out_cursors[start_idx]++] = i;
-      in_chains[in_cursors[end_idx]++] = i;
+      out_offsets.push_back(out_offsets.back() + 1);
+      in_offsets.push_back(in_offsets.back() + 1);
+      out_chains.push_back(chain_idx);
+      in_chains.push_back(chain_idx);
     }
   }
-  {
-    std::vector<std::size_t> compact_out{0}, compact_in{0};
-    for (std::size_t i = 0; i < node_num; ++i) {
-      if (full_in_offsets[i] < full_in_offsets[i + 1]) {
-        compact_out.push_back(full_out_offsets[i + 1]);
-        compact_in.push_back(full_in_offsets[i + 1]);
-      }
-    }
-    full_out_offsets = std::move(compact_out);
-    full_in_offsets = std::move(compact_in);
-  }
 
-  return {std::move(idx),        std::move(off),
-          std::move(powers),     std::move(full_out_offsets),
-          std::move(out_chains), std::move(full_in_offsets),
+  return {std::move(idx),         std::move(off),        std::move(powers),
+          std::move(out_offsets), std::move(out_chains), std::move(in_offsets),
           std::move(in_chains)};
 }
 
