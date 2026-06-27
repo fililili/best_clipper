@@ -6,7 +6,7 @@
 namespace best_clipper {
 
 half_chain_group_t
-build_half_chain_graph(const chain_group &chains,
+build_half_chain_graph(const chain_group_t &chains,
                        const std::vector<std::size_t> &out_offsets,
                        const std::vector<std::size_t> &out_chains,
                        const std::vector<std::size_t> &in_offsets,

@@ -8,7 +8,7 @@
 
 namespace best_clipper {
 
-multi_polygon build_output(const chain_group &chains,
+multi_polygon build_output(const chain_group_t &chains,
                            half_chain_relations_t half_chain_relations,
                            std::vector<bool> survive) {
   auto &next_half_chain = half_chain_relations.next_half_chain;

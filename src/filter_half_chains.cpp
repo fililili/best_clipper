@@ -3,12 +3,12 @@
 
 namespace best_clipper {
 
-std::vector<int> compute_winding(
-    const chain_group &chains,
-    const half_chain_relations_t& half_chain_relations) {
-  const auto& next_half_chain = half_chain_relations.next_half_chain;
-  const auto& exterior_half_chains = half_chain_relations.exterior_half_chains;
-  const auto& ray_pairs = half_chain_relations.ray_pairs;
+std::vector<int>
+compute_winding(const chain_group_t &chains,
+                const half_chain_relations_t &half_chain_relations) {
+  const auto &next_half_chain = half_chain_relations.next_half_chain;
+  const auto &exterior_half_chains = half_chain_relations.exterior_half_chains;
+  const auto &ray_pairs = half_chain_relations.ray_pairs;
 
   std::size_t num_half_chains = (chains.offsets.size() - 1) * 2;
 
@@ -20,10 +20,8 @@ std::vector<int> compute_winding(
   }
 
   auto [adj, adjacency] = bucket_sort(
-      edges, num_half_chains,
-      [](const edge_t &e) { return e.start; },
-      [](const edge_t &e) { return e.end; }
-    );
+      edges, num_half_chains, [](const edge_t &e) { return e.start; },
+      [](const edge_t &e) { return e.end; });
 
   constexpr int UNKNOWN = std::numeric_limits<int>::max() / 2;
   std::vector<int> winding(num_half_chains, UNKNOWN);
@@ -31,7 +29,7 @@ std::vector<int> compute_winding(
     winding[exterior.id] = 0;
 
   std::vector<half_chain_t> stack(exterior_half_chains.begin(),
-                                 exterior_half_chains.end());
+                                  exterior_half_chains.end());
   while (!stack.empty()) {
     auto u = stack.back();
     stack.pop_back();
@@ -57,4 +55,4 @@ std::vector<int> compute_winding(
   return winding;
 }
 
-}
+} // namespace best_clipper

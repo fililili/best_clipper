@@ -15,7 +15,7 @@ namespace best_clipper {
 namespace bg = boost::geometry;
 
 void sort_bucket_half_chains(
-    const chain_group &chains, std::vector<half_chain_t> &bucket_half_chains,
+    const chain_group_t &chains, std::vector<half_chain_t> &bucket_half_chains,
     const std::vector<std::size_t> &bucket_half_chains_offsets) {
   std::size_t num_end_points = bucket_half_chains_offsets.size() - 1;
 
@@ -229,7 +229,7 @@ constexpr auto less_by_direction_neg_x_split = [](point source, point target1,
 };
 
 half_chain_relations_t build_half_chain_relations(
-    const chain_group &chains, std::vector<half_chain_t> bucket_half_chains,
+    const chain_group_t &chains, std::vector<half_chain_t> bucket_half_chains,
     const std::vector<std::size_t> &bucket_half_chains_offsets) {
   sort_bucket_half_chains(chains, bucket_half_chains,
                           bucket_half_chains_offsets);

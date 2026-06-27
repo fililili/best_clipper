@@ -217,7 +217,7 @@ unique_edges(std::vector<edge_with_power_t> edges, std::size_t num_vertices) {
 // build_chains_from_input
 // ---------------------------------------------------------------------------
 
-std::tuple<chain_group, std::vector<std::size_t>, std::vector<std::size_t>,
+std::tuple<chain_group_t, std::vector<std::size_t>, std::vector<std::size_t>,
            std::vector<std::size_t>, std::vector<std::size_t>>
 build_chains_from_input(const std::vector<point> &points,
                         const std::vector<std::size_t> &offsets) {
@@ -249,8 +249,8 @@ build_chains_from_input(const std::vector<point> &points,
   for (std::size_t i = 0; i < chain_indexes.size(); ++i)
     chain_points[i] = std::move(hot_pixels[chain_indexes[i]]);
 
-  return {chain_group{std::move(chain_points), std::move(chain_offsets),
-                      std::move(chain_powers)},
+  return {chain_group_t{std::move(chain_points), std::move(chain_offsets),
+                        std::move(chain_powers)},
           std::move(chain_out_offsets), std::move(chain_out_chains),
           std::move(chain_in_offsets), std::move(chain_in_chains)};
 }
